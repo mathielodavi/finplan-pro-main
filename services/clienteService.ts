@@ -19,6 +19,7 @@ export interface Cliente {
   status_atendimento?: string;
   etapa_atual?: 'Prospecção' | 'Apresentação' | 'Análise' | 'Implementação' | 'Acompanhamento';
   origem?: string | null;
+  renda_mensal?: number;
 }
 
 export const obterClientes = async () => {

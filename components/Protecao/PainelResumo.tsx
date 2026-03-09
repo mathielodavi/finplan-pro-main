@@ -165,7 +165,7 @@ _Levantamento realizado via FinPlan Pro_`;
                 body: depsValidos.map(d => [
                     d.nome_dependente || '—',
                     d.parentesco || '—',
-                    d.data_nascimento_dependente || '—',
+                    d.data_nascimento_dep || '—',
                     fmtMoeda(d.total_calculado || 0),
                 ]),
                 headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold', fontSize: 8 },
