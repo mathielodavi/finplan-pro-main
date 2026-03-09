@@ -286,9 +286,11 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const handleMetodologiaChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const roteiroId = e.target.value;
     const roteiro = roteirosPadrao.find(r => r.id === roteiroId);
-    if (!roteiro) return;
     try {
-      await atualizarCliente(cliente.id!, { status_atendimento: roteiro.nome });
+      await atualizarCliente(cliente.id!, {
+        protocolo_id: roteiroId || null,
+        status_atendimento: roteiro?.nome || ''
+      });
       onUpdate();
     } catch (err) { alert("Erro ao vincular metodologia."); }
   };
@@ -338,7 +340,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
             </div>
             <div className="relative group">
               <select
-                value={roteirosPadrao.find(r => r.nome === cliente.status_atendimento)?.id || ''}
+                value={cliente.protocolo_id || ''}
                 onChange={handleMetodologiaChange}
                 className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-emerald-600 uppercase text-[10px] outline-none appearance-none cursor-pointer transition-colors hover:border-emerald-500"
               >

@@ -48,14 +48,14 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
   }
 
   const getEtapaColor = (etapa?: string) => {
-    switch (etapa) {
-      case 'Prospecção': return 'neutral';
-      case 'Apresentação': return 'info';
-      case 'Análise': return 'warning';
-      case 'Implementação': return 'emerald';
-      case 'Acompanhamento': return 'success';
-      default: return 'neutral';
-    }
+    if (!etapa) return 'neutral';
+    const e = etapa.toLowerCase();
+    if (e.includes('prospec')) return 'neutral';
+    if (e.includes('apresent')) return 'info';
+    if (e.includes('análise') || e.includes('analise')) return 'warning';
+    if (e.includes('implement')) return 'emerald';
+    if (e.includes('acompanh')) return 'success';
+    return 'neutral';
   };
 
   return (
@@ -90,13 +90,25 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
                 </td>
                 {/* Origem */}
                 <td className="px-4 py-3">
-                  {c.origem ? (
-                    <span className="text-[11px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100">
-                      {c.origem}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-slate-200 font-bold">—</span>
-                  )}
+                  <div className="flex flex-col gap-1">
+                    {c.origem || c.origem_id ? (
+                      <span className="text-[11px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100 inline-block w-fit">
+                        {c.origem || 'Origem vinculada'}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-200 font-bold">—</span>
+                    )}
+                    {c.etiquetas_tags && c.etiquetas_tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {c.etiquetas_tags.slice(0, 2).map((tag: string) => (
+                          <span key={tag} className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded uppercase">
+                            {tag}
+                          </span>
+                        ))}
+                        {c.etiquetas_tags.length > 2 && <span className="text-[8px] text-slate-300">+{c.etiquetas_tags.length - 2}</span>}
+                      </div>
+                    )}
+                  </div>
                 </td>
                 {/* Termômetro */}
                 <td className="px-4 py-3">

@@ -20,6 +20,24 @@ export interface Cliente {
   etapa_atual?: 'Prospecção' | 'Apresentação' | 'Análise' | 'Implementação' | 'Acompanhamento';
   origem?: string | null;
   renda_mensal?: number;
+  origem_id?: string | null;
+  protocolo_id?: string | null;
+  etiquetas_tags?: string[];
+}
+
+export interface Origem {
+  id: string;
+  nome: string;
+  consultor_id: string;
+  criado_em: string;
+}
+
+export interface OrigemTag {
+  id: string;
+  origem_id: string;
+  nome: string;
+  consultor_id: string;
+  criado_em: string;
 }
 
 export const obterClientes = async () => {
@@ -83,6 +101,57 @@ export const buscarClientes = async (termo: string) => {
 
   if (error) throw error;
   return data;
+};
+
+// --- NOVAS FUNÇÕES: ORIGENS E TAGS ---
+
+export const obterOrigens = async () => {
+  const { data, error } = await supabase
+    .from('origens')
+    .select('*')
+    .order('nome', { ascending: true });
+
+  if (error) throw error;
+  return data as Origem[];
+};
+
+export const criarOrigem = async (nome: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const { data, error } = await supabase
+    .from('origens')
+    .insert([{ nome, consultor_id: user.id }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Origem;
+};
+
+export const obterTagsPorOrigem = async (origemId: string) => {
+  const { data, error } = await supabase
+    .from('origem_tags')
+    .select('*')
+    .eq('origem_id', origemId)
+    .order('nome', { ascending: true });
+
+  if (error) throw error;
+  return data as OrigemTag[];
+};
+
+export const criarTagOrigem = async (origemId: string, nome: string) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Usuário não autenticado');
+
+  const { data, error } = await supabase
+    .from('origem_tags')
+    .insert([{ origem_id: origemId, nome, consultor_id: user.id }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as OrigemTag;
 };
 
 export const obterClientePorId = async (id: string) => {
