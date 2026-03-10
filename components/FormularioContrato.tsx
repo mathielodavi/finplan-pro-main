@@ -124,7 +124,7 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
         prazo_meses: parseInt(prazoMeses) || 12,
         repasse_percentual: parseFloat(repassePercentual) || 100,
         prazo_recebimento_dias: parseInt(prazoRecebimento) || 30,
-        padrao_id: padraoSelecionadoId || null,
+        padrao_id: tipo === 'extra' ? (padraoSelecionadoId || null) : null,
       });
     } catch (err: any) {
       setError(err.message);

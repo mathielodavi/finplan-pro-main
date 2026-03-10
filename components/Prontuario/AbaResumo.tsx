@@ -249,7 +249,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         prazo_meses: formContrato.prazo_meses, prazo_recebimento_dias: formContrato.prazo_recebimento_dias,
         descricao: formContrato.descricao, data_inicio: formContrato.data_inicio,
         status: formContrato.status, data_fim: formContrato.status === 'cancelado' ? formContrato.data_cancelamento : null,
-        padrao_id: formContrato.padrao_id || null
+        padrao_id: formContrato.categoria === 'extra' ? (formContrato.padrao_id || null) : null
       };
       if (formContrato.id) await atualizarContrato(formContrato.id, payload);
       else await criarContrato(payload);
