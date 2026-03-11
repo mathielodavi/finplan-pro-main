@@ -263,7 +263,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         prazo_meses: formContrato.prazo_meses, prazo_recebimento_dias: formContrato.prazo_recebimento_dias,
         descricao: formContrato.descricao, data_inicio: formContrato.data_inicio,
         status: formContrato.status, data_fim: dataFim,
-        padrao_id: formContrato.categoria === 'extra' ? (formContrato.padrao_id || null) : null
+        padrao_id: formContrato.padrao_id || null
       };
       if (formContrato.id) await atualizarContrato(formContrato.id, payload);
       else await criarContrato(payload);
@@ -559,7 +559,20 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
               {step === 2 && (
                 <div className="space-y-8 animate-slide-up">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="md:col-span-2">
+                    <div>
+                      <label className={labelStyle}>Status do Acordo</label>
+                      <select
+                        value={formContrato.status}
+                        onChange={e => setFormContrato({ ...formContrato, status: e.target.value as any })}
+                        className={inputStyle}
+                      >
+                        <option value="ativo">Ativo</option>
+                        <option value="inativo">Inativo</option>
+                        <option value="concluido">Concluído</option>
+                        <option value="cancelado">Cancelado</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className={labelStyle}>Padrão de Recebimento</label>
                       <select
                         value={formContrato.padrao_id}

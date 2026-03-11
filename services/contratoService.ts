@@ -85,6 +85,8 @@ const gerarParcelasFinanceiras = async (contrato: Contrato, valorRestante: numbe
     const valorParcela = valorRestante / (numParcelasTotal || 1);
 
     for (let i = 0; i < numParcelasTotal; i++) {
+      if (i < numPagas) continue;
+
       const vencimento = new Date(baseDate);
       vencimento.setDate(baseDate.getDate() + (contrato.prazo_recebimento_dias || 0));
       vencimento.setMonth(vencimento.getMonth() + i);
