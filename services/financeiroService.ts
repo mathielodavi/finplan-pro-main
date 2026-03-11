@@ -101,11 +101,10 @@ export const financeiroService = {
 
     if (count === 0) {
       const { data: con } = await supabase.from('contratos').select('padrao_id, tipo').eq('id', contratoId).single();
-      if (con?.tipo !== 'extra') {
-        await supabase.from('contratos').update({ status: 'concluido' }).eq('id', contratoId);
-      } else if (con?.padrao_id) {
+      if (con?.tipo === 'extra' && con?.padrao_id) {
         const { data: pad } = await supabase.from('padroes_contrato_extra_fases').select('id').eq('padrao_contrato_extra_id', con.padrao_id).is('mes_fim', null).maybeSingle();
         if (!pad) {
+          // Apenas contratos extras com escopo fechado sem renovação automática devem ser concluídos aqui
           await supabase.from('contratos').update({ status: 'concluido' }).eq('id', contratoId);
         }
       }
