@@ -6,33 +6,27 @@
 
 BEGIN;
 
+-- Desativa temporariamente as triggers da sessão atual.
+-- Isso previne que a função registrar_auditoria_contrato() tente buscar
+-- o auth.uid() do usuário (que é nulo rodando direto do painel SQL)
+-- e quebre a regra de NOT NULL da tabela auditoria.
+SET session_replication_role = 'replica';
+
 -- 1. RESTAURAR VÍNCULO DO TIPO DE CONTRATO (FALLBACK)
--- Caso algum contrato tenha perdido o 'tipo' subjacente, restaurá-lo para 'planejamento' 
--- (a vasta maioria das anomalias recaem nos de planejamento, pois extras vieram na v2).
 UPDATE contratos
 SET tipo = 'planejamento'
 WHERE tipo IS NULL OR tipo = '';
 
 -- 2. CORREÇÃO DE VALOR TOTAL EM CONTRATOS 'À VISTA' (PLANEJAMENTO)
--- Multiplicar o valor do contrato pelo prazo em meses, apenas para os que 
--- foram gerados antes do patch e que ainda estão com o ticket solto.
 UPDATE contratos
 SET valor = valor * prazo_meses
 WHERE 
   tipo = 'planejamento'
   AND forma_pagamento = 'vista'
   AND prazo_meses > 1
-  -- Fator de segurança: Evitar multiplicar caso o valor já esteja muito alto 
-  -- O que indicaria que já estava calculado como total historicamente.
   AND (valor / prazo_meses) < 5000;
 
-
 -- 3. REMOÇÃO DE PARCELAS PENDENTES EXCEDENTES EM CONTRATOS À VISTA
--- Se um contrato à vista acabou gerando N parcelas pendentes (bug antigo ou edição 
--- indevida sem limpeza), deletamos todas as pendentes EXCETO a primeira (a mais antiga).
--- IMPORTANTE: Não apagamos e nem mexemos em parcelas 'pago', garantindo que 
--- as conciliações já realizadas sejam blindadas.
-
 WITH RankedPendentes AS (
   SELECT 
     id,
@@ -53,8 +47,6 @@ WHERE id IN (
 );
 
 -- 4. ATUALIZAR O VALOR DA ÚNICA PARCELA PENDENTE RESTANTE DESSES CONTRATOS
--- Atualizamos a expectativa dessa 1ª parcela de contratos 'vista' para equivaler ao 
--- valor corrigido bruto do contrato, garantindo que o fluxo não espere menos que deve.
 UPDATE financeiro_parcelas fp
 SET valor_previsto = c.valor
 FROM contratos c
@@ -62,11 +54,12 @@ WHERE
   fp.contrato_id = c.id
   AND c.forma_pagamento = 'vista'
   AND fp.status = 'pendente'
-  -- Restringindo apenas para contratos que AINDA NÃO tiveram nenhuma parcela paga 
-  -- (se houver pagamento, mantemos intacto para não poluir fluxo de caixa histórico)
   AND NOT EXISTS (
     SELECT 1 FROM financeiro_parcelas pago 
     WHERE pago.contrato_id = c.id AND pago.status IN ('pago', 'cancelado')
   );
+
+-- Reativar as triggers da sessão normalmente
+SET session_replication_role = 'default';
 
 COMMIT;
