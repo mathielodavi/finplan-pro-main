@@ -185,16 +185,20 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
     }
 
     const numParcelas = formContrato.forma_pagamento === 'vista' ? 1 : formContrato.prazo_meses;
+    const valorParcelaBruto = formContrato.forma_pagamento === 'vista'
+      ? formContrato.ticket_mensal * formContrato.prazo_meses
+      : formContrato.ticket_mensal;
+
     for (let i = 0; i < numParcelas; i++) {
       const vencimento = new Date(baseDate);
       vencimento.setDate(baseDate.getDate() + formContrato.prazo_recebimento_dias);
       vencimento.setMonth(vencimento.getMonth() + i);
       parcelas.push({
         num: i + 1,
-        tipo: 'PARCELA',
+        tipo: formContrato.forma_pagamento === 'vista' ? 'À VISTA' : 'PARCELA',
         vencimento: toLocalDateString(vencimento),
-        valorBruto: formContrato.ticket_mensal,
-        valorLiquido: formContrato.ticket_mensal * netTransfer,
+        valorBruto: valorParcelaBruto,
+        valorLiquido: valorParcelaBruto * netTransfer,
         repasseLabel: `NET ${formContrato.repasse_percentual}%`,
         ordemSort: i + 1
       });
@@ -225,7 +229,9 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       const divisorReal = (c.prazo_meses || 1) + pesoBonus;
       derivedTicket = c.valor / divisorReal;
     } else {
-      derivedTicket = c.forma_pagamento === 'vista' ? c.valor : c.valor / (c.prazo_meses || 12);
+      // Para contratos de planejamento, o ticket mensal SEMPRE é o valor total / prazo em meses,
+      // independente se foi pago à vista ou parcelado.
+      derivedTicket = c.valor / (c.prazo_meses || 12);
     }
 
     setFormContrato({

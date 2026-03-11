@@ -84,7 +84,7 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
 
   // ─── Recalcular valor total quando ticket ou prazo mudam ──────
   useEffect(() => {
-    if (tipo === 'planejamento' && formaPagamento === 'parcelado') {
+    if (tipo === 'planejamento') {
       const ticket = parseFloat(ticketMensal) || 0;
       const prazo = parseInt(prazoMeses) || 1;
       setValorTotal((ticket * prazo).toString());
