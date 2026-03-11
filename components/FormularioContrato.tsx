@@ -246,14 +246,22 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={labelStyle}>Forma de Pagamento</label>
-          <select
-            value={formaPagamento}
-            onChange={e => setFormaPagamento(e.target.value as 'vista' | 'parcelado')}
-            className={inputStyle}
-          >
-            <option value="parcelado">Parcelado (recorrente)</option>
-            <option value="vista">À Vista</option>
-          </select>
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setFormaPagamento('vista')}
+              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formaPagamento === 'vista' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              À Vista
+            </button>
+            <button
+              type="button"
+              onClick={() => setFormaPagamento('parcelado')}
+              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formaPagamento === 'parcelado' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Parcelado
+            </button>
+          </div>
         </div>
         <div>
           <label className={labelStyle}>Data de Início</label>

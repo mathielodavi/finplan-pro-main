@@ -574,6 +574,25 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                       </div>
                     </div>
                     <div>
+                      <label className={labelStyle}>Forma de Pagamento</label>
+                      <div className="flex bg-slate-100 p-1 rounded-xl h-[42px]">
+                        <button
+                          type="button"
+                          onClick={() => setFormContrato({ ...formContrato, forma_pagamento: 'vista' })}
+                          className={`flex-1 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formContrato.forma_pagamento === 'vista' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          À Vista
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormContrato({ ...formContrato, forma_pagamento: 'parcelado' })}
+                          className={`flex-1 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formContrato.forma_pagamento === 'parcelado' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          Parcelado
+                        </button>
+                      </div>
+                    </div>
+                    <div>
                       <label className={labelStyle}>{formContrato.categoria === 'extra' ? 'Mensalidade Bruta' : 'Ticket Mensal'}</label>
                       <div className="relative">
                         <DollarSign size={18} className="absolute left-4 top-4 text-slate-300" />
@@ -597,7 +616,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                     </div>
                     <div className="text-right space-y-1">
                       <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Duração do Fluxo</span>
-                      <p className="text-xl font-black">{formContrato.prazo_meses} Meses</p>
+                      <p className="text-xl font-black">{formContrato.forma_pagamento === 'vista' ? 'Único' : `${formContrato.prazo_meses} Meses`}</p>
                     </div>
                   </div>
                   <div className="flex gap-4">
