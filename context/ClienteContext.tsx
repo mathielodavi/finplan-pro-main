@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { Cliente, obterClientes as fetchClientes, buscarClientes as searchClientes } from '../services/clienteService';
+import { Cliente, obterClientes as fetchClientes, buscarClientes as searchClientes, verificarExpiracaoContratos } from '../services/clienteService';
 
 interface ClienteContextType {
   clientes: Cliente[];
@@ -16,6 +16,11 @@ export const ClienteProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    // Executa a automação de status baseada na vigência dos contratos ao abrir o app
+    verificarExpiracaoContratos().catch(console.error);
+  }, []);
 
   const refreshClientes = useCallback(async () => {
     try {

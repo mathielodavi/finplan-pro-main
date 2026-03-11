@@ -6,7 +6,7 @@ import { Plus, X, Check } from 'lucide-react';
 
 interface FormularioClienteProps {
   clienteInicial?: Cliente | null;
-  onSuccess: () => void;
+  onSuccess: (cliente?: Cliente) => void;
   onCancel: () => void;
 }
 
@@ -131,9 +131,13 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
         // Mantém suporte retrógrado se necessário para lógica de exibição
         etapa_atual: protocolos.find(p => p.id === protocoloId)?.nome || 'Prospecção' as any
       };
-      if (clienteInicial?.id) await atualizarCliente(clienteInicial.id, payload);
-      else await criarCliente(payload);
-      onSuccess();
+      if (clienteInicial?.id) {
+        await atualizarCliente(clienteInicial.id, payload);
+        onSuccess(clienteInicial);
+      } else {
+        const novo = await criarCliente(payload);
+        onSuccess(novo as Cliente);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -240,8 +244,8 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
                 type="button"
                 onClick={() => toggleTag(tag.nome)}
                 className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border ${tagsSelecionadas.includes(tag.nome)
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-200'
-                    : 'bg-white text-slate-500 border-slate-200 hover:border-emerald-300'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-200'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-emerald-300'
                   }`}
               >
                 {tag.nome}

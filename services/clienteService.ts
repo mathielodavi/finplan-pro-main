@@ -164,3 +164,56 @@ export const obterClientePorId = async (id: string) => {
   if (error) throw error;
   return data;
 };
+
+// --- AUTOMAÇÃO DE STATUS ---
+export const verificarExpiracaoContratos = async () => {
+  const agora = new Date();
+  const hojeStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(agora);
+
+  try {
+    // Busca todos os contratos de planejamento que estão ativos ou concluídos, mas sua data de fim já passou
+    const { data: contratosExpirados, error } = await supabase
+      .from('contratos')
+      .select('id, cliente_id, data_fim, status')
+      .eq('tipo', 'planejamento')
+      .lt('data_fim', hojeStr)
+      .in('status', ['ativo', 'concluido']);
+
+    if (error) throw error;
+
+    if (contratosExpirados && contratosExpirados.length > 0) {
+      // 1. Atualizar status dos contratos para 'concluido' se ainda estiverem 'ativo'
+      const contratosAtivosExpirados = contratosExpirados.filter(c => c.status === 'ativo');
+      if (contratosAtivosExpirados.length > 0) {
+        for (const contrato of contratosAtivosExpirados) {
+          await supabase.from('contratos').update({ status: 'concluido' }).eq('id', contrato.id);
+        }
+      }
+
+      // 2. Colocar os clientes como Inativos (se já não tiverem outro contrato válido)
+      const clientesAExpirar = [...new Set(contratosExpirados.map(c => c.cliente_id))];
+
+      for (const clienteId of clientesAExpirar) {
+        const { data: contratosFuturos } = await supabase
+          .from('contratos')
+          .select('id')
+          .eq('cliente_id', clienteId)
+          .eq('tipo', 'planejamento')
+          .in('status', ['ativo'])
+          .gte('data_fim', hojeStr)
+          .limit(1);
+
+        if (!contratosFuturos || contratosFuturos.length === 0) {
+          await supabase.from('clientes').update({ status: 'Inativo' }).eq('id', clienteId);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Erro ao verificar expiração de contratos:", err);
+  }
+};

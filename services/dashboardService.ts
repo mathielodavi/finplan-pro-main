@@ -31,9 +31,21 @@ export const dashboardService = {
     const clientesComPlanAtivo = new Set(contratos.filter(c => c.tipo === 'planejamento' && c.status === 'ativo').map(c => c.cliente_id));
     const ativosPlanejamentoCount = clientesComPlanAtivo.size;
 
-    // KPI: Churn Rate (Clientes inativos com contrato de planejamento sobre base total)
-    const clientesInativosComPlanejamento = clientesBasePlanejamento.filter(c => c.status !== 'Ativo');
-    const churn = totalClientesPlan > 0 ? (clientesInativosComPlanejamento.length / totalClientesPlan) * 100 : 0;
+    // KPI: Churn Rate (Clientes inativos cujo último contrato foi cancelado)
+    const clientesEmChurn = clientesBasePlanejamento.filter(c => {
+      if (c.status === 'Ativo') return false;
+
+      const cliContratosPlan = contratos
+        .filter(cont => cont.cliente_id === c.id && cont.tipo === 'planejamento')
+        .sort((a, b) => new Date(b.data_inicio).getTime() - new Date(a.data_inicio).getTime());
+
+      if (cliContratosPlan.length === 0) return false;
+
+      const ultimoContrato = cliContratosPlan[0];
+      return ultimoContrato.status === 'cancelado';
+    });
+
+    const churn = totalClientesPlan > 0 ? (clientesEmChurn.length / totalClientesPlan) * 100 : 0;
 
     // "Hoje" no fuso de Brasília (Início do dia) para cálculos de reuniões
     const agora = new Date();
@@ -203,7 +215,7 @@ export const dashboardService = {
           diffDays
         };
       })
-      .filter(c => c.diffDays >= 0 && c.diffDays <= 90)
+      .filter(c => c.diffDays >= 0)
       .sort((a, b) => a.diffDays - b.diffDays);
   }
 };

@@ -243,12 +243,20 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const handleFinalizarAcordo = async () => {
     setIsSubmitting(true);
     try {
+      let dataFim = formContrato.status === 'cancelado' ? formContrato.data_cancelamento : null;
+      if (formContrato.status !== 'cancelado' && formContrato.data_inicio && formContrato.prazo_meses) {
+        const [y, m, d] = formContrato.data_inicio.split('-').map(Number);
+        const dtInicio = new Date(y, m - 1, d);
+        dtInicio.setMonth(dtInicio.getMonth() + parseInt(formContrato.prazo_meses.toString()));
+        dataFim = dtInicio.toISOString().split('T')[0];
+      }
+
       const payload = {
         cliente_id: cliente.id!, tipo: formContrato.categoria, valor: valorTotalBruto,
         repasse_percentual: formContrato.repasse_percentual, forma_pagamento: formContrato.forma_pagamento,
         prazo_meses: formContrato.prazo_meses, prazo_recebimento_dias: formContrato.prazo_recebimento_dias,
         descricao: formContrato.descricao, data_inicio: formContrato.data_inicio,
-        status: formContrato.status, data_fim: formContrato.status === 'cancelado' ? formContrato.data_cancelamento : null,
+        status: formContrato.status, data_fim: dataFim,
         padrao_id: formContrato.categoria === 'extra' ? (formContrato.padrao_id || null) : null
       };
       if (formContrato.id) await atualizarContrato(formContrato.id, payload);

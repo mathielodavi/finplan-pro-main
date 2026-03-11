@@ -55,9 +55,13 @@ const ClientesPage: React.FC = () => {
     setModalAberto(true);
   };
 
-  const handleSucessoForm = () => {
+  const handleSucessoForm = (cliente?: Cliente) => {
     setModalAberto(false);
-    carregarDados();
+    if (!clienteSelecionado && cliente && cliente.id && cliente.status === 'Ativo') {
+      navigate(`/clientes/${cliente.id}`);
+    } else {
+      carregarDados();
+    }
   };
 
   // Identifica IDs de clientes que possuem contrato de planejamento ativo

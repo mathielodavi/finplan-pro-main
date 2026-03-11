@@ -28,11 +28,11 @@ const gerarParcelasFinanceiras = async (contrato: Contrato, valorRestante: numbe
     // Para recuperar o Ticket base sem inflar, precisamos considerar o peso do bônus no divisor.
     // Fórmula: Total = (Meses * Ticket) + (Ticket * (TaxaBonus / 100))
     // Logo: Ticket = Total / (Meses + (TaxaBonus / 100))
-    
-    const pesoBonus = (padraoExtra.tem_bonus && padraoExtra.taxa_bonus > 0) 
-      ? (padraoExtra.taxa_bonus / 100) 
+
+    const pesoBonus = (padraoExtra.tem_bonus && padraoExtra.taxa_bonus > 0)
+      ? (padraoExtra.taxa_bonus / 100)
       : 0;
-    
+
     const divisorReal = (contrato.prazo_meses || 1) + pesoBonus;
     const ticketMensal = contrato.valor / divisorReal;
 
@@ -55,7 +55,7 @@ const gerarParcelasFinanceiras = async (contrato: Contrato, valorRestante: numbe
     // 2. Processar Parcelas Mensais
     const numParcelasTotal = (padraoExtra.recorrente && isIlimitado) ? 24 : contrato.prazo_meses;
     const fases = [...(padraoExtra.fases || [])].sort((a, b) => a.ordem - b.ordem);
-    
+
     let mesGlobal = 0;
     fases.forEach(fase => {
       const mesesNestaFase = fase.mes_fim === null ? numParcelasTotal : (fase.mes_fim || 1);
@@ -67,7 +67,7 @@ const gerarParcelasFinanceiras = async (contrato: Contrato, valorRestante: numbe
         const vencimento = new Date(baseDate);
         vencimento.setDate(baseDate.getDate() + (contrato.prazo_recebimento_dias || 0));
         vencimento.setMonth(vencimento.getMonth() + (mesGlobal - 1));
-        
+
         const valorAjustadoFase = ticketMensal * (fase.percentual_repasse / 100);
 
         novasParcelas.push({
@@ -88,7 +88,7 @@ const gerarParcelasFinanceiras = async (contrato: Contrato, valorRestante: numbe
       const vencimento = new Date(baseDate);
       vencimento.setDate(baseDate.getDate() + (contrato.prazo_recebimento_dias || 0));
       vencimento.setMonth(vencimento.getMonth() + i);
-      
+
       novasParcelas.push({
         contrato_id: contrato.id,
         cliente_id: contrato.cliente_id,
@@ -132,6 +132,16 @@ export const criarContrato = async (contrato: Partial<Contrato>) => {
 
   const novoContrato = data as Contrato;
   await gerarParcelasFinanceiras(novoContrato, novoContrato.valor, 0);
+
+  // Atualização automática de status do cliente associado ao planejamento
+  if (novoContrato.tipo === 'planejamento') {
+    if (novoContrato.status === 'ativo') {
+      await supabase.from('clientes').update({ status: 'Ativo' }).eq('id', novoContrato.cliente_id);
+    } else if (novoContrato.status === 'cancelado') {
+      await supabase.from('clientes').update({ status: 'Inativo' }).eq('id', novoContrato.cliente_id);
+    }
+  }
+
   return novoContrato;
 };
 
@@ -139,7 +149,7 @@ export const atualizarContrato = async (id: string, dados: Partial<Contrato>) =>
   const { data: contratoAntigo } = await supabase.from('contratos').select('*').eq('id', id).single();
   if (!contratoAntigo) throw new Error("Contrato não encontrado.");
 
-  const mudouFinanceiro = 
+  const mudouFinanceiro =
     (dados.valor !== undefined && dados.valor !== contratoAntigo.valor) ||
     (dados.prazo_meses !== undefined && dados.prazo_meses !== contratoAntigo.prazo_meses) ||
     (dados.data_inicio !== undefined && dados.data_inicio !== contratoAntigo.data_inicio) ||
@@ -160,10 +170,21 @@ export const atualizarContrato = async (id: string, dados: Partial<Contrato>) =>
     const jaPagoTotal = parcelasPagas?.reduce((acc, p) => acc + (p.valor_pago || 0), 0) || 0;
     const pagasCount = parcelasPagas?.length || 0;
     const novoValorRestante = Math.max(0, contratoAtualizado.valor - jaPagoTotal);
-    
+
     await supabase.from('financeiro_parcelas').delete().eq('contrato_id', id).neq('status', 'pago');
     if (novoValorRestante > 0.01) {
       await gerarParcelasFinanceiras(contratoAtualizado, novoValorRestante, pagasCount);
+    }
+  }
+
+  // Atualização automática de status do cliente associado ao planejamento
+  if (contratoAtualizado.tipo === 'planejamento') {
+    if (contratoAtualizado.status === 'ativo') {
+      await supabase.from('clientes').update({ status: 'Ativo' }).eq('id', contratoAtualizado.cliente_id);
+    } else if (contratoAtualizado.status === 'cancelado' || contratoAtualizado.status === 'concluido') {
+      // Considerando que concluído sem renovação também deixa o cliente inativo
+      // A verificação diária também cuidará de status ativo/inativo pela data fim
+      await supabase.from('clientes').update({ status: 'Inativo' }).eq('id', contratoAtualizado.cliente_id);
     }
   }
 
