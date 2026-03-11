@@ -17,7 +17,7 @@ UPDATE contratos c
 SET padrao_id = p.id
 FROM padroes_contrato_planejamento p
 WHERE c.tipo = 'planejamento'
-  AND (c.padrao_id IS NULL OR c.padrao_id = '')
+  AND c.padrao_id IS NULL
   AND c.descricao = p.nome;
 
 
@@ -27,7 +27,7 @@ UPDATE contratos c
 SET padrao_id = p.id
 FROM padroes_contrato_extra p
 WHERE c.tipo = 'extra'
-  AND (c.padrao_id IS NULL OR c.padrao_id = '')
+  AND c.padrao_id IS NULL
   AND c.descricao = p.nome;
 
 
