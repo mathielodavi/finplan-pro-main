@@ -60,6 +60,6 @@ WHERE
   );
 
 -- Reativar as triggers da sessão normalmente
-SET session_replication_role = 'default';
+SET session_replication_role = 'origin';
 
 COMMIT;
