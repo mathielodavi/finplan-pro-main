@@ -183,18 +183,18 @@ interface ReportData {
   dataGeracao: string;
 }
 
-// ─── Liquid Glass helpers ───────────────────────────────────────────────────
+// ─── Theme helpers ───────────────────────────────────────────────────
 const LG = {
-  BG: [8, 15, 30] as const, // deep navy
-  PANEL: [18, 28, 48] as const, // glass panel dark
-  SURFACE: [26, 40, 66] as const, // surface card
+  BG: [255, 255, 255] as const, // white
+  PANEL: [248, 250, 252] as const, // slate-50 (light panel)
+  SURFACE: [255, 255, 255] as const, // white card
   EMERALD: [16, 185, 129] as const, // emerald 500
   EMERALD_D: [5, 150, 105] as const, // emerald 600
   ROSE: [244, 63, 94] as const, // rose 500
   AMBER: [251, 146, 60] as const, // amber 400
-  TEXT: [226, 232, 240] as const, // slate-200
+  TEXT: [30, 41, 59] as const, // slate-800
   MUTED: [100, 116, 139] as const, // slate-500
-  BORDER: [51, 65, 85] as const, // slate-700
+  BORDER: [226, 232, 240] as const, // slate-200
   WHITE: [255, 255, 255] as const,
 };
 
@@ -235,9 +235,9 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
   const paintBg = () => {
     doc.setFillColor(LG.BG[0], LG.BG[1], LG.BG[2]);
     doc.rect(0, 0, pageW, pageH, 'F');
-    // subtle gradient-like overlay at top
-    doc.setFillColor(LG.PANEL[0], LG.PANEL[1], LG.PANEL[2]);
-    doc.rect(0, 0, pageW, 55, 'F');
+    // Top primary header banner
+    doc.setFillColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
+    doc.rect(0, 0, pageW, 28, 'F');
   };
   paintBg();
 
@@ -302,61 +302,75 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
 
   let Y = 63;
 
-  // ─── CLIENT + STRATEGY ───────────────────────────────────────────────────
-  const halfW = (pageW - M * 2 - 6) / 2;
-
-  // Client card
-  glassCard(doc, M, Y, halfW, 32);
-  label(doc, 'Cliente', M + 6, Y + 8);
-  value(doc, data.cliente?.nome || 'N/A', M + 6, Y + 17, 12, LG.TEXT);
-
-  // Strategy card
-  const stratX = M + halfW + 6;
-  glassCard(doc, stratX, Y, halfW, 32);
-  label(doc, 'Estratégia', stratX + 6, Y + 8);
-  value(doc, data.estrategia || 'N/A', stratX + 6, Y + 17, 10, LG.TEXT);
-  if (data.faixa) {
-    doc.setFontSize(7.5);
-    doc.setTextColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`FAIXA: ${data.faixa}`, stratX + 6, Y + 26);
-  }
-
-  Y += 38;
-
-  // Tese card (full width)
-  glassCard(doc, M, Y, pageW - M * 2, 20);
-  label(doc, 'Tese de Investimento', M + 6, Y + 7);
-  const teseLines = doc.splitTextToSize(data.tese || 'Não informada.', pageW - M * 2 - 12);
+  // ─── DADOS DO CLIENTE & ESTRATÉGIA ───────────────────────────────────────
+  doc.setTextColor(30, 41, 59);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('ESTRATÉGIA DEFINIDA', 14, Y);
+  Y += 6;
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
-  doc.text(teseLines.slice(0, 1), M + 6, Y + 15);
+  doc.setTextColor(71, 85, 105);
 
-  Y += 26;
+  const dadosEstrategia: [string, string][] = [
+    ['Cliente', data.cliente?.nome || 'N/A'],
+    ['Estratégia Base', data.estrategia || 'N/A'],
+    ['Faixa de Alocação', data.faixa || 'N/A'],
+  ];
 
-  // ─── FINANCIAL SUMMARY CARDS ─────────────────────────────────────────────
-  // Calculate totals
+  dadosEstrategia.forEach(([k, v], i) => {
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${k}:`, 14, Y + i * 5.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(v, 52, Y + i * 5.5);
+  });
+
+  Y += dadosEstrategia.length * 5.5 + 4;
+
+  // Tese
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Tese de Investimento:`, 14, Y);
+  doc.setFont('helvetica', 'normal');
+  const teseLines = doc.splitTextToSize(data.tese || 'Não informada.', pageW - M * 2 - 38);
+  doc.text(teseLines, 52, Y);
+
+  Y += (teseLines.length * 4) + 12;
+
+  // ─── RESUMO DE APORTES E VENDAS ──────────────────────────────────────────
   const totalVendas = (data.ordensVenda || []).reduce((s: number, o: any) => s + (o.valor || 0), 0);
   const aporteComVendas = data.aporteTotal + totalVendas;
 
-  const cards = [
-    { label: 'Aporte Disponível', val: formatarMoeda(data.aporteTotal), color: LG.EMERALD },
-    { label: 'Saldo de Vendas', val: formatarMoeda(totalVendas), color: totalVendas > 0 ? LG.AMBER : LG.MUTED },
-    { label: 'Total p/ Alocar', val: formatarMoeda(aporteComVendas), color: LG.EMERALD },
-  ];
-  const cardW = (pageW - M * 2 - 8) / 3;
+  doc.setTextColor(30, 41, 59);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('RECURSOS DISPONÍVEIS E ALOCAÇÃO DE ORIGEM', 14, Y);
+  Y += 4;
 
-  cards.forEach((c, i) => {
-    const cx = M + i * (cardW + 4);
-    glassCard(doc, cx, Y, cardW, 24, LG.PANEL);
-    label(doc, c.label, cx + 6, Y + 8);
-    value(doc, c.val, cx + 6, Y + 18, 11, c.color as any);
+  (doc as any).autoTable({
+    startY: Y,
+    head: [['Item', 'Valor (R$)']],
+    body: [
+      ['Aporte Mensal / Novo Fundo', formatarMoeda(data.aporteTotal)],
+      ['Saldo Gerado por Vendas', formatarMoeda(totalVendas)],
+    ],
+    foot: [['TOTAL PARA ALOCAR', formatarMoeda(aporteComVendas)]],
+    headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+    bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
+    footStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    alternateRowStyles: { fillColor: [240, 253, 244] },
+    margin: { left: 14, right: 14 },
+    tableWidth: pageW - 28,
   });
 
-  Y += 30;
+  Y = (doc as any).lastAutoTable.finalY + 12;
 
-  // ─── DISTRIBUTION CARDS ──────────────────────────────────────────────────
+  // ─── DISTRIBUIÇÃO NOS OBJETIVOS ──────────────────────────────────────────
+  doc.setTextColor(30, 41, 59);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DISTRIBUIÇÃO NOS OBJETIVOS DE VIDA', 14, Y);
+  Y += 4;
+
   const dists = [
     { label: 'Reserva Estratégica', val: data.distribuicao.reserva, ativo: data.distribuicao.ativoReserva, acc: data.distribuicao.acumuladoReserva },
     { label: 'Projetos de Vida', val: data.distribuicao.projetos, ativo: data.distribuicao.ativoProjetos, acc: data.distribuicao.acumuladoProjetos },
@@ -365,47 +379,51 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
 
   if (dists.length > 0) {
     const dW = dists.length === 1 ? pageW - M * 2 : (pageW - M * 2 - (dists.length - 1) * 4) / dists.length;
-    const cardH = dists.some(d => d.acc !== undefined && d.val > 0) ? 42 : 30;
+    const cardH = dists.some(d => d.acc !== undefined && d.val > 0) ? 32 : 24;
     dists.forEach((d, i) => {
       const cx = M + i * (dW + 4);
-      glassCard(doc, cx, Y, dW, cardH, LG.SURFACE);
-      label(doc, d.label, cx + 6, Y + 8);
-      value(doc, formatarMoeda(d.val), cx + 6, Y + 18, 11, LG.EMERALD as any);
+      glassCard(doc, cx, Y, dW, cardH, LG.PANEL);
+      label(doc, d.label, cx + 6, Y + 6);
+      value(doc, formatarMoeda(d.val), cx + 6, Y + 14, 10, LG.EMERALD as any);
       if (d.ativo) {
-        doc.setFontSize(7);
+        doc.setFontSize(6.5);
         doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
         doc.setFont('helvetica', 'normal');
-        doc.text(`→ ${d.ativo}`, cx + 6, Y + 27);
+        doc.text(`→ ${d.ativo}`, cx + 6, Y + 21);
       }
       if (d.acc !== undefined && d.val > 0) {
         const perc = Math.min(100, Math.round((d.acc / d.val) * 100));
-        const barY = d.ativo ? Y + 33 : Y + 28;
+        const barY = d.ativo ? Y + 25 : Y + 21;
         doc.setFillColor(LG.BORDER[0], LG.BORDER[1], LG.BORDER[2]);
-        doc.roundedRect(cx + 6, barY + 3, dW - 12, 3, 1.5, 1.5, 'F');
+        doc.roundedRect(cx + 6, barY, dW - 12, 2.5, 1, 1, 'F');
         if (perc > 0) {
           doc.setFillColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
-          doc.roundedRect(cx + 6, barY + 3, (dW - 12) * (perc / 100), 3, 1.5, 1.5, 'F');
+          doc.roundedRect(cx + 6, barY, (dW - 12) * (perc / 100), 2.5, 1, 1, 'F');
         }
-        doc.setFontSize(7);
+        doc.setFontSize(6);
         doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
-        doc.text(`${perc}% concluído`, cx + dW - 6, barY + 1, { align: 'right' });
+        doc.text(`${perc}% concluído`, cx + dW - 6, barY - 1, { align: 'right' });
       }
     });
-    Y += cardH + 6;
+    Y += cardH + 12;
   }
 
   // ─── ASSET MIX CHART ──────────────────────────────────────────────────
   if (data.assetMix && data.assetMix.length > 0) {
-    emeraldBar(doc, M, Y, 30);
-    Y += 5;
-    doc.setFontSize(10);
+    if (Y > pageH - 45) {
+      doc.addPage();
+      paintBg();
+      Y = M + 10;
+    }
+
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
-    doc.text('ASSET MIX: ESTRATÉGIA VS ATUAL', M, Y);
+    doc.text('ASSET MIX: ESTRATÉGIA VS ATUAL', 14, Y);
     Y += 6;
 
     const chartW = pageW - M * 2;
-    const rowH = 14;
+    const rowH = 10;
     const chartH = data.assetMix.length * rowH + 10;
 
     if (Y + chartH > pageH - 25) {
@@ -414,8 +432,13 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
       Y = M + 10;
     }
 
-    glassCard(doc, M, Y, chartW, chartH, LG.PANEL);
-    let barY = Y + 8;
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.roundedRect(M, Y, chartW, chartH, 2, 2, 'F');
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.setLineWidth(0.2);
+    doc.roundedRect(M, Y, chartW, chartH, 2, 2, 'S');
+
+    let barY = Y + 6;
 
     const totalIf = data.assetMix.reduce((sum: number, c: any) => sum + (c.saldo_atual || 0) + (c.aporte_sugerido || 0), 0);
 
@@ -425,39 +448,39 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
       const atualPerc = totalIf > 0 ? (atualValor / totalIf) * 100 : 0;
 
       // Label
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
-      doc.text(c.classe.substring(0, 18).toUpperCase(), M + 4, barY + 4);
+      doc.setTextColor(51, 65, 85); // slate-700
+      doc.text(c.classe.substring(0, 18).toUpperCase(), M + 4, barY + 3.5);
 
       // Bars area starts at X = M + 45
       const barAreaX = M + 50;
-      const barMaxW = chartW - 60;
+      const barMaxW = chartW - 75;
 
       // Draw Target (hollow border)
       const alvoW = barMaxW * (alvo / 100);
       if (alvoW > 0) {
-        doc.setDrawColor(LG.BORDER[0], LG.BORDER[1], LG.BORDER[2]);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(barAreaX, barY, alvoW, 4, 1, 1, 'S');
+        doc.setDrawColor(148, 163, 184); // slate-400
+        doc.setLineWidth(0.3);
+        doc.roundedRect(barAreaX, barY, alvoW, 3.5, 0.5, 0.5, 'S');
       }
 
       // Draw Current (filled)
       const atualW = barMaxW * (atualPerc / 100);
       if (atualW > 0) {
-        doc.setFillColor(LG.EMERALD_D[0], LG.EMERALD_D[1], LG.EMERALD_D[2]);
-        doc.roundedRect(barAreaX, barY + 1, atualW, 2, 0.5, 0.5, 'F');
+        doc.setFillColor(16, 185, 129); // emerald-500
+        doc.roundedRect(barAreaX, barY + 0.5, atualW, 2.5, 0.5, 0.5, 'F');
       }
 
       // Value text
-      doc.setFontSize(7);
-      doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
-      doc.text(`${atualPerc.toFixed(1)}% (Alvo: ${alvo}%)`, barAreaX + Math.max(alvoW, atualW) + 2, barY + 3);
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text(`${atualPerc.toFixed(1)}% (Alvo: ${alvo}%)`, barAreaX + Math.max(alvoW, atualW) + 2, barY + 2.5);
 
       barY += rowH;
     });
 
-    Y += chartH + 8;
+    Y += chartH + 12;
   }
 
   // ─── BUY ORDERS — per class ───────────────────────────────────────────────
@@ -503,9 +526,9 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
         ]),
         theme: 'plain',
         headStyles: {
-          fillColor: LG.PANEL,
-          textColor: LG.MUTED,
-          fontSize: 7.5,
+          fillColor: LG.EMERALD,
+          textColor: LG.WHITE,
+          fontSize: 8,
           fontStyle: 'bold',
           cellPadding: { top: 3, bottom: 3, left: 4, right: 4 },
         },
@@ -519,12 +542,12 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
           fillColor: LG.PANEL,
         },
         columnStyles: {
-          2: { halign: 'right', textColor: LG.EMERALD, fontStyle: 'bold' },
+          2: { halign: 'right', textColor: LG.TEXT, fontStyle: 'bold' },
           3: { halign: 'right' },
         },
         margin: { left: M, right: M },
-        tableLineColor: LG.BORDER,
-        tableLineWidth: 0.2,
+        tableLineColor: LG.PANEL,
+        tableLineWidth: 0,
       });
 
       Y = (doc as any).lastAutoTable.finalY + 8;

@@ -40,21 +40,33 @@ interface ManualOverride {
 
 const PriceInputCell = ({ initialValue, onConfirm, prefix = "R$" }: { initialValue: number, onConfirm: (val: number) => void, prefix?: string }) => {
   const [display, setDisplay] = useState<string>('');
+  const [currentValue, setCurrentValue] = useState<number>(initialValue);
 
   useEffect(() => {
     setDisplay(initialValue > 0 ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(initialValue) : '');
+    setCurrentValue(initialValue);
   }, [initialValue]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      // Evita disparar updates iniciais redundantes
+      if (currentValue !== initialValue) {
+        onConfirm(currentValue);
+      }
+    }, 2000);
+    return () => clearTimeout(handler);
+  }, [currentValue, initialValue, onConfirm]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, "");
     if (!val) {
       setDisplay('');
-      onConfirm(0);
+      setCurrentValue(0);
       return;
     }
     const num = parseInt(val) / 100;
     setDisplay(new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(num));
-    onConfirm(num);
+    setCurrentValue(num); // Apenas atualiza estado local; debounce envia o onConfirm depois
   };
 
   return (
