@@ -389,8 +389,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       estrategia: modelosDisponiveis.find(m => m.id === estrategiaId)?.nome || 'N/A',
       tese: tesesDisponiveis.find(t => t.id === teseId)?.nome || 'N/A',
       faixa: faixaAplicada?.nome || '',
-      aporteTotal: aporte + totalVendas,
-      assetMix: rebateClasses,
+      aporteTotal: aporte,
+      totalVendas: totalVendas,
+      assetMix: rebateClasses.map(c => ({
+        ...c,
+        cor: distribuicaoAtivos?.find(d => d.classe === c.classe)?.cor || '#10b981'
+      })),
+      reservaAlloc,
+      projetosAlloc,
       distribuicao: {
         reserva: resumo.reserva,
         projetos: resumo.projetos,

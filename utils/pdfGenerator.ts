@@ -163,6 +163,9 @@ interface ReportData {
   tese: string;
   faixa?: string;
   aporteTotal: number;
+  totalVendas?: number;
+  reservaAlloc?: any[];
+  projetosAlloc?: any[];
   distribuicao: {
     reserva: number;
     projetos: number;
@@ -177,6 +180,7 @@ interface ReportData {
     saldo_atual: number;
     alvo_perc: number;
     aporte_sugerido: number;
+    cor?: string;
   }[];
   ordensCompra: any[];
   ordensVenda: any[];
@@ -239,68 +243,66 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
     doc.setFillColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
     doc.rect(0, 0, pageW, 28, 'F');
   };
+
+  const addPageHeader = () => {
+    paintBg();
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PROTOCOLO DE ALOCAÇÃO MENSAL', 14, 18);
+  };
+
   paintBg();
 
   // ─── PAGE 1 HEADER ───────────────────────────────────────────────────────
-  // Logo / branding strip
-  doc.setFillColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
-  doc.rect(0, 0, 4, 55, 'F'); // left accent stripe
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PROTOCOLO DE ALOCAÇÃO MENSAL', pageW / 2, 12, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Relatório Estratégico de Investimentos — FinPlan Pro', pageW / 2, 20, { align: 'center' });
 
   // Planner photo (circular placeholder or actual)
   const photoUrl = data.planejador?.user_metadata?.avatar_url || data.planejador?.avatar_url;
-  const photoSize = 28;
-  const photoX = M + 4;
-  const photoY = 12;
+  const photoSize = 14;
+  const photoX = M;
+  let Y = 36;
+
   try {
     if (photoUrl) {
-      // Use ui-avatars as fallback if we can't directly embed URL
-      const plannerName = data.planejador?.user_metadata?.full_name || data.planejador?.full_name || 'P';
+      // Use fallback se preferir
+      const plannerName = data.planejador?.user_metadata?.full_name || data.planejador?.nome || data.planejador?.full_name || 'P';
       const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(plannerName)}&background=10b981&color=fff&size=128`;
-      doc.addImage(avatarUrl, 'PNG', photoX, photoY, photoSize, photoSize, '', 'FAST');
+      doc.addImage(avatarUrl, 'PNG', photoX, Y, photoSize, photoSize, '', 'FAST');
     } else {
       // Fallback circle
       doc.setFillColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
-      doc.circle(photoX + photoSize / 2, photoY + photoSize / 2, photoSize / 2, 'F');
-      doc.setFontSize(12);
+      doc.circle(photoX + photoSize / 2, Y + photoSize / 2, photoSize / 2, 'F');
+      doc.setFontSize(6);
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      const initials = (data.planejador?.user_metadata?.full_name || data.planejador?.full_name || 'P').split(' ').map((n: string) => n[0]).join('').substring(0, 2);
-      doc.text(initials.toUpperCase(), photoX + photoSize / 2, photoY + photoSize / 2 + 4, { align: 'center' });
+      const initials = (data.planejador?.user_metadata?.full_name || data.planejador?.nome || data.planejador?.full_name || 'P').split(' ').map((n: string) => n[0]).join('').substring(0, 2);
+      doc.text(initials.toUpperCase(), photoX + photoSize / 2, Y + photoSize / 2 + 2, { align: 'center' });
     }
   } catch { }
 
   // Planner info block (next to photo)
-  const infoX = photoX + photoSize + 8;
-  doc.setFontSize(15);
+  const infoX = photoX + photoSize + 4;
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
-  doc.text(data.planejador?.user_metadata?.full_name || data.planejador?.full_name || 'Planejador', infoX, 24);
+  doc.text(data.planejador?.user_metadata?.full_name || data.planejador?.nome || data.planejador?.full_name || 'Planejador', infoX, Y + 5);
 
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
-  const planEmail = data.planejador?.email || data.planejador?.user_metadata?.email || '';
-  const planPhone = data.planejador?.user_metadata?.phone || data.planejador?.phone || '';
-  if (planEmail) doc.text(`✉  ${planEmail}`, infoX, 31);
-  if (planPhone) doc.text(`✆  ${planPhone}`, infoX, 37);
+  // Use 'email_contato' if present, otherwise just email
+  const planEmail = data.planejador?.email_contato || data.planejador?.email || data.planejador?.user_metadata?.email || '';
+  const planPhone = data.planejador?.telefone || data.planejador?.user_metadata?.phone || data.planejador?.phone || '';
+  if (planEmail || planPhone) doc.text(`${planEmail}  |  ${planPhone}`, infoX, Y + 11);
 
-  // Right side: document title & date
-  doc.setFontSize(8);
-  doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
-  doc.text('PROTOCOLO DE ALOCAÇÃO', pageW - M, 20, { align: 'right' });
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
-  doc.text('MENSAL', pageW - M, 29, { align: 'right' });
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
-  doc.text(data.dataGeracao, pageW - M, 36, { align: 'right' });
-
-  // divider
-  emeraldBar(doc, M, 55, pageW - M * 2);
-
-  let Y = 63;
+  Y += 24;
 
   // ─── DADOS DO CLIENTE & ESTRATÉGIA ───────────────────────────────────────
   doc.setTextColor(30, 41, 59);
@@ -313,107 +315,160 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
   doc.setTextColor(71, 85, 105);
 
   const dadosEstrategia: [string, string][] = [
-    ['Cliente', data.cliente?.nome || 'N/A'],
-    ['Estratégia Base', data.estrategia || 'N/A'],
-    ['Faixa de Alocação', data.faixa || 'N/A'],
+    ['CLIENTE', (data.cliente?.nome || 'N/A').toUpperCase()],
+    ['ESTRATÉGIA BASE', (data.estrategia || 'N/A').toUpperCase()],
+    ['TESE DE INVESTIMENTO', (data.tese || 'N/A').toUpperCase()],
+    ['FAIXA DE ALOCAÇÃO', (data.faixa || 'N/A').toUpperCase()],
   ];
 
   dadosEstrategia.forEach(([k, v], i) => {
     doc.setFont('helvetica', 'bold');
     doc.text(`${k}:`, 14, Y + i * 5.5);
     doc.setFont('helvetica', 'normal');
-    doc.text(v, 52, Y + i * 5.5);
+    doc.text(v, 58, Y + i * 5.5);
   });
 
-  Y += dadosEstrategia.length * 5.5 + 4;
+  Y += dadosEstrategia.length * 5.5 + 8;
 
-  // Tese
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Tese de Investimento:`, 14, Y);
-  doc.setFont('helvetica', 'normal');
-  const teseLines = doc.splitTextToSize(data.tese || 'Não informada.', pageW - M * 2 - 38);
-  doc.text(teseLines, 52, Y);
 
-  Y += (teseLines.length * 4) + 12;
 
   // ─── RESUMO DE APORTES E VENDAS ──────────────────────────────────────────
-  const totalVendas = (data.ordensVenda || []).reduce((s: number, o: any) => s + (o.valor || 0), 0);
+  const totalVendas = data.totalVendas || 0;
   const aporteComVendas = data.aporteTotal + totalVendas;
 
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('RECURSOS DISPONÍVEIS E ALOCAÇÃO DE ORIGEM', 14, Y);
+  doc.text('RECURSOS DISPONÍVEIS PARA ALOCAÇÃO', 14, Y);
   Y += 4;
 
-  (doc as any).autoTable({
-    startY: Y,
-    head: [['Item', 'Valor (R$)']],
-    body: [
-      ['Aporte Mensal / Novo Fundo', formatarMoeda(data.aporteTotal)],
-      ['Saldo Gerado por Vendas', formatarMoeda(totalVendas)],
-    ],
-    foot: [['TOTAL PARA ALOCAR', formatarMoeda(aporteComVendas)]],
-    headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold', fontSize: 8 },
-    bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
-    footStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    alternateRowStyles: { fillColor: [240, 253, 244] },
-    margin: { left: 14, right: 14 },
-    tableWidth: pageW - 28,
+  const boxesAvailable = [
+    { label: 'Aporte Novo', val: formatarMoeda(data.aporteTotal), color: LG.EMERALD_D },
+    { label: 'Saldo de Vendas', val: formatarMoeda(totalVendas), color: totalVendas > 0 ? LG.ROSE : LG.MUTED },
+    { label: 'Total Disponível', val: formatarMoeda(aporteComVendas), color: LG.TEXT },
+  ];
+  const boxW = (pageW - M * 2 - 8) / 3;
+
+  boxesAvailable.forEach((b, i) => {
+    const cx = M + i * (boxW + 4);
+    glassCard(doc, cx, Y, boxW, 20, LG.PANEL); // A lighter background
+    label(doc, b.label, cx + 4, Y + 6);
+    value(doc, b.val, cx + 4, Y + 15, 11, b.color as any);
   });
 
-  Y = (doc as any).lastAutoTable.finalY + 12;
+  Y += 28;
 
-  // ─── DISTRIBUIÇÃO NOS OBJETIVOS ──────────────────────────────────────────
+  // ─── DISTRIBUIÇÃO POR OBJETIVO ──────────────────────────────────────────
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('DISTRIBUIÇÃO NOS OBJETIVOS DE VIDA', 14, Y);
+  doc.text('DISTRIBUIÇÃO POR OBJETIVO', 14, Y);
   Y += 4;
 
   const dists = [
-    { label: 'Reserva Estratégica', val: data.distribuicao.reserva, ativo: data.distribuicao.ativoReserva, acc: data.distribuicao.acumuladoReserva },
-    { label: 'Projetos de Vida', val: data.distribuicao.projetos, ativo: data.distribuicao.ativoProjetos, acc: data.distribuicao.acumuladoProjetos },
-    { label: 'Independência', val: data.distribuicao.independencia, ativo: undefined, acc: undefined },
+    { label: 'Reserva Estratégica', val: data.distribuicao.reserva, list: data.reservaAlloc || [] },
+    { label: 'Projetos de Vida', val: data.distribuicao.projetos, list: data.projetosAlloc || [] },
+    { label: 'Independência', val: data.distribuicao.independencia, list: (data.assetMix || []).filter(c => c.aporte_sugerido > 0).map(c => ({ nome: c.classe, valor: c.aporte_sugerido })) },
   ].filter(d => d.val > 0);
 
   if (dists.length > 0) {
     const dW = dists.length === 1 ? pageW - M * 2 : (pageW - M * 2 - (dists.length - 1) * 4) / dists.length;
-    const cardH = dists.some(d => d.acc !== undefined && d.val > 0) ? 32 : 24;
+    let maxLines = 0;
+    dists.forEach(d => { if (d.list.length > maxLines) maxLines = d.list.length; });
+
+    // Altura dinâmica baseada na quantidade de itens listados
+    const cardH = 26 + (Math.min(maxLines, 8) * 4); // Limitamos a 8 itens na box
+
     dists.forEach((d, i) => {
       const cx = M + i * (dW + 4);
       glassCard(doc, cx, Y, dW, cardH, LG.PANEL);
-      label(doc, d.label, cx + 6, Y + 6);
-      value(doc, formatarMoeda(d.val), cx + 6, Y + 14, 10, LG.EMERALD as any);
-      if (d.ativo) {
-        doc.setFontSize(6.5);
-        doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`→ ${d.ativo}`, cx + 6, Y + 21);
-      }
-      if (d.acc !== undefined && d.val > 0) {
-        const perc = Math.min(100, Math.round((d.acc / d.val) * 100));
-        const barY = d.ativo ? Y + 25 : Y + 21;
-        doc.setFillColor(LG.BORDER[0], LG.BORDER[1], LG.BORDER[2]);
-        doc.roundedRect(cx + 6, barY, dW - 12, 2.5, 1, 1, 'F');
-        if (perc > 0) {
-          doc.setFillColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
-          doc.roundedRect(cx + 6, barY, (dW - 12) * (perc / 100), 2.5, 1, 1, 'F');
-        }
-        doc.setFontSize(6);
-        doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
-        doc.text(`${perc}% concluído`, cx + dW - 6, barY - 1, { align: 'right' });
+      label(doc, d.label, cx + 4, Y + 6);
+      value(doc, formatarMoeda(d.val), cx + 4, Y + 14, 10, LG.EMERALD as any);
+
+      // List resources
+      let ly = Y + 20;
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'bold');
+
+      d.list.slice(0, 8).forEach((item: any) => {
+        doc.setTextColor(100, 116, 139);
+        const nm = (item.nome || item.classe || '').substring(0, 15).toUpperCase();
+        doc.text(nm, cx + 4, ly);
+        doc.setTextColor(16, 185, 129);
+        doc.text(formatarMoeda(item.valor || 0), cx + dW - 4, ly, { align: 'right' });
+        ly += 4;
+      });
+      if (d.list.length > 8) {
+        doc.setTextColor(100, 116, 139);
+        doc.text(`+ ${d.list.length - 8} itens`, cx + 4, ly);
       }
     });
     Y += cardH + 12;
+  }
+
+  // ─── PROGRESSO: RESERVA E PROJETOS ──────────────────────────────────────
+  if (data.distribuicao.reserva > 0 || data.distribuicao.projetos > 0) {
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ACOMPANHAMENTO DE PROGRESSO', 14, Y);
+    Y += 6;
+
+    if (data.distribuicao.reserva > 0) {
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Reserva de Emergência', M, Y + 4);
+
+      const accRes = data.distribuicao.acumuladoReserva || 0;
+      const alvoRes = data.distribuicao.reserva;
+      const percRes = Math.min(100, (accRes / alvoRes) * 100);
+
+      doc.text(`${formatarMoeda(accRes)}  /  ${formatarMoeda(alvoRes)}`, pageW - M, Y + 4, { align: 'right' });
+      Y += 6;
+      doc.setFillColor(226, 232, 240);
+      doc.roundedRect(M, Y, pageW - M * 2, 4, 2, 2, 'F');
+      if (percRes > 0) {
+        doc.setFillColor(16, 185, 129);
+        doc.roundedRect(M, Y, (pageW - M * 2) * (percRes / 100), 4, 2, 2, 'F');
+      }
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${percRes.toFixed(1)}%`, pageW - M, Y + 8, { align: 'right' });
+      Y += 10;
+    }
+
+    if (data.distribuicao.projetos > 0) {
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Projetos de Vida', M, Y + 4);
+
+      const accProj = data.distribuicao.acumuladoProjetos || 0;
+      const alvoProj = data.distribuicao.projetos;
+      const percProj = Math.min(100, (accProj / alvoProj) * 100);
+
+      doc.text(`${formatarMoeda(accProj)}  /  ${formatarMoeda(alvoProj)}`, pageW - M, Y + 4, { align: 'right' });
+      Y += 6;
+      doc.setFillColor(226, 232, 240);
+      doc.roundedRect(M, Y, pageW - M * 2, 4, 2, 2, 'F');
+      if (percProj > 0) {
+        doc.setFillColor(16, 185, 129);
+        doc.roundedRect(M, Y, (pageW - M * 2) * (percProj / 100), 4, 2, 2, 'F');
+      }
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${percProj.toFixed(1)}%`, pageW - M, Y + 8, { align: 'right' });
+      Y += 10;
+    }
   }
 
   // ─── ASSET MIX CHART ──────────────────────────────────────────────────
   if (data.assetMix && data.assetMix.length > 0) {
     if (Y > pageH - 45) {
       doc.addPage();
-      paintBg();
-      Y = M + 10;
+      addPageHeader();
+      Y = 40;
     }
 
     doc.setTextColor(30, 41, 59);
@@ -428,8 +483,8 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
 
     if (Y + chartH > pageH - 25) {
       doc.addPage();
-      paintBg();
-      Y = M + 10;
+      addPageHeader();
+      Y = 40;
     }
 
     doc.setFillColor(248, 250, 252); // slate-50
@@ -485,13 +540,15 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
 
   // ─── BUY ORDERS — per class ───────────────────────────────────────────────
   if (data.ordensCompra && data.ordensCompra.length > 0) {
-    emeraldBar(doc, M, Y, 30);
-    Y += 5;
-    doc.setFontSize(10);
+    doc.addPage();
+    addPageHeader();
+    Y = 40;
+
+    doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
     doc.text('ORDENS DE COMPRA', M, Y);
-    Y += 6;
+    Y += 8;
 
     // Group by class
     const classeMap: Record<string, any[]> = {};
@@ -503,14 +560,14 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
 
     for (const [classe, ordens] of Object.entries(classeMap)) {
       // Check page space
-      if (Y > pageH - 60) {
+      if (Y > pageH - 45) {
         doc.addPage();
-        paintBg();
-        Y = M + 10;
+        addPageHeader();
+        Y = 40;
       }
 
       // Class header
-      doc.setFontSize(8);
+      doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
       doc.text(classe.toUpperCase(), M, Y + 4);
@@ -556,20 +613,15 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
 
   // ─── SELL ORDERS ─────────────────────────────────────────────────────────
   if (data.ordensVenda && data.ordensVenda.length > 0) {
-    if (Y > pageH - 60) {
-      doc.addPage();
-      paintBg();
-      Y = M + 10;
-    }
+    doc.addPage();
+    addPageHeader();
+    Y = 40;
 
-    doc.setFillColor(LG.ROSE[0], LG.ROSE[1], LG.ROSE[2]);
-    doc.roundedRect(M, Y, 30, 1.5, 0.75, 0.75, 'F');
-    Y += 5;
-    doc.setFontSize(10);
+    doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(LG.ROSE[0], LG.ROSE[1], LG.ROSE[2]);
+    doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
     doc.text('ORDENS DE VENDA / DESINVESTIMENTO', M, Y);
-    Y += 6;
+    Y += 8;
 
     (doc as any).autoTable({
       startY: Y,
@@ -582,11 +634,11 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
       ]),
       theme: 'plain',
       headStyles: {
-        fillColor: LG.PANEL,
-        textColor: LG.MUTED,
-        fontSize: 7.5,
+        fillColor: LG.ROSE,
+        textColor: LG.WHITE,
+        fontSize: 8,
         fontStyle: 'bold',
-        cellPadding: { top: 3, bottom: 3, left: 4, right: 4 },
+        cellPadding: { top: 4, bottom: 4, left: 4, right: 4 },
       },
       bodyStyles: {
         fillColor: LG.SURFACE,
@@ -598,31 +650,35 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
         fillColor: LG.PANEL,
       },
       columnStyles: {
-        3: { halign: 'right', textColor: [LG.ROSE[0], LG.ROSE[1], LG.ROSE[2]], fontStyle: 'bold' },
+        3: { halign: 'right', textColor: LG.TEXT, fontStyle: 'bold' },
       },
       margin: { left: M, right: M },
-      tableLineColor: LG.BORDER,
-      tableLineWidth: 0.2,
+      tableLineColor: LG.PANEL,
+      tableLineWidth: 0,
     });
 
     Y = (doc as any).lastAutoTable.finalY + 8;
   }
 
   // ─── FOOTER on all pages ─────────────────────────────────────────────────
-  const pageCount = (doc as any).internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
+  const pageCountLocal = (doc as any).internal.getNumberOfPages();
+  for (let i = 1; i <= pageCountLocal; i++) {
     doc.setPage(i);
-    doc.setDrawColor(LG.BORDER[0], LG.BORDER[1], LG.BORDER[2]);
+    doc.setDrawColor(226, 232, 240); // LG.BORDER light
     doc.setLineWidth(0.3);
     doc.line(M, pageH - 12, pageW - M, pageH - 12);
     doc.setFontSize(7);
-    doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
+    doc.setTextColor(100, 116, 139); // LG.MUTED light
     doc.setFont('helvetica', 'normal');
-    doc.text(
-      `${data.planejador?.user_metadata?.full_name || data.planejador?.full_name || ''} • ${planEmail || ''}`,
-      M, pageH - 8
-    );
-    doc.text(`${i} / ${pageCount}`, pageW - M, pageH - 8, { align: 'right' });
+
+    const email = data.planejador?.email_contato || data.planejador?.email || data.planejador?.user_metadata?.email || '';
+    const plannerName = data.planejador?.user_metadata?.full_name || data.planejador?.nome || data.planejador?.full_name || '';
+
+    if (plannerName || email) {
+      doc.text(`${plannerName} • ${email}`, M, pageH - 8);
+    }
+
+    doc.text(`${i} / ${pageCountLocal}`, pageW - M, pageH - 8, { align: 'right' });
   }
 
   doc.save(`Protocolo_Alocacao_${(data.cliente?.nome || 'cliente').replace(/\s+/g, '_')}_${data.dataGeracao.replace(/\//g, '-')}.pdf`);
