@@ -16,6 +16,9 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
   // Tipo e status
   const [tipo, setTipo] = useState<ContratoTipo>(contratoInicial?.tipo || 'planejamento');
   const [status, setStatus] = useState<ContratoStatus>(contratoInicial?.status || 'ativo');
+  const [dataCancelamento, setDataCancelamento] = useState(
+    contratoInicial?.status === 'cancelado' ? (contratoInicial?.data_fim || '') : new Date().toISOString().split('T')[0]
+  );
 
   // Padrões de contrato (carregados do Supabase)
   const [padroes, setPadroes] = useState<any[]>([]);
@@ -110,6 +113,14 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
     const validacao = validarContrato({ tipo, valor: numValor, data_inicio: dataInicio });
     if (!validacao.valido) return setError(validacao.erros[0]);
 
+    let dataFim = status === 'cancelado' ? dataCancelamento : null;
+    if (status !== 'cancelado' && dataInicio && prazoMeses) {
+      const [y, m, d] = dataInicio.split('-').map(Number);
+      const dtInicio = new Date(y, m - 1, d);
+      dtInicio.setMonth(dtInicio.getMonth() + (parseInt(prazoMeses) || 12));
+      dataFim = dtInicio.toISOString().split('T')[0];
+    }
+
     try {
       setLoading(true);
       await onSuccess({
@@ -120,11 +131,12 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
         valor: numValor,
         data_inicio: dataInicio,
         status,
+        data_fim: dataFim,
         forma_pagamento: formaPagamento,
         prazo_meses: parseInt(prazoMeses) || 12,
         repasse_percentual: parseFloat(repassePercentual) || 100,
         prazo_recebimento_dias: parseInt(prazoRecebimento) || 30,
-        padrao_id: tipo === 'extra' ? (padraoSelecionadoId || null) : null,
+        padrao_id: padraoSelecionadoId || null,
       });
     } catch (err: any) {
       setError(err.message);
@@ -149,14 +161,37 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
         </div>
         <div>
           <label className={labelStyle}>Status</label>
-          <select value={status} onChange={e => setStatus(e.target.value as ContratoStatus)} className={inputStyle}>
+          <select
+            value={status}
+            onChange={e => {
+              const newStatus = e.target.value as ContratoStatus;
+              setStatus(newStatus);
+              if (newStatus === 'cancelado' && !dataCancelamento) {
+                setDataCancelamento(new Date().toISOString().split('T')[0]);
+              }
+            }}
+            className={inputStyle}
+          >
             <option value="ativo">Ativo</option>
-            <option value="inativo">Inativo</option>
             <option value="concluido">Concluído</option>
             <option value="cancelado">Cancelado</option>
           </select>
         </div>
       </div>
+
+      {status === 'cancelado' && (
+        <div className="bg-rose-50/50 p-4 rounded-2xl border border-rose-100/50 my-4">
+          <label className={`${labelStyle} !text-rose-500`}>Data Efetiva de Cancelamento</label>
+          <input
+            type="date"
+            required
+            value={dataCancelamento}
+            onChange={e => setDataCancelamento(e.target.value)}
+            className={`${inputStyle} font-black border-rose-200 focus:border-rose-500 focus:ring-rose-500/10 text-rose-700 bg-white`}
+          />
+          <p className="text-[10px] text-rose-400 font-bold mt-2 ml-1">O motor de encerramento blindará parcelas passadas. Apenas as projeções após D+{(parseInt(prazoRecebimento) || 0)} desta data serão removidas.</p>
+        </div>
+      )}
 
       {/* Padrão de Contrato */}
       <div>

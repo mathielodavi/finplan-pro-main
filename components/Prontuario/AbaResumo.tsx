@@ -563,11 +563,19 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                       <label className={labelStyle}>Status do Acordo</label>
                       <select
                         value={formContrato.status}
-                        onChange={e => setFormContrato({ ...formContrato, status: e.target.value as any })}
+                        onChange={e => {
+                          const status = e.target.value as any;
+                          setFormContrato({
+                            ...formContrato,
+                            status,
+                            data_cancelamento: status === 'cancelado'
+                              ? (formContrato.data_cancelamento || new Date().toISOString().split('T')[0])
+                              : formContrato.data_cancelamento
+                          });
+                        }}
                         className={inputStyle}
                       >
                         <option value="ativo">Ativo</option>
-                        <option value="inativo">Inativo</option>
                         <option value="concluido">Concluído</option>
                         <option value="cancelado">Cancelado</option>
                       </select>
@@ -585,6 +593,22 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                         ))}
                       </select>
                     </div>
+                    {formContrato.status === 'cancelado' && (
+                      <div className="md:col-span-2 bg-rose-50/50 p-4 rounded-2xl border border-rose-100/50">
+                        <label className={`${labelStyle} !text-rose-500`}>Data Efetiva de Cancelamento</label>
+                        <div className="relative mt-1">
+                          <Calendar size={18} className="absolute left-4 top-3.5 text-rose-300" />
+                          <input
+                            type="date"
+                            required
+                            value={formContrato.data_cancelamento || ''}
+                            onChange={e => setFormContrato({ ...formContrato, data_cancelamento: e.target.value })}
+                            className={`${inputStyle} pl-12 font-black border-rose-200 focus:border-rose-500 focus:ring-rose-500/10 text-rose-700 bg-white`}
+                          />
+                        </div>
+                        <p className="text-[10px] text-rose-400 font-bold mt-2 ml-1">O motor de encerramento blindará cancelamentos de parcelas passadas. Apenas parcelas com repasse posterior ao prazo D+{formContrato.prazo_recebimento_dias || 0} dias da data escolhida acima serão descartadas.</p>
+                      </div>
+                    )}
                     <div>
                       <label className={labelStyle}>Data Base do Acordo</label>
                       <div className="relative">
