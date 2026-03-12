@@ -365,16 +365,26 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
     const totalVendas = Object.values(vendas).reduce((a, b: any) => a + b.valor, 0);
 
+    const saldoAtualReserva = (ativos || []).filter((a: any) => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'reserva')).reduce((acc: number, a: any) => acc + ((a.valor_atual || 0) * (a.distribuicao_objetivos.find((o: any) => o.tipo === 'reserva')?.percentual / 100)), 0);
+    const acumuladoReserva = saldoAtualReserva + totalAlocadoReserva;
+
+    const saldoAtualProjetos = (ativos || []).filter((a: any) => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'projetos')).reduce((acc: number, a: any) => acc + ((a.valor_atual || 0) * (a.distribuicao_objetivos.find((o: any) => o.tipo === 'projetos')?.percentual / 100)), 0);
+    const acumuladoProjetos = saldoAtualProjetos + totalAlocadoProjetos;
+
     gerarRelatorioAportePDF({
       cliente,
       planejador,
       estrategia: modelosDisponiveis.find(m => m.id === estrategiaId)?.nome || 'N/A',
       tese: tesesDisponiveis.find(t => t.id === teseId)?.nome || 'N/A',
+      faixa: faixaAplicada?.nome || '',
       aporteTotal: aporte + totalVendas,
+      assetMix: rebateClasses,
       distribuicao: {
         reserva: resumo.reserva,
         projetos: resumo.projetos,
-        independencia: resumo.independencia
+        independencia: resumo.independencia,
+        acumuladoReserva,
+        acumuladoProjetos
       },
       ordensCompra,
       ordensVenda,
@@ -471,11 +481,11 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
             </div>
 
             <button
-              onClick={handleCalcularClasses}
+              onClick={() => setStep(2)}
               disabled={aporte <= 0 || !estrategiaId || loading}
               className="w-full py-6 bg-emerald-600 text-white font-black rounded-2xl shadow-xl uppercase text-[11px] tracking-[0.2em] hover:bg-emerald-700 transition-all disabled:opacity-50"
             >
-              {loading ? 'Processando...' : 'Iniciar Protocolo de Distribuição'}
+              Confirmar Aporte e Avançar
             </button>
           </div>
         </div>
@@ -494,6 +504,10 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                 <thead>
                   <tr className="border-b border-slate-100">
                     <th className="pb-3 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Ativo</th>
+                    <th className="pb-3 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Controle</th>
+                    <th className="pb-3 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Aloc. Classe</th>
+                    <th className="pb-3 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Desvio Meta</th>
+                    <th className="pb-3 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Objetivo</th>
                     <th className="pb-3 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Saldo</th>
                     <th className="pb-3 px-2 text-[9px] font-black text-rose-600 uppercase tracking-widest text-right">Valor Venda</th>
                     <th className="pb-3 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Destino do Saldo</th>
@@ -504,6 +518,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                   {(ativosComControle || []).filter((a: any) => a.valor_atual > 0.01).map((at: any) => {
                     const isVendendo = !!vendas[at.id];
                     const venda = vendas[at.id];
+                    const objetivo = (at.distribuicao_objetivos || [])[0]?.tipo || 'independencia';
                     const DESTINOS: { key: DestinoVenda; label: string; color: string }[] = [
                       { key: 'reserva', label: 'Reserva', color: 'bg-sky-50 text-sky-600 border-sky-200' },
                       { key: 'projetos', label: 'Projetos', color: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
@@ -515,6 +530,24 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                         <td className="py-3 px-2">
                           <p className="text-xs font-black text-slate-800 uppercase leading-none">{at.nome}</p>
                           <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">{at.ticker || at.cnpj || '---'}</p>
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[8px] font-black uppercase tracking-tighter ${at.statusControle === 'Ok' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : at.statusControle === 'Fora da estratégia' ? 'bg-rose-50 text-rose-600 border-rose-100' : at.statusControle === 'Fora da faixa' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
+                            {at.statusControle}
+                          </div>
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          <span className={`text-[10px] font-black ${at.temIndependencia ? 'text-slate-900' : 'text-slate-300'}`}>{at.pesoNaClasse.toFixed(1)}%</span>
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          {at.temIndependencia && at.metaAlvo > 0 ? (
+                            <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${Math.abs(at.desvio) <= 2 ? 'bg-slate-50 text-slate-400 border-slate-100' : at.desvio > 2 ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                              <span className="text-[8px] font-black uppercase tracking-tighter">{Math.abs(at.desvio) <= 2 ? 'OK' : `${at.desvio > 0 ? '+' : ''}${at.desvio.toFixed(1)}%`}</span>
+                            </div>
+                          ) : (<div className="h-1 w-4 bg-slate-100 rounded-full mx-auto" />)}
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          <span className="text-[8px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-1 rounded-md">{objetivo}</span>
                         </td>
                         <td className="py-3 px-2 text-right font-bold text-slate-600 text-xs">{formatarMoeda(at.valor_atual)}</td>
                         <td className="py-3 px-2 text-right">
@@ -625,81 +658,6 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
             <Landmark size={150} className="absolute -bottom-10 -right-10 text-white/5 pointer-events-none" />
           </div>
           <div className="space-y-4">
-            <div className="overflow-x-auto mt-4">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-slate-50">
-                    <th className="pb-4 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Ativo</th>
-                    <th className="pb-4 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Controle</th>
-                    <th className="pb-4 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Aloc. Classe</th>
-                    <th className="pb-4 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Desvio Meta</th>
-                    <th className="pb-4 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Objetivo</th>
-                    <th className="pb-4 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Saldo Atual</th>
-                    <th className="pb-4 px-2 text-[9px] font-black text-rose-600 uppercase tracking-widest text-right">Valor Venda</th>
-                    <th className="pb-4 px-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Ação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {(ativosComControle || []).filter((a: any) => a.valor_atual > 0.01).map((at: any) => {
-                    const isVendendo = !!vendas[at.id];
-                    const objetivo = (at.distribuicao_objetivos || [])[0]?.tipo || 'independencia';
-                    return (
-                      <tr key={at.id} className={`hover:bg-slate-50/50 transition-all ${isVendendo ? 'bg-rose-50/30' : ''}`}>
-                        <td className="py-4 px-2">
-                          <div>
-                            <p className="text-xs font-black text-slate-800 uppercase leading-none">{at.nome}</p>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">{at.ticker || at.cnpj || '---'}</p>
-                          </div>
-                        </td>
-                        <td className="py-4 px-2 text-center">
-                          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[9px] font-black uppercase ${at.statusControle === 'Ok' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : at.statusControle === 'Fora da estratégia' ? 'bg-rose-50 text-rose-600 border-rose-100' : at.statusControle === 'Fora da faixa' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
-                            {at.statusControle}
-                          </div>
-                        </td>
-                        <td className="py-4 px-2 text-center">
-                          <span className={`text-xs font-black ${at.temIndependencia ? 'text-slate-900' : 'text-slate-300'}`}>{at.pesoNaClasse.toFixed(1)}%</span>
-                        </td>
-                        <td className="py-4 px-2 text-center">
-                          {at.temIndependencia && at.metaAlvo > 0 ? (
-                            <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${Math.abs(at.desvio) <= 2 ? 'bg-slate-50 text-slate-400 border-slate-100' : at.desvio > 2 ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                              <span className="text-[9px] font-black uppercase tracking-tighter">{Math.abs(at.desvio) <= 2 ? 'OK' : `${at.desvio > 0 ? '+' : ''}${at.desvio.toFixed(1)}%`}</span>
-                            </div>
-                          ) : (<div className="h-1 w-4 bg-slate-100 rounded-full mx-auto" />)}
-                        </td>
-                        <td className="py-4 px-2 text-center">
-                          <span className="text-[9px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-1 rounded-md">{objetivo}</span>
-                        </td>
-                        <td className="py-4 px-2 text-right font-bold text-slate-600 text-xs">{formatarMoeda(at.valor_atual)}</td>
-                        <td className="py-4 px-2 text-right font-black text-rose-600 text-xs">
-                          {isVendendo ? (
-                            <input
-                              type="number"
-                              value={vendas[at.id].valor}
-                              onChange={e => setVendas({ ...vendas, [at.id]: { ...vendas[at.id], valor: parseFloat(e.target.value) || 0 } })}
-                              className="w-24 p-1 bg-white border border-rose-200 rounded text-right outline-none"
-                            />
-                          ) : '---'}
-                        </td>
-                        <td className="py-4 px-2 text-right">
-                          <button
-                            onClick={() => handleToggleVenda(at.id, at.valor_atual)}
-                            className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase transition-all border ${isVendendo ? 'bg-rose-500 text-white border-rose-600 shadow-sm' : 'bg-white text-slate-400 border-slate-100 hover:border-rose-300 hover:text-rose-500'}`}
-                          >
-                            {isVendendo ? 'Cancelar' : 'Vender'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {Object.keys(vendas).length > 0 && (
-                <div className="mt-6 p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex justify-between items-center">
-                  <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Saldo de vendas será reinvestido nos mesmos objetivos.</p>
-                  <button onClick={handleCalcularClasses} className="px-6 py-2 bg-emerald-600 text-white font-black rounded-xl text-[9px] uppercase tracking-widest shadow-md hover:bg-emerald-700 transition-all">Recalcular com Vendas</button>
-                </div>
-              )}
-            </div>
             {distribuicaoAtivos.map((classe, cIdx) => {
               const isClasseSkip = classe.valor_aporte_classe <= 0.01;
               return (
@@ -907,8 +865,9 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           </div>
           <div className="flex gap-4"><button onClick={() => setStep(6)} className="flex-1 py-5 font-black text-slate-400 border border-slate-200 rounded-2xl uppercase text-[10px]">Voltar ao Simulador</button><button onClick={handleFinalizarEfetivo} className="flex-[2] py-5 font-black text-white bg-emerald-600 rounded-2xl shadow-xl uppercase text-[10px] flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all">Finalizar e Sincronizar Carteira <ShoppingCart size={18} /></button></div>
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 };
 

@@ -169,7 +169,15 @@ interface ReportData {
     independencia: number;
     ativoReserva?: string;
     ativoProjetos?: string;
+    acumuladoReserva?: number;
+    acumuladoProjetos?: number;
   };
+  assetMix?: {
+    classe: string;
+    saldo_atual: number;
+    alvo_perc: number;
+    aporte_sugerido: number;
+  }[];
   ordensCompra: any[];
   ordensVenda: any[];
   dataGeracao: string;
@@ -350,16 +358,17 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
 
   // ─── DISTRIBUTION CARDS ──────────────────────────────────────────────────
   const dists = [
-    { label: 'Reserva Estratégica', val: data.distribuicao.reserva, ativo: data.distribuicao.ativoReserva },
-    { label: 'Projetos de Vida', val: data.distribuicao.projetos, ativo: data.distribuicao.ativoProjetos },
-    { label: 'Independência', val: data.distribuicao.independencia, ativo: undefined },
+    { label: 'Reserva Estratégica', val: data.distribuicao.reserva, ativo: data.distribuicao.ativoReserva, acc: data.distribuicao.acumuladoReserva },
+    { label: 'Projetos de Vida', val: data.distribuicao.projetos, ativo: data.distribuicao.ativoProjetos, acc: data.distribuicao.acumuladoProjetos },
+    { label: 'Independência', val: data.distribuicao.independencia, ativo: undefined, acc: undefined },
   ].filter(d => d.val > 0);
 
   if (dists.length > 0) {
     const dW = dists.length === 1 ? pageW - M * 2 : (pageW - M * 2 - (dists.length - 1) * 4) / dists.length;
+    const cardH = dists.some(d => d.acc !== undefined && d.val > 0) ? 42 : 30;
     dists.forEach((d, i) => {
       const cx = M + i * (dW + 4);
-      glassCard(doc, cx, Y, dW, 30, LG.SURFACE);
+      glassCard(doc, cx, Y, dW, cardH, LG.SURFACE);
       label(doc, d.label, cx + 6, Y + 8);
       value(doc, formatarMoeda(d.val), cx + 6, Y + 18, 11, LG.EMERALD as any);
       if (d.ativo) {
@@ -368,8 +377,87 @@ export const gerarRelatorioAportePDF = async (data: ReportData) => {
         doc.setFont('helvetica', 'normal');
         doc.text(`→ ${d.ativo}`, cx + 6, Y + 27);
       }
+      if (d.acc !== undefined && d.val > 0) {
+        const perc = Math.min(100, Math.round((d.acc / d.val) * 100));
+        const barY = d.ativo ? Y + 33 : Y + 28;
+        doc.setFillColor(LG.BORDER[0], LG.BORDER[1], LG.BORDER[2]);
+        doc.roundedRect(cx + 6, barY + 3, dW - 12, 3, 1.5, 1.5, 'F');
+        if (perc > 0) {
+          doc.setFillColor(LG.EMERALD[0], LG.EMERALD[1], LG.EMERALD[2]);
+          doc.roundedRect(cx + 6, barY + 3, (dW - 12) * (perc / 100), 3, 1.5, 1.5, 'F');
+        }
+        doc.setFontSize(7);
+        doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
+        doc.text(`${perc}% concluído`, cx + dW - 6, barY + 1, { align: 'right' });
+      }
     });
-    Y += 36;
+    Y += cardH + 6;
+  }
+
+  // ─── ASSET MIX CHART ──────────────────────────────────────────────────
+  if (data.assetMix && data.assetMix.length > 0) {
+    emeraldBar(doc, M, Y, 30);
+    Y += 5;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
+    doc.text('ASSET MIX: ESTRATÉGIA VS ATUAL', M, Y);
+    Y += 6;
+
+    const chartW = pageW - M * 2;
+    const rowH = 14;
+    const chartH = data.assetMix.length * rowH + 10;
+
+    if (Y + chartH > pageH - 25) {
+      doc.addPage();
+      paintBg();
+      Y = M + 10;
+    }
+
+    glassCard(doc, M, Y, chartW, chartH, LG.PANEL);
+    let barY = Y + 8;
+
+    const totalIf = data.assetMix.reduce((sum: number, c: any) => sum + (c.saldo_atual || 0) + (c.aporte_sugerido || 0), 0);
+
+    data.assetMix.forEach((c: any) => {
+      const alvo = c.alvo_perc || 0;
+      const atualValor = (c.saldo_atual || 0) + (c.aporte_sugerido || 0);
+      const atualPerc = totalIf > 0 ? (atualValor / totalIf) * 100 : 0;
+
+      // Label
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(LG.TEXT[0], LG.TEXT[1], LG.TEXT[2]);
+      doc.text(c.classe.substring(0, 18).toUpperCase(), M + 4, barY + 4);
+
+      // Bars area starts at X = M + 45
+      const barAreaX = M + 50;
+      const barMaxW = chartW - 60;
+
+      // Draw Target (hollow border)
+      const alvoW = barMaxW * (alvo / 100);
+      if (alvoW > 0) {
+        doc.setDrawColor(LG.BORDER[0], LG.BORDER[1], LG.BORDER[2]);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(barAreaX, barY, alvoW, 4, 1, 1, 'S');
+      }
+
+      // Draw Current (filled)
+      const atualW = barMaxW * (atualPerc / 100);
+      if (atualW > 0) {
+        doc.setFillColor(LG.EMERALD_D[0], LG.EMERALD_D[1], LG.EMERALD_D[2]);
+        doc.roundedRect(barAreaX, barY + 1, atualW, 2, 0.5, 0.5, 'F');
+      }
+
+      // Value text
+      doc.setFontSize(7);
+      doc.setTextColor(LG.MUTED[0], LG.MUTED[1], LG.MUTED[2]);
+      doc.text(`${atualPerc.toFixed(1)}% (Alvo: ${alvo}%)`, barAreaX + Math.max(alvoW, atualW) + 2, barY + 3);
+
+      barY += rowH;
+    });
+
+    Y += chartH + 8;
   }
 
   // ─── BUY ORDERS — per class ───────────────────────────────────────────────
