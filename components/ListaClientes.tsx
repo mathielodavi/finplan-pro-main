@@ -1,0 +1,236 @@
+
+import React, { useState } from 'react';
+import { Cliente, deletarCliente } from '../services/clienteService';
+import { formatarMoeda, formatarData } from '../utils/formatadores';
+import Confirmacao from './Confirmacao';
+import Tooltip from './UI/Tooltip';
+import { Eye, Edit3, Trash2, Inbox, AlertCircle, Clock, CalendarX } from 'lucide-react';
+import Badge from './UI/Badge';
+
+interface ListaClientesProps {
+  clientes: any[]; // Usando any para suportar os campos processados (patrimonio_real, termometro, proximaAcao)
+  onEdit: (cliente: Cliente) => void;
+  onView: (cliente: Cliente) => void;
+  onRefresh: () => void;
+}
+
+const PROXIMA_ACAO_CONFIG: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
+  late: { icon: <AlertCircle size={14} />, color: 'var(--danger)', bg: 'rgba(248,113,113,0.14)' },
+  upcoming: { icon: <Clock size={14} />, color: 'var(--primary)', bg: 'rgba(16,185,129,0.14)' },
+  pending: { icon: <CalendarX size={14} />, color: 'var(--warning)', bg: 'rgba(251,191,36,0.14)' },
+};
+
+const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView, onRefresh }) => {
+  const [deleteTarget, setDeleteTarget] = useState<Cliente | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!deleteTarget?.id) return;
+    setDeleteError(null);
+    try {
+      setDeleting(true);
+      await deletarCliente(deleteTarget.id);
+      onRefresh();
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Erro ao deletar cliente. Tente novamente.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (clientes.length === 0) {
+    return (
+      <div className="bg-surface p-12 rounded-xl border border-subtle text-center space-y-4 shadow-[var(--shadow-card)]">
+        <div className="inline-flex items-center justify-center h-12 w-12 bg-surface-2 text-faint rounded-lg">
+          <Inbox size={24} />
+        </div>
+        <div>
+          <p className="text-[14px] text-main font-semibold">Nenhum cliente por aqui</p>
+          <p className="text-[13px] text-muted font-medium mt-1">Comece cadastrando um novo cliente para gerenciar sua carteira.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const corProtecao = (pct: number) => pct >= 70 ? 'var(--primary)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)';
+
+  const descricaoProximaAcao = (c: any) => {
+    const acao = c.proximaAcao;
+    if (!acao) return 'Sem dados de agenda';
+    if (acao.categoria === 'late') {
+      const diffDays = acao.reuniao ? Math.max(0, Math.floor((Date.now() - new Date(acao.reuniao.data_reuniao).getTime()) / 86400000)) : 0;
+      return acao.qtdAtrasadas > 1
+        ? `${acao.qtdAtrasadas} reuniões atrasadas — última há ${diffDays}d`
+        : `Atrasado há ${diffDays}d`;
+    }
+    if (acao.categoria === 'upcoming') {
+      return `Próxima reunião em ${formatarData(acao.reuniao.data_reuniao, true)}`;
+    }
+    return 'Sem reunião agendada — agendar check-in';
+  };
+
+  return (
+    <div className="bg-surface rounded-xl shadow-[var(--shadow-card)] border border-subtle overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-subtle">
+              <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Cliente</th>
+              <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-faint">Origem</th>
+              <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-faint text-right">Patrimônio Líquido</th>
+              <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-faint text-center">Termômetro</th>
+              <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-faint text-center">Proteção</th>
+              <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-faint text-center">Próxima Ação</th>
+              <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-faint">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clientes.map((c) => {
+              const acaoCfg = PROXIMA_ACAO_CONFIG[c.proximaAcao?.categoria] || PROXIMA_ACAO_CONFIG.pending;
+              const tagsExtras = (c.etiquetas_tags || []).slice(2);
+
+              return (
+                <tr
+                  key={c.id}
+                  onClick={() => onView(c)}
+                  className="group transition-colors duration-100 hover:bg-surface-2 cursor-pointer border-b border-subtle last:border-0"
+                >
+                  {/* Cliente */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-8 w-8 rounded-full bg-surface-3 border border-subtle flex items-center justify-center text-[12px] font-bold text-muted shrink-0">
+                        {c.nome.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-main text-[13px] block leading-none">
+                          {c.nome}
+                        </span>
+                        {!c.temPlanoAtivo && (
+                          <Badge variant="warning" size="sm" className="mt-1">Sem plano ativo</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Origem */}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {c.origem || c.origem_id ? (
+                        <Badge variant="neutral" size="sm">{c.origem || 'Origem vinculada'}</Badge>
+                      ) : (
+                        <span className="text-[11px] text-faint font-medium">—</span>
+                      )}
+                      {(c.etiquetas_tags || []).slice(0, 2).map((tag: string) => (
+                        <Badge key={tag} variant="primary" size="sm">{tag}</Badge>
+                      ))}
+                      {tagsExtras.length > 0 && (
+                        <Tooltip text={tagsExtras.join(', ')}>
+                          <Badge variant="neutral" size="sm">+{tagsExtras.length}</Badge>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Patrimônio Líquido */}
+                  <td className="px-4 py-3 text-right">
+                    {c.patrimonio_liquido ? (
+                      <span className="text-[13px] font-semibold" style={{ color: c.patrimonio_liquido < 0 ? 'var(--danger)' : 'var(--text-main)' }}>
+                        {formatarMoeda(c.patrimonio_liquido)}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-faint font-medium">—</span>
+                    )}
+                  </td>
+
+                  {/* Termômetro */}
+                  <td className="px-4 py-3">
+                    <div className="flex justify-center">
+                      <Tooltip text={c.termometro?.descricao || 'Sem dados de termômetro'}>
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: c.termometro?.cor || '#9ca3af' }} />
+                          <span className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: c.termometro?.cor || '#9ca3af' }}>
+                            {c.termometro?.status || 'SEM DADOS'}
+                          </span>
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </td>
+
+                  {/* Proteção */}
+                  <td className="px-4 py-3">
+                    <div className="flex justify-center">
+                      <Tooltip text="% médio de cobertura nos 3 pilares: Reserva de Emergência, Plano de Saúde e Seguros de Vida">
+                        <span className="text-[12px] font-bold" style={{ color: corProtecao(c.percentualProtecao || 0) }}>
+                          {Math.round(c.percentualProtecao || 0)}%
+                        </span>
+                      </Tooltip>
+                    </div>
+                  </td>
+
+                  {/* Próxima Ação */}
+                  <td className="px-4 py-3">
+                    <div className="flex justify-center">
+                      <Tooltip text={descricaoProximaAcao(c)}>
+                        <div
+                          className="h-7 w-7 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: acaoCfg.bg, color: acaoCfg.color }}
+                        >
+                          {acaoCfg.icon}
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </td>
+
+                  {/* Ações */}
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-0.5 opacity-30 group-hover:opacity-100 transition-all duration-300">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onView(c); }}
+                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-primary hover:bg-surface-3 rounded-md transition-all"
+                      >
+                        <Eye size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEdit(c); }}
+                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-main hover:bg-surface-3 rounded-md transition-all"
+                      >
+                        <Edit3 size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }}
+                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-[color:var(--danger)] rounded-md transition-all"
+                        style={{ transition: 'all .15s' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(248,113,113,0.12)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {deleteError && (
+        <div className="mx-4 mb-2 p-3 text-[color:var(--danger)] text-xs font-semibold rounded-xl border border-subtle" style={{ backgroundColor: 'rgba(248,113,113,0.10)' }}>
+          {deleteError}
+        </div>
+      )}
+      <Confirmacao
+        isOpen={!!deleteTarget}
+        onClose={() => { setDeleteTarget(null); setDeleteError(null); }}
+        onConfirm={handleDelete}
+        title="Excluir Cliente"
+        message={`Todos os dados de ${deleteTarget?.nome} (contratos, reuniões, investimentos e histórico) serão apagados permanentemente. Esta ação não pode ser revertida.`}
+        loading={deleting}
+      />
+    </div>
+  );
+};
+
+export default ListaClientes;
