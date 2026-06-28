@@ -160,6 +160,17 @@ export interface SeguroExtra {
 // ─── Cliente Seguro ───────────────────────────────────────────────────────────
 
 export const protecaoService = {
+    /** Leitura simples (sem criar registro) da data de nascimento do cliente titular */
+    async getDataNascimentoCliente(clienteId: string): Promise<string | null> {
+        const { data, error } = await supabase
+            .from('clientes_seguros')
+            .select('data_nascimento_cliente')
+            .eq('cliente_id', clienteId)
+            .maybeSingle();
+        if (error) throw error;
+        return data?.data_nascimento_cliente || null;
+    },
+
     /** Busca ou cria o registro clientes_seguros para o cliente */
     async getOrCreate(clienteId: string): Promise<ClienteSeguro> {
         const { data, error } = await supabase
@@ -226,6 +237,18 @@ export const protecaoService = {
             return { taxa_juros_aa: 6.25, ipca_projetado_aa: 4.50, perc_custos_inventario: 20.00 };
         }
         return data;
+    },
+
+    /** Atualiza os parâmetros gerais de cálculo (linha única, criada se não existir) */
+    async salvarParametros(dados: Partial<ParametrosCalculo>): Promise<void> {
+        const { data: existente } = await supabase.from('parametros_calculo').select('id').maybeSingle();
+        if (existente?.id) {
+            const { error } = await supabase.from('parametros_calculo').update(dados).eq('id', existente.id);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase.from('parametros_calculo').insert(dados);
+            if (error) throw error;
+        }
     },
 
     // ─── Planos de Saúde ──────────────────────────────────────────────────────

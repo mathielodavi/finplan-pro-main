@@ -16,18 +16,60 @@ export interface ResultadoProjecao {
   dataAlvo: Date;
 }
 
+export interface ConsumoPatrimonio {
+  /** Idade atual do cliente, em anos (null se não cadastrada — desativa a fase de consumo). */
+  idadeAtual: number | null;
+  /** Fator de rentabilização anual (%) aplicado ao patrimônio durante a fase de consumo, definido em Configurações. */
+  taxaRentabilizacaoAnual: number;
+}
+
+/**
+ * Simula mês a mês a trajetória de um patrimônio: acumula (aporte + rentabilidade) até atingir
+ * o patrimônio necessário para a independência e, a partir daí, passa a consumir (renda alvo
+ * mensal descontada, rentabilizada à taxa de consumo) — permanecendo em modo consumo mesmo que
+ * o saldo caia novamente abaixo do necessário.
+ */
+function simularTrajetoria(
+  valorInicial: number,
+  mesesTotal: number,
+  patrimonioNecessario: number,
+  taxaAcumulacaoMensal: number,
+  aporteMensal: number,
+  taxaConsumoMensal: number,
+  rendaAlvoMensal: number
+): number[] {
+  const serie: number[] = [valorInicial];
+  let valor = valorInicial;
+  let consumindo = valor >= patrimonioNecessario;
+  for (let m = 1; m <= mesesTotal; m++) {
+    if (!consumindo) {
+      valor = valor * (1 + taxaAcumulacaoMensal) + aporteMensal;
+      if (valor >= patrimonioNecessario) consumindo = true;
+    } else {
+      valor = Math.max(0, valor * (1 + taxaConsumoMensal) - rendaAlvoMensal);
+    }
+    serie.push(valor);
+  }
+  return serie;
+}
+
 /**
  * Projeção da curva de independência financeira.
  * Trabalha com: patrimônio inicial (premissas), aporte mensal projetado, taxa real e o
  * patrimônio mensal real (snapshots do histórico). Extraído de IndependenciaInvestimentos
  * para ser reutilizado no Resumo Geral de Patrimônio.
  *
+ * Quando `consumo.idadeAtual` é informado, a projeção (plano e real) se estende além do prazo
+ * de acumulação: ao atingir o patrimônio necessário, passa a simular o consumo mensal (renda
+ * alvo) rentabilizado pelo fator definido em Configurações, até os 90 anos do cliente.
+ *
  * @param patrimonioAtual Patrimônio de independência atual (saldo vinculado ao objetivo).
  */
 export function projetarIndependencia(
   params: PremissasIndependencia,
   patrimonioAtual: number,
-  historico: HistoricoPatrimonio[]
+  historico: HistoricoPatrimonio[],
+  consumo?: ConsumoPatrimonio
 ): ResultadoProjecao {
   const taxaMensal = Math.pow(1 + params.taxa_real_anual / 100, 1 / 12) - 1;
   const patrimonioNecessario = (params.renda_alvo * 12) / (params.taxa_real_anual / 100 || 1);
@@ -35,6 +77,14 @@ export function projetarIndependencia(
   const dataInicio = new Date(params.data_inicio);
   const totalMesesPlano = params.prazo_anos * 12;
   const hoje = new Date();
+
+  const idadeAtual = consumo?.idadeAtual ?? null;
+  const mesesAteIdade90 = idadeAtual !== null ? Math.max(0, (90 - idadeAtual) * 12) : null;
+  const mesesHorizonte = mesesAteIdade90 !== null ? Math.max(totalMesesPlano, mesesAteIdade90) : totalMesesPlano;
+  const taxaConsumoMensal = consumo ? Math.pow(1 + consumo.taxaRentabilizacaoAnual / 100, 1 / 12) - 1 : taxaMensal;
+
+  const seriePlano = simularTrajetoria(params.patrimonio_inicial, mesesHorizonte, patrimonioNecessario, taxaMensal, params.aporte_mensal, taxaConsumoMensal, params.renda_alvo);
+  const serieRealForward = simularTrajetoria(patrimonioAtual, mesesHorizonte, patrimonioNecessario, taxaMensal, params.aporte_mensal, taxaConsumoMensal, params.renda_alvo);
 
   const chartData: PontoProjecao[] = [];
 
@@ -45,25 +95,19 @@ export function projetarIndependencia(
     ])
   );
 
-  for (let i = 0; i <= totalMesesPlano; i += 6) {
+  for (let i = 0; i <= mesesHorizonte; i += 6) {
     const dataPonto = new Date(dataInicio);
     dataPonto.setMonth(dataInicio.getMonth() + i);
     const label = dataPonto.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).toUpperCase();
 
-    // 1. Linha teórica (plano)
-    const valorPlano = params.patrimonio_inicial * Math.pow(1 + taxaMensal, i) +
-      (taxaMensal > 0
-        ? params.aporte_mensal * ((Math.pow(1 + taxaMensal, i) - 1) / taxaMensal)
-        : params.aporte_mensal * i);
+    // 1. Linha teórica (plano): acumula e, ao atingir o necessário, passa a consumir
+    const valorPlano = seriePlano[i];
 
     // 2. Linha real (histórico até hoje, projeção daí em diante a partir do patrimônio atual)
     let valorReal: number | null = mapHistorico.get(label) ?? null;
     if (valorReal === null && dataPonto >= hoje) {
-      const mesesForward = (dataPonto.getFullYear() - hoje.getFullYear()) * 12 + (dataPonto.getMonth() - hoje.getMonth());
-      valorReal = patrimonioAtual * Math.pow(1 + taxaMensal, mesesForward) +
-        (taxaMensal > 0
-          ? params.aporte_mensal * ((Math.pow(1 + taxaMensal, mesesForward) - 1) / taxaMensal)
-          : params.aporte_mensal * mesesForward);
+      const mesesForward = Math.max(0, (dataPonto.getFullYear() - hoje.getFullYear()) * 12 + (dataPonto.getMonth() - hoje.getMonth()));
+      valorReal = serieRealForward[Math.min(mesesForward, serieRealForward.length - 1)];
     }
 
     chartData.push({

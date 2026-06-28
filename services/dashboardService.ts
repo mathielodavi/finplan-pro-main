@@ -113,6 +113,7 @@ export const dashboardService = {
     if (re) console.error("ERRO REUNIOES Supabase:", re);
 
     const stats = { ENGAJADO: 0, RECUPERAR: 0, GHOSTING: 0, 'SEM TERMÔMETRO': 0 };
+    const clientesPorStatus: Record<string, { id: string; nome: string }[]> = { ENGAJADO: [], RECUPERAR: [], GHOSTING: [], 'SEM TERMÔMETRO': [] };
 
     // Regra: Ignorar inativos e clientes sem planejamento
     const idsComPlanejamento = new Set(contratos?.filter(c => c.tipo === 'planejamento').map(c => c.cliente_id));
@@ -125,9 +126,10 @@ export const dashboardService = {
       const t = calcularTermometro(ultima, proxima);
       const statusUpper = t.status.toUpperCase();
       stats[statusUpper as keyof typeof stats] = (stats[statusUpper as keyof typeof stats] || 0) + 1;
+      clientesPorStatus[statusUpper]?.push({ id: cli.id, nome: cli.nome });
     });
 
-    return Object.entries(stats).map(([name, value]) => ({ name, value }));
+    return Object.entries(stats).map(([name, value]) => ({ name, value, clientes: clientesPorStatus[name] || [] }));
   },
 
   async getIncomeProjection() {
@@ -566,14 +568,15 @@ export const dashboardService = {
    * Usado pelo mapa de bolhas em Atendimento.
    */
   async getDistribuicaoGeografica() {
-    const { data: clientes } = await supabase.from('clientes').select('estado, status').not('estado', 'is', null);
+    const { data: clientes } = await supabase.from('clientes').select('id, nome, estado, status').not('estado', 'is', null);
 
-    const porEstado = new Map<string, { ativos: number; inativos: number }>();
+    const porEstado = new Map<string, { ativos: number; inativos: number; clientes: { id: string; nome: string }[] }>();
     (clientes || []).forEach((c: any) => {
       if (!c.estado) return;
-      const entry = porEstado.get(c.estado) || { ativos: 0, inativos: 0 };
+      const entry = porEstado.get(c.estado) || { ativos: 0, inativos: 0, clientes: [] };
       if (c.status === 'Ativo') entry.ativos += 1;
       else entry.inativos += 1;
+      entry.clientes.push({ id: c.id, nome: c.nome });
       porEstado.set(c.estado, entry);
     });
 
@@ -582,6 +585,7 @@ export const dashboardService = {
       ativos: v.ativos,
       inativos: v.inativos,
       total: v.ativos + v.inativos,
+      clientes: v.clientes,
     }));
   }
 };

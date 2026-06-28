@@ -8,21 +8,28 @@ import { formatarMoeda } from '../../utils/formatadores';
 import { atualizarCliente } from '../../services/clienteService';
 import { investimentoService, PremissasIndependencia, HistoricoPatrimonio } from '../../services/investimentoService';
 import { configService } from '../../services/configuracoesService';
+import { protecaoService } from '../../services/protecaoService';
+import { calcularIdade } from '../../utils/calculosFinanceiros';
 import { projetarIndependencia, calcularPrazoERentabilidade } from '../../utils/independenciaUtils';
 import { CHART_GRID, axisTick, tooltipStyle } from '../../utils/chartTheme';
 import SidePanel from '../UI/SidePanel';
 import Button from '../UI/Button';
+import ObjetivoFormDrawer from './ObjetivoFormDrawer';
 import { ShieldCheck, Target, Settings, SlidersHorizontal, Plus, TrendingUp, Clock } from 'lucide-react';
 
 const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => {
    const [drawerContas, setDrawerContas] = useState(false);
    const [drawerPremissas, setDrawerPremissas] = useState(false);
+   const [drawerObjetivo, setDrawerObjetivo] = useState(false);
+   const [editObjetivo, setEditObjetivo] = useState<any>(null);
    const [projetos, setProjetos] = useState<any[]>([]);
    const [modelosDisponiveis, setModelosDisponiveis] = useState<any[]>([]);
    const [tesesDisponiveis, setTesesDisponiveis] = useState<any[]>([]);
    const [bancosDisponiveis, setBancosDisponiveis] = useState<any[]>([]);
    const [historico, setHistorico] = useState<HistoricoPatrimonio[]>([]);
    const [savingPrem, setSavingPrem] = useState(false);
+   const [idadeCliente, setIdadeCliente] = useState<number | null>(null);
+   const [taxaRentabilizacao, setTaxaRentabilizacao] = useState(6.25);
    const [novoHist, setNovoHist] = useState({ data: new Date().toISOString().split('T')[0], valor: '0', aporte: '0' });
 
    const [premissas, setPremissas] = useState<PremissasIndependencia>({
@@ -34,6 +41,13 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
       prazo_anos: 20,
       data_inicio: new Date().toISOString().split('T')[0],
    });
+
+   const loadProjetos = async () => {
+      try {
+         const projData = await investimentoService.getProjetos(clienteId);
+         setProjetos(projData || []);
+      } catch (err) { console.error('Erro ao recarregar objetivos:', err); }
+   };
 
    useEffect(() => {
       if (!clienteId) return;
@@ -57,11 +71,15 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
       // Premissas/Histórico de independência: isolado do núcleo acima
       (async () => {
          try {
-            const [premData, histData] = await Promise.all([
+            const [premData, histData, dataNascimento, parametros] = await Promise.all([
                investimentoService.getPremissasIndependencia(clienteId),
                investimentoService.getHistoricoMensal(clienteId),
+               protecaoService.getDataNascimentoCliente(clienteId),
+               protecaoService.getParametros(),
             ]);
             setHistorico(histData || []);
+            setIdadeCliente(calcularIdade(dataNascimento || undefined));
+            setTaxaRentabilizacao(Number(parametros.taxa_juros_aa) || 6.25);
             if (premData) {
                setPremissas({
                   ...premData,
@@ -120,8 +138,11 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
    }), [premissas, cliente?.patrimonio_total, cliente?.aporte_mensal]);
 
    const projecao = useMemo(
-      () => projetarIndependencia(premissasEfetivas, indepInfo.total, historico),
-      [premissasEfetivas, indepInfo.total, historico]
+      () => projetarIndependencia(premissasEfetivas, indepInfo.total, historico, {
+         idadeAtual: idadeCliente,
+         taxaRentabilizacaoAnual: taxaRentabilizacao,
+      }),
+      [premissasEfetivas, indepInfo.total, historico, idadeCliente, taxaRentabilizacao]
    );
 
    const prazoInfo = useMemo(
@@ -247,9 +268,17 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
 
          {/* ── 2. Objetivos ── */}
          <div className={cardCls}>
-            <div className="flex items-center gap-2 mb-4">
-               <Target size={16} className="text-[color:var(--info)]" />
-               <h3 className="text-[13px] font-semibold text-main">Objetivos</h3>
+            <div className="flex items-center justify-between mb-4">
+               <div className="flex items-center gap-2">
+                  <Target size={16} className="text-[color:var(--info)]" />
+                  <h3 className="text-[13px] font-semibold text-main">Objetivos</h3>
+               </div>
+               <button
+                  onClick={() => { setEditObjetivo({ nome: '', data_alvo: '', valor_alvo: 0, etapas: [] }); setDrawerObjetivo(true); }}
+                  className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors"
+               >
+                  <Plus size={14} /> Adicionar objetivo
+               </button>
             </div>
             {projetos.length === 0 ? (
                <p className="text-[12px] text-faint py-4 text-center">Nenhum objetivo mapeado.</p>
@@ -259,10 +288,15 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
                      const acumulado = calcularAcumuladoProjeto(p.id);
                      const perc = p.valor_alvo > 0 ? Math.min((acumulado / p.valor_alvo) * 100, 100) : 0;
                      return (
-                        <div key={p.id}>
+                        <button
+                           key={p.id}
+                           type="button"
+                           onClick={() => { setEditObjetivo(p); setDrawerObjetivo(true); }}
+                           className="w-full text-left group"
+                        >
                            <div className="flex justify-between items-end mb-1.5">
                               <div>
-                                 <p className="text-[13px] font-semibold text-main">{p.nome}</p>
+                                 <p className="text-[13px] font-semibold text-main group-hover:underline">{p.nome}</p>
                                  <span className="text-[11px] text-faint">Meta: {formatarMoeda(p.valor_alvo)} · {new Date(p.data_alvo).toLocaleDateString('pt-BR')}</span>
                               </div>
                               <span className="text-[12px] font-semibold text-main">{perc.toFixed(0)}%</span>
@@ -270,12 +304,22 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
                            <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                               <div className="h-full rounded-full transition-all duration-700" style={{ width: `${perc}%`, backgroundColor: 'var(--info)' }} />
                            </div>
-                        </div>
+                        </button>
                      );
                   })}
                </div>
             )}
          </div>
+
+         <ObjetivoFormDrawer
+            open={drawerObjetivo}
+            onClose={() => setDrawerObjetivo(false)}
+            editProjeto={editObjetivo}
+            setEditProjeto={setEditObjetivo}
+            ativos={ativos}
+            clienteId={clienteId}
+            onSaved={loadProjetos}
+         />
 
          {/* ── 3. Independência Financeira ── */}
          <div className={cardCls}>
@@ -342,14 +386,19 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID} />
                            <XAxis dataKey="label" axisLine={false} tickLine={false} tick={axisTick} dy={8} />
                            <YAxis hide domain={[0, 'dataMax + 100000']} />
-                           <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [formatarMoeda(v), 'Patrimônio']} />
+                           <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [formatarMoeda(v), name]} />
                            <ReferenceLine y={projecao.patrimonioNecessario} stroke="#3a4254" strokeDasharray="5 5" />
-                           <Line type="monotone" dataKey="plano" name="Plano" stroke="#6b7280" strokeWidth={2} dot={false} />
-                           <Area type="monotone" dataKey="real" name="Real + Projeção" stroke="var(--primary)" strokeWidth={2.5} fill="url(#gradReal)" connectNulls />
+                           <Line type="monotone" dataKey="plano" name="Patrimônio Ideal (até 90 anos)" stroke="#6b7280" strokeWidth={2} dot={false} />
+                           <Area type="monotone" dataKey="real" name="Patrimônio Real + Projeção" stroke="var(--primary)" strokeWidth={2.5} fill="url(#gradReal)" connectNulls />
                         </ComposedChart>
                      </ResponsiveContainer>
                   </div>
                   <p className="text-[11px] text-faint text-center mt-1">{historico.length} ponto(s) de patrimônio mensal registrados</p>
+                  {idadeCliente === null && (
+                     <p className="text-[11px] text-center mt-1" style={{ color: 'var(--warning)' }}>
+                        Cadastre a data de nascimento em Proteção para simular o consumo de patrimônio até os 90 anos.
+                     </p>
+                  )}
                </div>
             </div>
 

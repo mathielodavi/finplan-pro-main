@@ -234,7 +234,16 @@ const Dashboard: React.FC = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={termometroData} innerRadius={36} outerRadius={54} paddingAngle={4} dataKey="value" stroke="none">
-                        {termometroData.map((_, index) => <Cell key={index} fill={CHART_TERMOMETRO[index % CHART_TERMOMETRO.length]} />)}
+                        {termometroData.map((t, index) => (
+                          <Cell
+                            key={index}
+                            fill={CHART_TERMOMETRO[index % CHART_TERMOMETRO.length]}
+                            style={{ cursor: (t as any).clientes?.length > 0 ? 'pointer' : 'default' }}
+                            onClick={() => {
+                              if ((t as any).clientes?.length > 0) setModalClientes({ isOpen: true, type: 'Engajamento', mes: t.name, list: (t as any).clientes });
+                            }}
+                          />
+                        ))}
                       </Pie>
                       <Tooltip contentStyle={tooltipStyle} />
                     </PieChart>
@@ -244,8 +253,15 @@ const Dashboard: React.FC = () => {
                   {termometroData.map((t, i) => {
                     const total = termometroData.reduce((acc, c) => acc + (c.value || 0), 0) || 1;
                     const pct = Math.round(((t.value || 0) / total) * 100);
+                    const clicavel = (t as any).clientes?.length > 0;
                     return (
-                      <div key={i} className="flex items-center justify-between gap-2">
+                      <button
+                        key={i}
+                        type="button"
+                        disabled={!clicavel}
+                        onClick={() => clicavel && setModalClientes({ isOpen: true, type: 'Engajamento', mes: t.name, list: (t as any).clientes })}
+                        className={`w-full flex items-center justify-between gap-2 text-left ${clicavel ? 'hover:opacity-75 cursor-pointer' : 'cursor-default'} transition-opacity`}
+                      >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: CHART_TERMOMETRO[i] }} />
                           <span className="text-[11px] font-medium text-muted truncate">{t.name}</span>
@@ -253,7 +269,7 @@ const Dashboard: React.FC = () => {
                         <span className="text-[11px] font-semibold text-main flex-shrink-0">
                           {t.value} <span className="text-faint font-normal">({pct}%)</span>
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -326,7 +342,10 @@ const Dashboard: React.FC = () => {
           <div className={`${panelCls} lg:col-span-4 overflow-hidden`}>
             <PanelLabel title="Distribuição Geográfica" hint="Clientes por estado" />
             <div className="p-4 flex-1 min-h-[300px] flex flex-col">
-              <MapaBrasil dados={geoData} />
+              <MapaBrasil
+                dados={geoData}
+                onSelectEstado={(estado, clientes) => setModalClientes({ isOpen: true, type: 'Clientes', mes: estado, list: clientes })}
+              />
             </div>
           </div>
         </div>
@@ -543,7 +562,11 @@ const Dashboard: React.FC = () => {
           <div className="bg-surface rounded-xl shadow-[var(--shadow-float)] border border-subtle w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-subtle">
               <div>
-                <h3 className="font-semibold text-main">{modalClientes.type} em {modalClientes.mes}</h3>
+                <h3 className="font-semibold text-main">
+                  {modalClientes.type === 'Engajamento' ? `Status: ${modalClientes.mes}`
+                    : modalClientes.type === 'Clientes' ? `Clientes em ${modalClientes.mes}`
+                    : `${modalClientes.type} em ${modalClientes.mes}`}
+                </h3>
                 <p className="text-[13px] text-muted mt-0.5">{modalClientes.list.length} cliente(s)</p>
               </div>
               <button onClick={() => setModalClientes({ ...modalClientes, isOpen: false })} className="p-2 text-faint hover:text-main hover:bg-surface-2 rounded-lg transition-colors">

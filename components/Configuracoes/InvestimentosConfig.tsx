@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { configService } from '../../services/configuracoesService';
+import { protecaoService, ParametrosCalculo } from '../../services/protecaoService';
 import Modal from '../Modal';
 import Button from '../UI/Button';
-import { Landmark, Plus, Trash2, Edit3, Palette, Target, Layers, TrendingUp, Infinity } from 'lucide-react';
+import { Landmark, Plus, Trash2, Edit3, Palette, Target, Layers, TrendingUp, Infinity, Percent } from 'lucide-react';
 import { formatarMoeda } from '../../utils/formatadores';
 
 const InvestimentosConfig: React.FC = () => {
-  const [subTab, setSubTab] = useState<'asset' | 'personalizacao' | 'bancos'>('asset');
+  const [subTab, setSubTab] = useState<'asset' | 'personalizacao' | 'bancos' | 'parametros'>('asset');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -27,7 +28,7 @@ const InvestimentosConfig: React.FC = () => {
     }
   };
 
-  useEffect(() => { loadData(); }, [subTab]);
+  useEffect(() => { if (subTab !== 'parametros') loadData(); }, [subTab]);
 
   const handleDeleteItem = async (id: string) => {
     if (!window.confirm("Tem certeza que deseja excluir permanentemente este item?")) return;
@@ -47,8 +48,13 @@ const InvestimentosConfig: React.FC = () => {
         <button onClick={() => setSubTab('asset')} className={`px-4 rounded-[6px] font-bold text-[10px] uppercase tracking-wider transition-all h-full flex items-center whitespace-nowrap ${subTab === 'asset' ? 'bg-surface text-indigo-600 shadow-sm border border-subtle/50' : 'text-faint hover:text-muted'}`}>Asset Allocation</button>
         <button onClick={() => setSubTab('personalizacao')} className={`px-4 rounded-[6px] font-bold text-[10px] uppercase tracking-wider transition-all h-full flex items-center whitespace-nowrap ${subTab === 'personalizacao' ? 'bg-surface text-indigo-600 shadow-sm border border-subtle/50' : 'text-faint hover:text-muted'}`}>Estratégias Base</button>
         <button onClick={() => setSubTab('bancos')} className={`px-4 rounded-[6px] font-bold text-[10px] uppercase tracking-wider transition-all h-full flex items-center whitespace-nowrap ${subTab === 'bancos' ? 'bg-surface text-indigo-600 shadow-sm border border-subtle/50' : 'text-faint hover:text-muted'}`}>Bancos/Corretoras</button>
+        <button onClick={() => setSubTab('parametros')} className={`px-4 rounded-[6px] font-bold text-[10px] uppercase tracking-wider transition-all h-full flex items-center whitespace-nowrap ${subTab === 'parametros' ? 'bg-surface text-indigo-600 shadow-sm border border-subtle/50' : 'text-faint hover:text-muted'}`}>Parâmetros</button>
       </div>
 
+      {subTab === 'parametros' ? (
+        <ParametrosForm />
+      ) : (
+      <>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
          <div>
             <h3 className="text-[16px] font-bold text-main tracking-tight leading-none">
@@ -56,7 +62,7 @@ const InvestimentosConfig: React.FC = () => {
             </h3>
             <p className="text-faint text-[10px] font-bold uppercase tracking-wider mt-1">Personalize as teses de mercado da sua consultoria</p>
          </div>
-         <Button 
+         <Button
           onClick={() => { setEditingItem(null); setModalOpen(true); }}
           leftIcon={<Plus size={14} />}
           className="text-[10px] uppercase tracking-wider px-4 h-9 font-bold"
@@ -126,7 +132,78 @@ const InvestimentosConfig: React.FC = () => {
          {subTab === 'asset' && <FormAsset item={editingItem} onSave={() => { setModalOpen(false); loadData(); }} onCancel={() => setModalOpen(false)} />}
          {subTab === 'personalizacao' && <FormEstrategia item={editingItem} onSave={() => { setModalOpen(false); loadData(); }} onCancel={() => setModalOpen(false)} />}
       </Modal>
+      </>
+      )}
     </div>
+  );
+};
+
+// --- FORM PARÂMETROS GERAIS ---
+
+const ParametrosForm: React.FC = () => {
+  const [params, setParams] = useState<ParametrosCalculo>({ taxa_juros_aa: 6.25, ipca_projetado_aa: 4.50, perc_custos_inventario: 20.00 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    protecaoService.getParametros().then(p => setParams(p)).finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaved(false);
+    try {
+      await protecaoService.salvarParametros(params);
+      setSaved(true);
+    } catch (err: any) {
+      alert('Erro ao salvar parâmetros: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="py-16 text-center animate-pulse text-faint font-bold uppercase tracking-wider text-[10px]">Carregando parâmetros...</div>;
+  }
+
+  return (
+    <form onSubmit={handleSave} className="max-w-lg space-y-6">
+      <div>
+        <h3 className="text-[16px] font-bold text-main tracking-tight leading-none">Parâmetros Gerais de Cálculo</h3>
+        <p className="text-faint text-[10px] font-bold uppercase tracking-wider mt-1">Taxas usadas nas projeções atuariais e de independência financeira</p>
+      </div>
+
+      <div className="bg-surface border border-subtle rounded-xl p-5 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Percent size={15} className="text-[color:var(--primary)]" />
+          <h4 className="text-[12px] font-semibold text-main">Fator de rentabilização</h4>
+        </div>
+        <p className="text-[11px] text-faint">
+          Usado para projetar o consumo de patrimônio após a independência financeira (renda alvo mensal descontada do patrimônio rentabilizado a esta taxa).
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-[11px] font-semibold text-muted mb-1.5">Taxa de juros nominal (% a.a.)</label>
+            <input type="number" step="0.01" required value={params.taxa_juros_aa}
+              onChange={e => setParams({ ...params, taxa_juros_aa: parseFloat(e.target.value) || 0 })}
+              className="w-full px-3 h-9 bg-surface-2 border border-subtle rounded-lg font-semibold text-[13px] text-main outline-none focus:border-primary transition-colors" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-muted mb-1.5">IPCA projetado (% a.a.)</label>
+            <input type="number" step="0.01" required value={params.ipca_projetado_aa}
+              onChange={e => setParams({ ...params, ipca_projetado_aa: parseFloat(e.target.value) || 0 })}
+              className="w-full px-3 h-9 bg-surface-2 border border-subtle rounded-lg font-semibold text-[13px] text-main outline-none focus:border-primary transition-colors" />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button type="submit" isLoading={saving} className="h-9 px-5 text-[11px] font-bold uppercase tracking-wider">Salvar parâmetros</Button>
+        {saved && <span className="text-[12px] font-semibold" style={{ color: 'var(--primary)' }}>Salvo com sucesso.</span>}
+      </div>
+    </form>
   );
 };
 

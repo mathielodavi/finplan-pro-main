@@ -3,11 +3,10 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { investimentoService } from '../../services/investimentoService';
 import { obterClientePorId, Cliente } from '../../services/clienteService';
 import ResumoInvestimentos from '../Investimentos/ResumoInvestimentos';
-import ProjetosInvestimentos from '../Investimentos/ProjetosInvestimentos';
 import CarteiraInvestimentos from '../Investimentos/CarteiraInvestimentos';
 import RebalanceamentoInvestimentos from '../Investimentos/RebalanceamentoInvestimentos';
 import { useProntuarioNav } from '../../context/ProntuarioNavContext';
-import { PieChart, Target, Briefcase, RefreshCw } from 'lucide-react';
+import { PieChart, Briefcase, RefreshCw } from 'lucide-react';
 
 interface AbaInvestimentosProps {
   clienteId: string;
@@ -15,7 +14,6 @@ interface AbaInvestimentosProps {
 
 const menu = [
   { id: 'resumo', label: 'Resumo Geral', icon: <PieChart size={14} /> },
-  { id: 'projetos', label: 'Objetivos', icon: <Target size={14} /> },
   { id: 'carteira', label: 'Carteira Ativa', icon: <Briefcase size={14} /> },
   { id: 'rebalanceamento', label: 'Aporte Mensal', icon: <RefreshCw size={14} /> },
 ];
@@ -62,7 +60,6 @@ const AbaInvestimentos: React.FC<AbaInvestimentosProps> = ({ clienteId }) => {
     <div className="space-y-6 animate-fade-in">
       <div className="min-h-[500px] animate-slide-up">
         {activeSub === 'resumo' && <ResumoInvestimentos clienteId={clienteId} ativos={ativos} cliente={cliente} onRefresh={loadData} />}
-        {activeSub === 'projetos' && <ProjetosInvestimentos clienteId={clienteId} ativos={ativos} />}
         {activeSub === 'carteira' && <CarteiraInvestimentos clienteId={clienteId} cliente={cliente} ativos={ativos} onRefresh={loadData} />}
         {activeSub === 'rebalanceamento' && <RebalanceamentoInvestimentos clienteId={clienteId} ativos={ativos} onFinish={() => { setActiveSub('resumo'); loadData(); }} />}
       </div>

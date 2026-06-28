@@ -1,15 +1,22 @@
 import React from 'react';
 import { MapPin } from 'lucide-react';
 
+interface ClienteResumo {
+  id: string;
+  nome: string;
+}
+
 interface EstadoDado {
   estado: string;
   ativos: number;
   inativos: number;
   total: number;
+  clientes?: ClienteResumo[];
 }
 
 interface Props {
   dados: EstadoDado[];
+  onSelectEstado?: (estado: string, clientes: ClienteResumo[]) => void;
 }
 
 /** Posições aproximadas (não cartográficas) dos estados brasileiros em um viewBox 0–100. */
@@ -23,7 +30,29 @@ const POSICOES: Record<string, { x: number; y: number }> = {
   PR: { x: 47, y: 74 }, SC: { x: 47, y: 82 }, RS: { x: 43, y: 90 },
 };
 
-const MapaBrasil: React.FC<Props> = ({ dados }) => {
+/** Contorno estilizado (não cartográfico) do território brasileiro, no mesmo viewBox 0–100 das posições acima. */
+const CONTORNO_PONTOS: [number, number][] = [
+  [20, 5], [35, 4], [48, 8], [54, 18], [62, 16], [74, 18], [74, 27], [71, 34],
+  [64, 42], [66, 55], [62, 64], [54, 71], [49, 78], [47, 86], [41, 95],
+  [33, 90], [33, 68], [28, 50], [14, 46], [10, 30], [10, 14],
+];
+
+function caminhoSuavizado(pontos: [number, number][]): string {
+  const n = pontos.length;
+  const meio = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const m0 = meio(pontos[n - 1], pontos[0]);
+  let d = `M ${m0[0].toFixed(1)} ${m0[1].toFixed(1)} `;
+  for (let i = 0; i < n; i++) {
+    const proximo = pontos[(i + 1) % n];
+    const m = meio(pontos[i], proximo);
+    d += `Q ${pontos[i][0]} ${pontos[i][1]} ${m[0].toFixed(1)} ${m[1].toFixed(1)} `;
+  }
+  return d + 'Z';
+}
+
+const CONTORNO_BRASIL = caminhoSuavizado(CONTORNO_PONTOS);
+
+const MapaBrasil: React.FC<Props> = ({ dados, onSelectEstado }) => {
   if (dados.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-faint">
@@ -36,27 +65,24 @@ const MapaBrasil: React.FC<Props> = ({ dados }) => {
   }
 
   const maxTotal = Math.max(1, ...dados.map(d => d.total));
-  const radius = (total: number) => 2.4 + (total / maxTotal) * 5.4;
+  const radius = (total: number) => 2.6 + (total / maxTotal) * 5.2;
 
   return (
     <div className="w-full h-full flex flex-col flex-1">
       <svg viewBox="0 0 100 100" className="w-full flex-1">
-        <defs>
-          <filter id="mapaBrasilBlur" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="6" />
-          </filter>
-        </defs>
-        <ellipse cx="45" cy="50" rx="38" ry="46" fill="rgba(16,185,129,0.06)" filter="url(#mapaBrasilBlur)" />
-        <text x="45" y="53" textAnchor="middle" fontSize="9" fontWeight={700} fill="rgba(255,255,255,0.07)" letterSpacing="2">
-          BRASIL
-        </text>
+        <path d={CONTORNO_BRASIL} fill="rgba(16,185,129,0.07)" stroke="rgba(16,185,129,0.22)" strokeWidth={0.6} />
         {dados.map(d => {
           const pos = POSICOES[d.estado];
           if (!pos) return null;
           const r = radius(d.total);
           const dominante = d.ativos >= d.inativos ? 'var(--primary)' : 'var(--danger)';
+          const clicavel = !!onSelectEstado && (d.clientes?.length || 0) > 0;
           return (
-            <g key={d.estado}>
+            <g
+              key={d.estado}
+              onClick={() => clicavel && onSelectEstado!(d.estado, d.clientes || [])}
+              style={{ cursor: clicavel ? 'pointer' : 'default' }}
+            >
               <circle cx={pos.x} cy={pos.y} r={r} fill={dominante} fillOpacity={0.22} stroke={dominante} strokeWidth={0.6} />
               <circle cx={pos.x} cy={pos.y} r={1.3} fill={dominante} />
               <title>{`${d.estado}: ${d.ativos} ativo(s) · ${d.inativos} inativo(s)`}</title>

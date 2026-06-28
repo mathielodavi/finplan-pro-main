@@ -117,8 +117,8 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
                   {/* Origem */}
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-1">
-                      {c.origem || c.origem_id ? (
-                        <Badge variant="neutral" size="sm">{c.origem || 'Origem vinculada'}</Badge>
+                      {c.origem ? (
+                        <Badge variant="neutral" size="sm">{c.origem}</Badge>
                       ) : (
                         <span className="text-[11px] text-faint font-medium">—</span>
                       )}
