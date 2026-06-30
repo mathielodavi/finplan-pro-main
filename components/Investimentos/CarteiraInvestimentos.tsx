@@ -10,6 +10,7 @@ import Badge from '../UI/Badge';
 import Accordion from '../UI/Accordion';
 import ImportacaoAtivos from './ImportacaoAtivos';
 import { Edit3, Trash2, ArrowUpRight, ArrowDownRight, Filter, FileSpreadsheet, Plus, ChevronRight, Target, ShieldCheck, PieChart, AlertCircle, Info, CheckCircle2, XCircle, MinusCircle, Bird } from 'lucide-react';
+import { DESTINOS_VENDA } from '../../utils/destinosVenda';
 
 const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) => {
   const [modalOpen, setModalOpen] = useState(false);
@@ -242,7 +243,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                       <tr key={a.id} className="hover:bg-surface-2/50 transition-colors group">
                         <td className="px-4 py-3"><p className="font-bold text-main uppercase text-[12px] tracking-tight truncate">{a.nome}</p><span className="text-[10px] font-bold text-[color:var(--info)] uppercase">{a.origem === 'fundo' ? formatarCNPJ(a.cnpj || '') : (a.ticker || a.tipo_especifico || 'CUSTÓDIA')}</span></td>
                         <td className="px-4 py-3 text-center"><div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wider ${a.statusControle === 'Ok' ? 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]' : a.statusControle === 'Fora da estratégia' ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : a.statusControle === 'Fora da faixa' ? 'text-[color:var(--warning)] bg-[rgba(251,191,36,0.12)] border-[rgba(251,191,36,0.25)]' : 'bg-surface-2 text-faint border-subtle'}`}>{a.statusControle === 'Ok' ? <CheckCircle2 size={10} /> : a.statusControle === 'Não recomendado' ? <MinusCircle size={10} /> : <XCircle size={10} />}<span className="truncate">{a.statusControle}</span></div></td>
-                        <td className="px-4 py-3 text-center"><Badge variant={a.status === 'Vender' ? 'danger' : 'success'} size="sm">{a.status || 'Manter'}</Badge></td>
+                        <td className="px-4 py-3 text-center"><Badge variant={a.status === 'Vender' ? 'danger' : 'success'} size="sm">{a.status === 'Vender' ? `Vender → ${DESTINOS_VENDA.find(d => d.key === a.destino_venda)?.label || 'Livre'}` : 'Manter'}</Badge></td>
                         <td className="px-4 py-3 text-center"><span className={`text-[12px] font-bold tracking-tight ${a.temIndependencia ? 'text-main' : 'text-faint'}`}>{a.pesoNaClasse.toFixed(1)}%</span></td>
                         <td className="px-4 py-3 text-center">{a.temIndependencia && a.metaAlvo > 0 ? (<div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${Math.abs(a.desvio) <= 2 ? 'bg-surface-2 text-faint border-subtle' : a.desvio > 2 ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]'}`}>{a.desvio > 2 ? <ArrowUpRight size={10} /> : a.desvio < -2 ? <ArrowDownRight size={10} /> : null}<span className="text-[10px] font-bold uppercase tracking-wider">{Math.abs(a.desvio) <= 2 ? 'OK' : `${a.desvio > 0 ? '+' : ''}${a.desvio.toFixed(1)}%`}</span></div>) : (<div className="h-0.5 w-3 bg-surface-3 rounded-full mx-auto" />)}</td>
                         <td className="px-4 py-3 text-right font-bold text-main tracking-tighter text-[13px]">{formatarMoeda(a.valor_atual)}</td>
@@ -283,7 +284,11 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={fLabel}>Status estratégico</label>
-                <select value={editing?.status || 'Manter'} onChange={e => setEditing({ ...editing, status: e.target.value })} className={fInput}>
+                <select
+                  value={editing?.status || 'Manter'}
+                  onChange={e => setEditing({ ...editing, status: e.target.value, destino_venda: e.target.value === 'Manter' ? null : editing?.destino_venda })}
+                  className={fInput}
+                >
                   <option value="Manter">Manter em carteira</option>
                   <option value="Vender">Sinalizar venda</option>
                 </select>
@@ -295,6 +300,24 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                 </select>
               </div>
             </div>
+            {editing?.status === 'Vender' && (
+              <div>
+                <label className={fLabel}>Destino do produto da venda</label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {DESTINOS_VENDA.map(d => (
+                    <button
+                      key={d.key}
+                      type="button"
+                      onClick={() => setEditing({ ...editing, destino_venda: d.key })}
+                      className={`px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider transition-colors ${(editing?.destino_venda || 'livre') === d.key ? d.color : 'bg-surface-2 text-faint border-subtle hover:border-strong'}`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-faint mt-1.5">Usado para pré-preencher a etapa de Desinvestimento no Aporte Mensal — "Livre" entra como capital adicional sem destino fixo.</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={fLabel}>Origem</label>

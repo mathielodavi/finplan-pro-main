@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useClienteContext } from '../context/ClienteContext';
-import { Cliente } from '../services/clienteService';
+import { Cliente, obterOrigens } from '../services/clienteService';
 import { obterTodosContratos } from '../services/contratoService';
 import { investimentoService } from '../services/investimentoService';
 import { reuniaoService } from '../services/reuniaoService';
@@ -24,6 +24,7 @@ const ClientesPage: React.FC = () => {
   const [reunioes, setReunioes] = useState<any[]>([]);
   const [saldoDevedorPorCliente, setSaldoDevedorPorCliente] = useState<Map<string, number>>(new Map());
   const [scoresProtecaoPorCliente, setScoresProtecaoPorCliente] = useState<Map<string, number>>(new Map());
+  const [origens, setOrigens] = useState<{ id: string; nome: string }[]>([]);
   const [loadingExtras, setLoadingExtras] = useState(false);
 
   const [modalAberto, setModalAberto] = useState(false);
@@ -35,19 +36,21 @@ const ClientesPage: React.FC = () => {
     setLoadingExtras(true);
     try {
       // Carregamento paralelo para agilidade
-      const [_, cData, aData, rData, saldoDevedor, scoresProtecao] = await Promise.all([
+      const [_, cData, aData, rData, saldoDevedor, scoresProtecao, origensData] = await Promise.all([
         refreshClientes(),
         obterTodosContratos(),
         investimentoService.getAtivos(''), // Busca todos os ativos acessíveis
         reuniaoService.getPorCliente(''), // Busca todas as reuniões acessíveis
         dividasService.getSaldoDevedorPorCliente(),
-        protecaoService.getScoresPorCliente()
+        protecaoService.getScoresPorCliente(),
+        obterOrigens()
       ]);
       setContratos(cData || []);
       setAtivos(aData || []);
       setReunioes(rData || []);
       setSaldoDevedorPorCliente(saldoDevedor);
       setScoresProtecaoPorCliente(scoresProtecao);
+      setOrigens(origensData || []);
     } catch (err) {
       console.error("Erro ao sincronizar dados da carteira:", err);
     } finally {
@@ -82,6 +85,8 @@ const ClientesPage: React.FC = () => {
     );
   }, [contratos]);
 
+  const origensMap = useMemo(() => new Map(origens.map(o => [o.id, o.nome])), [origens]);
+
   // Consolidação de dados por cliente (Patrimônio Real e Saúde)
   const clientesProcessados = useMemo(() => {
     return clientes.map(c => {
@@ -105,6 +110,7 @@ const ClientesPage: React.FC = () => {
 
       return {
         ...c,
+        origem: c.origem_id ? origensMap.get(c.origem_id) : undefined,
         patrimonio_real: patrimonioCalculado,
         patrimonio_liquido: patrimonioCalculado - saldoDevedor,
         termometro,
@@ -113,7 +119,7 @@ const ClientesPage: React.FC = () => {
         percentualProtecao
       };
     });
-  }, [clientes, ativos, reunioes, idsComPlanejamento, saldoDevedorPorCliente, scoresProtecaoPorCliente]);
+  }, [clientes, ativos, reunioes, idsComPlanejamento, saldoDevedorPorCliente, scoresProtecaoPorCliente, origensMap]);
 
   const clientesFiltrados = clientesProcessados.filter(c => {
     const matchBusca = c.nome.toLowerCase().includes(termoBusca.toLowerCase());

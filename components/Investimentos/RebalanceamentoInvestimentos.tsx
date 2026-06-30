@@ -6,16 +6,19 @@ import { configService } from '../../services/configuracoesService';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import { formatarMoeda, formatarData } from '../../utils/formatadores';
 import {
-  CheckCircle2, ArrowRight, ShieldCheck, Target,
+  CheckCircle2, ShieldCheck, Target,
   Bird, Plus, Trash2, Search,
   ChevronRight, ShoppingCart, Landmark, History,
-  XCircle, PlayCircle, AlertCircle, RefreshCw,
-  Eye, FileText, Download
+  XCircle, AlertCircle, RefreshCw,
+  Download
 } from 'lucide-react';
 import Accordion from '../UI/Accordion';
 import Modal from '../Modal';
 import { gerarRelatorioAportePDF } from '../../utils/pdfGenerator';
 import { supabase } from '../../services/supabaseClient';
+import { DestinoVenda, DESTINOS_VENDA } from '../../utils/destinosVenda';
+import HistoricoAportes from './HistoricoAportes';
+import Badge from '../UI/Badge';
 
 interface AlocacaoManual {
   id: string;
@@ -24,8 +27,6 @@ interface AlocacaoManual {
   ticker?: string;
   ativo_id?: string;
 }
-
-type DestinoVenda = 'reserva' | 'projetos' | 'independencia' | 'livre';
 
 interface VendaItem {
   valor: number;
@@ -77,20 +78,47 @@ const PriceInputCell = ({ initialValue, onConfirm, prefix = "R$" }: { initialVal
         inputMode="numeric"
         value={display}
         onChange={handleChange}
-        className="h-9 w-full pl-7 pr-2 bg-surface-2 border border-subtle rounded-[8px] text-[12px] font-bold text-main outline-none focus:bg-surface focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 transition-all text-center shadow-sm"
+        className="h-9 w-full pl-7 pr-2 bg-surface-2 border border-subtle rounded-[8px] text-[12px] font-bold text-main outline-none focus:bg-surface focus:border-[color:var(--primary)] focus:ring-2 focus:ring-emerald-500/20 transition-all text-center shadow-sm"
         placeholder="0,00"
       />
     </div>
   );
 };
 
+const SECOES = [
+  { id: 'sec-capital', label: 'Capital' },
+  { id: 'sec-distribuicao', label: 'Distribuição' },
+  { id: 'sec-alocacao', label: 'Alocação' },
+  { id: 'sec-tatico', label: 'Simulador Tático' },
+  { id: 'sec-revisao', label: 'Revisão' },
+];
+
+// Tokens de estilo compartilhados — alinhados ao padrão calmo já usado em ResumoInvestimentos.tsx
+// (cards bg-surface/border-subtle, rótulos discretos, números com peso, sem uppercase tracking-widest em excesso).
+const cardCls = 'bg-surface rounded-xl border border-subtle p-4 sm:p-5';
+const kpiLabel = 'text-[11px] font-semibold text-faint uppercase tracking-wider';
+const sectionTitleCls = 'text-[14px] font-semibold text-main';
+
 const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
-  const [step, setStep] = useState(0);
+  // 'idle' = tela de entrada (histórico + botões); 'novo' = página única editável; 'revisao' = página única em leitura.
+  const [modo, setModo] = useState<'idle' | 'novo' | 'revisao'>('idle');
   const [ultimoRebal, setUltimoRebal] = useState<any>(null);
-  const [modalRevisao, setModalRevisao] = useState(false);
 
   const [aporte, setAporte] = useState(0);
-  const [vendas, setVendas] = useState<Record<string, VendaItem>>({});
+  // Pré-semeado a partir de ativos já sinalizados como "Vender" na Carteira Ativa (status + destino_venda
+  // persistentes). Inicializador lazy: roda só uma vez no mount, nunca resemeia ao voltar para o Passo 2
+  // (preserva edições manuais do consultor durante a sessão do wizard).
+  const [vendas, setVendas] = useState<Record<string, VendaItem>>(() => {
+    const seed: Record<string, VendaItem> = {};
+    (ativos || []).forEach((a: any) => {
+      if (a.status === 'Vender' && (a.valor_atual || 0) > 0.01) {
+        seed[a.id] = { valor: a.valor_atual, destino: (a.destino_venda as DestinoVenda) || 'livre' };
+      }
+    });
+    return seed;
+  });
+  // Seção de vendas mesclada ao Passo 1: expandida por padrão só quando já há algo pré-sinalizado.
+  const [vendasExpandido, setVendasExpandido] = useState(() => Object.keys(vendas).length > 0);
   const [estrategiaId, setEstrategiaId] = useState('');
   const [teseId, setTeseId] = useState('');
   const [bancosSelecionados, setBancosSelecionados] = useState<string[]>([]);
@@ -162,7 +190,8 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     if (!teseId) return;
     setLoading(true);
     try {
-      const rec = await carteiraRecomendadaService.listarAtivos();
+      // Reusa a carteira recomendada já carregada no mount; só busca se ainda não veio (evita refetch por recálculo).
+      const rec = (carteiraRec && carteiraRec.length) ? carteiraRec : await carteiraRecomendadaService.listarAtivos();
       const tese = tesesDisponiveis.find(t => t.id === teseId);
       const indepAtual = (ativos || []).filter((a: any) => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'independencia')).reduce((acc: number, a: any) => acc + (a.valor_atual * (a.distribuicao_objetivos.find((o: any) => o.tipo === 'independencia').percentual / 100)), 0);
 
@@ -178,116 +207,86 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       const det = investimentoService.calcularDistribuicaoDetalhadaAtivos(ativos, rec, rebateClasses, { teseId, faixaId: faixa.id, bancos: bancosSelecionados }, patFinal, overrides);
       setDistribuicaoAtivos(det);
     } catch (err) { console.error(err); } finally { setLoading(false); }
-  }, [teseId, tesesDisponiveis, ativos, bancosSelecionados, manualSettings, aporte, totalAlocadoReserva, totalAlocadoProjetos, rebateClasses, vendas]);
+  }, [teseId, tesesDisponiveis, ativos, bancosSelecionados, manualSettings, aporte, totalAlocadoReserva, totalAlocadoProjetos, rebateClasses, vendas, carteiraRec]);
 
+  // Apenas registra o override manual; o recálculo tático é reativo (efeito debounce abaixo) e preserva os overrides.
   const updateManual = (id: string, up: Partial<ManualOverride>) => {
-    const nm = { ...manualSettings, [id]: { ...manualSettings[id], ...up } };
-    setManualSettings(nm);
-    runCalculoTatico(nm);
+    setManualSettings(prev => ({ ...prev, [id]: { ...prev[id], ...up } }));
   };
+
+  // Recálculo reativo das classes (resumo/rebate) — substitui o antigo botão "Confirmar Aporte e Avançar".
+  useEffect(() => {
+    if (modo !== 'novo') return;
+    if (aporte <= 0 || !estrategiaId) { setResumo(null); setRebateClasses([]); setPatrimonioProjetado(0); return; }
+    const modelo = modelosDisponiveis.find(m => m.id === estrategiaId);
+    if (!modelo) return;
+    const h = setTimeout(() => {
+      try {
+        const vendasPorDestino = { reserva: 0, projetos: 0, independencia: 0, livre: 0 };
+        (Object.values(vendas) as VendaItem[]).forEach(({ valor, destino }: VendaItem) => {
+          vendasPorDestino[destino as DestinoVenda] = (vendasPorDestino[destino as DestinoVenda] || 0) + valor;
+        });
+        const vendasPorObj = { reserva: vendasPorDestino.reserva, projetos: vendasPorDestino.projetos, independencia: vendasPorDestino.independencia };
+        const aporteEfetivo = aporte + vendasPorDestino.livre;
+        const result = investimentoService.calcularRebateOtimo(ativos, aporteEfetivo, cliente?.reserva_recomendada || 0, projetos, modelo.classes || [], vendasPorObj);
+        setResumo(result.resumo);
+        setRebateClasses(result.distribuicaoIndependencia);
+        setPatrimonioProjetado(result.totalIndepProjetado);
+      } catch (err) { console.error(err); }
+    }, 400);
+    return () => clearTimeout(h);
+  }, [modo, aporte, estrategiaId, vendas, cliente, projetos, modelosDisponiveis, ativos]);
+
+  // Recálculo reativo do Simulador Tático — substitui o antigo botão "Próximo: Simulador Tático".
+  useEffect(() => {
+    if (modo !== 'novo' || !teseId || rebateClasses.length === 0) return;
+    const h = setTimeout(() => { runCalculoTatico(); }, 500);
+    return () => clearTimeout(h);
+  }, [modo, teseId, rebateClasses, runCalculoTatico]);
 
   const handleUpdatePerfil = async (key: string, value: any) => {
     const payload = { [key]: key === 'bancos_ativos' ? (value as string[]).join(',') : value };
     await atualizarCliente(clienteId, payload);
   };
 
-  const handleCalcularClasses = () => {
-    const modelo = modelosDisponiveis.find(m => m.id === estrategiaId);
-    if (!modelo) return alert("Selecione uma estratégia de alocação.");
-    setLoading(true);
-    try {
-      // Separar vendas por destino
-      const vendasPorDestino = { reserva: 0, projetos: 0, independencia: 0, livre: 0 };
-      (Object.values(vendas) as VendaItem[]).forEach(({ valor, destino }: VendaItem) => {
-        vendasPorDestino[destino as DestinoVenda] = (vendasPorDestino[destino as DestinoVenda] || 0) + valor;
-      });
-
-      // Vendas por objetivo (legado para cálculo interno do service)
-      const vendasPorObj = { reserva: vendasPorDestino.reserva, projetos: vendasPorDestino.projetos, independencia: vendasPorDestino.independencia };
-      // Tratamos livre como aporte adicional
-      const aporteEfetivo = aporte + vendasPorDestino.livre;
-
-      const result = investimentoService.calcularRebateOtimo(ativos, aporteEfetivo, cliente?.reserva_recomendada || 0, projetos, modelo.classes || [], vendasPorObj);
-      setResumo(result.resumo);
-      setRebateClasses(result.distribuicaoIndependencia);
-      setPatrimonioProjetado(result.totalIndepProjetado);
-      setStep(3);
-    } catch (err: any) {
-      console.error(err);
-      alert("Erro ao calcular classes: " + (err.message || "Verifique as configurações de alocação."));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCalcularAtivos = () => { runCalculoTatico(); setStep(6); };
-
   const totalVendas = useMemo(() => (Object.values(vendas) as VendaItem[]).reduce((acc, v) => acc + v.valor, 0), [vendas]);
 
-  const ativosComControle = useMemo(() => {
-    const totalCustodia = (ativos || []).reduce((acc: number, cur: any) => acc + (cur.valor_atual || 0), 0);
-    const patrimonioIndependencia = (ativos || []).reduce((acc: number, a: any) => {
-      const linkIndep = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'independencia');
-      const perc = linkIndep ? (linkIndep.percentual / 100) : 0;
-      return acc + (a.valor_atual * perc);
-    }, 0);
-
-    const teseCliente = tesesDisponiveis.find(t => t.id === teseId);
-    const faixas = teseCliente?.faixas || [];
-    const faixaAtual = faixas.find((f: any) => patrimonioIndependencia >= f.intervalo_minimo && (f.intervalo_maximo === null || patrimonioIndependencia < f.intervalo_maximo));
-    const proximaFaixa = faixas.find((f: any) => f.intervalo_minimo > patrimonioIndependencia);
-    const dentroToleranciaUpgrade = proximaFaixa ? ((proximaFaixa.intervalo_minimo - patrimonioIndependencia) / proximaFaixa.intervalo_minimo) <= 0.05 : false;
-
-    const totaisPorClasseIndep = (ativos || []).reduce((acc: any, cur: any) => {
-      const linkIndep = (cur.distribuicao_objetivos || []).find((o: any) => o.tipo === 'independencia');
-      if (linkIndep && linkIndep.percentual > 0) {
-        const classe = cur.tipo_ativo || 'OUTROS';
-        const valorIndep = cur.valor_atual * (linkIndep.percentual / 100);
-        acc[classe] = (acc[classe] || 0) + valorIndep;
-      }
-      return acc;
-    }, {});
-
-    return (ativos || []).map((a: any) => {
-      const linkIndep = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'independencia');
-      const temIndependencia = linkIndep && linkIndep.percentual > 0;
-      const totalClasseIndep = totaisPorClasseIndep[a.tipo_ativo || 'OUTROS'] || 0;
-      const valorParaIndep = temIndependencia ? (a.valor_atual * (linkIndep.percentual / 100)) : 0;
-      const pesoNaClasse = (totalClasseIndep > 0 && temIndependencia) ? (valorParaIndep / totalClasseIndep) * 100 : 0;
-
-      const matchesRec = (carteiraRec || []).filter(r => (r.ticker && a.ticker && r.ticker === a.ticker) || (r.cnpj && a.cnpj && r.cnpj === a.cnpj) || (r.nome_ativo === a.nome));
-      let statusControle = 'Não recomendado';
-      let metaAlvo = 0;
-      let desvio = 0;
-
-      if (matchesRec.length > 0) {
-        const naTese = matchesRec.filter(r => r.estrategia_id === teseId);
-        if (naTese.length === 0) statusControle = 'Fora da estratégia';
-        else {
-          const naFaixa = naTese.find(r => r.faixa_id === faixaAtual?.id);
-          const naFaixaSeguinte = proximaFaixa ? naTese.find(r => r.faixa_id === proximaFaixa.id) : null;
-          if (naFaixa) { statusControle = 'Ok'; metaAlvo = naFaixa.alocacao; }
-          else if (naFaixaSeguinte && dentroToleranciaUpgrade) { statusControle = 'Ok'; metaAlvo = naFaixaSeguinte.alocacao; }
-          else { statusControle = 'Fora da faixa'; metaAlvo = naTese[0].alocacao; }
-        }
-      }
-      if (temIndependencia && metaAlvo > 0) {
-        const partRealIndepTotal = patrimonioIndependencia > 0 ? (valorParaIndep / patrimonioIndependencia) * 100 : 0;
-        desvio = partRealIndepTotal - metaAlvo;
-      }
-      return { ...a, pesoNaClasse, desvio, temIndependencia, statusControle, metaAlvo };
+  // Reconstrói a Revisão Final do último aporte a partir do log salvo (prefixos nos nomes), para o modo leitura.
+  const revisaoData = useMemo(() => {
+    if (!ultimoRebal) return null;
+    const reserva: any[] = [], projeto: any[] = [], indep: any[] = [], venda: any[] = [];
+    (ultimoRebal.itens || []).forEach((it: any) => {
+      const nome = it.ativo_nome_avulso || '';
+      const v = it.valor_distribuido || 0;
+      if (nome.startsWith('[RESERVA]')) reserva.push({ nome: nome.replace('[RESERVA]', '').trim(), valor: v });
+      else if (nome.startsWith('[PROJETO]')) projeto.push({ nome: nome.replace('[PROJETO]', '').trim(), valor: v });
+      else if (nome.startsWith('[VENDA')) {
+        const m = nome.match(/\[VENDA→(.+?)\]/);
+        venda.push({ destino: (m?.[1] || '').toLowerCase(), nome: nome.replace(/\[VENDA→.+?\]\s*/, '').trim(), valor: Math.abs(v) });
+      } else indep.push({ nome, valor: v });
     });
-  }, [ativos, carteiraRec, tesesDisponiveis, teseId, cliente]);
+    const sum = (arr: any[]) => arr.reduce((s, x) => s + x.valor, 0);
+    return { reserva, projeto, indep, venda, totalReserva: sum(reserva), totalProjeto: sum(projeto), totalIndep: sum(indep), totalVendasRev: sum(venda) };
+  }, [ultimoRebal]);
+
+  // Habilitação progressiva das seções da página única.
+  const temAporteEfetivo = useMemo(() => distribuicaoAtivos.some((c: any) => (c.ativos || []).some((a: any) => (manualSettings[a.id]?.aporte_efetivo || 0) > 0.01)), [distribuicaoAtivos, manualSettings]);
+  const temReservaAlloc = useMemo(() => reservaAlloc.some(r => r.valor > 0.01), [reservaAlloc]);
+  const temProjetosAlloc = useMemo(() => projetosAlloc.some(p => p.valor > 0.01), [projetosAlloc]);
+  const secEnabled: Record<string, boolean> = {
+    'sec-capital': true,
+    'sec-distribuicao': !!resumo,
+    'sec-alocacao': !!resumo,
+    'sec-tatico': distribuicaoAtivos.length > 0,
+    'sec-revisao': temAporteEfetivo || temReservaAlloc || temProjetosAlloc,
+  };
+  const podeFinalizar = aporte > 0 && !!estrategiaId && (temAporteEfetivo || temReservaAlloc || temProjetosAlloc);
 
   const handleToggleVenda = (id: string, valorAtual: number) => {
     const nv: Record<string, VendaItem> = { ...vendas };
     if (nv[id]) delete nv[id];
     else nv[id] = { valor: valorAtual, destino: 'livre' };
     setVendas(nv);
-  };
-
-  const handleUpdateVenda = (id: string, patch: Partial<VendaItem>) => {
-    setVendas(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   };
 
   const handleFinalizarEfetivo = async (e: React.MouseEvent) => {
@@ -416,17 +415,17 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
   if (success) {
     return (
-      <div className="py-16 text-center space-y-8 animate-in zoom-in-95 duration-500">
-        <div className="h-24 w-24 bg-emerald-50 text-emerald-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl border border-emerald-100"><CheckCircle2 size={40} strokeWidth={2.5} /></div>
+      <div className="py-16 px-4 text-center space-y-8 animate-in zoom-in-95 duration-500">
+        <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl border" style={{ backgroundColor: 'var(--primary-soft)', color: 'var(--primary)', borderColor: 'rgba(16,185,129,0.25)' }}><CheckCircle2 size={40} strokeWidth={2.5} /></div>
         <div className="space-y-3">
-          <h3 className="text-3xl font-black text-main uppercase tracking-tight">Protocolo Finalizado!</h3>
+          <h3 className="text-2xl sm:text-3xl font-black text-main uppercase tracking-tight">Protocolo Finalizado!</h3>
           <p className="text-muted font-bold uppercase text-[10px] tracking-[0.3em] italic">O histórico de rebalanceamento foi registrado com sucesso.</p>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
           <button
             onClick={handleGerarPDF}
-            className="w-full sm:w-auto px-10 py-4 bg-emerald-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl flex items-center justify-center gap-3"
+            className="w-full sm:w-auto px-10 py-4 bg-[color:var(--primary)] text-[#0b0e14] font-black rounded-2xl text-[10px] uppercase tracking-widest hover:opacity-90 transition-all shadow-xl flex items-center justify-center gap-3"
           >
             <Download size={18} />
             Gerar Relatório PDF
@@ -437,43 +436,141 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     );
   }
 
-  if (step === 0) {
+  if (modo === 'idle') {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4">
-        <div onClick={() => setStep(1)} className="bg-surface p-8 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:shadow-md hover:border-emerald-200 transition-all cursor-pointer group flex flex-col items-center text-center space-y-4"><div className="h-14 w-14 bg-emerald-50 text-emerald-600 rounded-[12px] flex items-center justify-center group-hover:scale-110 group-hover:bg-emerald-600 group-hover:text-white transition-all"><Plus size={24} strokeWidth={3} /></div><div><h3 className="text-[16px] font-bold text-main uppercase tracking-tight">Novo Aporte Mensal</h3><p className="text-faint font-bold uppercase text-[10px] tracking-wider mt-1">Iniciar simulador do zero</p></div></div>
-        <div onClick={() => ultimoRebal ? setModalRevisao(true) : alert('Nenhum histórico disponível.')} className={`p-8 rounded-xl border transition-all flex flex-col items-center text-center space-y-4 ${ultimoRebal ? 'bg-surface border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:shadow-md hover:border-emerald-200 cursor-pointer group' : 'bg-surface-2 border-transparent opacity-50 cursor-not-allowed'}`}><div className={`h-14 w-14 rounded-[12px] flex items-center justify-center transition-all ${ultimoRebal ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-surface-2 text-faint'}`}><History size={24} strokeWidth={3} /></div><div><h3 className="text-[16px] font-bold text-main uppercase tracking-tight">Revisar Último Aporte</h3>{ultimoRebal ? (<p className="text-emerald-600 font-bold uppercase text-[10px] tracking-wider mt-1">Executado em {formatarData(ultimoRebal.data_rebalanceamento)}</p>) : (<p className="text-faint font-bold uppercase text-[10px] tracking-wider mt-1">Sem registros</p>)}</div></div>
-        <Modal isOpen={modalRevisao} onClose={() => setModalRevisao(false)} title="Resumo da Última Execução" size="lg">{ultimoRebal && (<div className="space-y-6 animate-fade-in"><div className="grid grid-cols-2 gap-4"><div className="bg-surface-2 p-4 rounded-xl border border-subtle"><span className="text-[10px] font-bold text-faint uppercase tracking-wider block mb-1">Aporte Total</span><p className="text-[20px] font-bold text-main tracking-tighter">{formatarMoeda(ultimoRebal.valor_aporte)}</p></div><div className="bg-surface-2 p-4 rounded-xl border border-subtle"><span className="text-[10px] font-bold text-faint uppercase tracking-wider block mb-1">Data</span><p className="text-[20px] font-bold text-main tracking-tighter">{formatarData(ultimoRebal.data_rebalanceamento)}</p></div></div><div className="bg-surface rounded-xl border border-subtle overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><table className="w-full text-left"><thead><tr className="bg-surface-2 border-b border-subtle"><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider">Ativo / Destino</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-right">Aporte</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-right">Valor Final</th></tr></thead><tbody className="divide-y divide-subtle">{ultimoRebal.itens?.map((it: any, idx: number) => (<tr key={idx}><td className="px-5 py-3"><p className="text-[12px] font-bold text-main uppercase">{it.ativo_nome_avulso}</p></td><td className="px-5 py-3 text-right font-bold text-emerald-600 text-[12px]">{formatarMoeda(it.valor_distribuido)}</td><td className="px-5 py-3 text-right font-bold text-muted text-[12px]">{formatarMoeda(it.valor_novo)}</td></tr>))}</tbody></table></div><button onClick={() => setModalRevisao(false)} className="w-full h-9 bg-surface-3 text-white font-bold uppercase text-[10px] rounded-[8px] tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-strong transition-colors">Fechar Revisão</button></div>)}</Modal>
+      <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 bg-surface p-4 sm:p-5 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+          <div>
+            <h3 className="text-[15px] font-bold text-main uppercase tracking-tight">Aporte Mensal</h3>
+            <p className="text-faint font-bold uppercase text-[10px] tracking-wider mt-1">Simule o protocolo do mês ou revise o último executado</p>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={() => ultimoRebal ? setModo('revisao') : alert('Nenhum histórico disponível.')}
+              disabled={!ultimoRebal}
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-[8px] border border-subtle bg-surface-2 text-muted text-[11px] font-bold uppercase tracking-wider hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <History size={15} /> Revisar Último
+            </button>
+            <button
+              onClick={() => setModo('novo')}
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-[8px] bg-[color:var(--primary)] text-[#0b0e14] text-[11px] font-bold uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+            >
+              <Plus size={15} strokeWidth={3} /> Novo Aporte Mensal
+            </button>
+          </div>
+        </div>
+        <HistoricoAportes clienteId={clienteId} />
+      </div>
+    );
+  }
+
+  // Modo leitura — reconstrói a Revisão Final do último aporte dentro do mesmo shell da página única.
+  if (modo === 'revisao') {
+    return (
+      <div className="max-w-6xl mx-auto py-4 px-2 sm:px-4 relative animate-in fade-in slide-in-from-bottom-4">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => setModo('idle')} className="h-9 w-9 shrink-0 bg-surface-2 text-faint rounded-2xl flex items-center justify-center hover:bg-surface-3 transition-all"><XCircle size={18} /></button>
+          <div className="min-w-0">
+            <h3 className="text-[18px] font-bold text-main uppercase tracking-tight truncate">Último Aporte Executado</h3>
+            {ultimoRebal && <p className="text-faint font-bold uppercase text-[10px] tracking-wider mt-0.5">Em {formatarData(ultimoRebal.data_rebalanceamento)} • somente leitura</p>}
+          </div>
+        </div>
+
+        {!ultimoRebal || !revisaoData ? (
+          <div className="py-16 text-center border border-dashed border-subtle rounded-xl"><p className="text-[12px] text-faint font-bold uppercase tracking-wider">Nenhum aporte registrado para revisar.</p></div>
+        ) : (
+          <div className="bg-surface p-4 sm:p-8 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] space-y-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-[color:var(--primary)] p-5 rounded-xl text-[#0b0e14] shadow-sm">
+                <span className="text-[10px] font-bold uppercase tracking-wider block mb-1 opacity-70">Aporte Novo</span>
+                <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda(ultimoRebal.valor_aporte)}</p>
+              </div>
+              <div className="p-5 rounded-xl text-white shadow-sm" style={{ backgroundColor: 'var(--danger)' }}>
+                <span className="text-[10px] font-bold uppercase tracking-wider block mb-1 opacity-80">Saldo de Vendas</span>
+                <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda(revisaoData.totalVendasRev)}</p>
+              </div>
+              <div className="bg-surface-3 p-5 rounded-xl text-white shadow-sm sm:col-span-2 flex justify-between items-center">
+                <div>
+                  <span className="text-[10px] font-bold text-faint uppercase tracking-wider block mb-1">Total Disponível</span>
+                  <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda((ultimoRebal.valor_aporte || 0) + revisaoData.totalVendasRev)}</p>
+                </div>
+                <Landmark size={28} className="text-main" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { icon: <ShieldCheck size={18} />, titulo: 'Reserva de Emergência', total: revisaoData.totalReserva, itens: revisaoData.reserva },
+                { icon: <Target size={18} />, titulo: 'Projetos / Objetivos', total: revisaoData.totalProjeto, itens: revisaoData.projeto },
+                { icon: <Bird size={18} />, titulo: 'Independência Financeira', total: revisaoData.totalIndep, itens: revisaoData.indep },
+              ].map((bloco, bi) => (
+                <div key={bi} className="space-y-4">
+                  <div className="flex items-center gap-2.5 text-emerald-600">{bloco.icon}<h4 className="text-[11px] font-bold uppercase tracking-wider">{bloco.titulo}</h4></div>
+                  <div className="bg-surface-2 p-5 rounded-xl border border-subtle space-y-4 shadow-sm">
+                    <div className="flex justify-between items-center pb-3 border-b border-subtle">
+                      <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Total Alocado</span>
+                      <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(bloco.total)}</span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {bloco.itens.length === 0 ? <p className="text-[11px] text-faint font-bold uppercase tracking-wider">—</p> : bloco.itens.map((it: any, ii: number) => (
+                        <div key={ii} className="flex justify-between text-[11px] font-bold text-muted"><span className="uppercase">{it.nome}</span><span className="font-bold">{formatarMoeda(it.valor)}</span></div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {revisaoData.venda.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2.5" style={{ color: 'var(--danger)' }}><Trash2 size={18} /><h4 className="text-[11px] font-bold uppercase tracking-wider">Ordens de Venda (Desinvestimento)</h4></div>
+                <div className="bg-surface rounded-xl overflow-hidden shadow-sm border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
+                  <table className="w-full text-left">
+                    <thead><tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}><th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th></tr></thead>
+                    <tbody className="divide-y divide-subtle text-[12px]">
+                      {revisaoData.venda.map((v: any, vi: number) => (
+                        <tr key={vi}><td className="py-3 px-5"><p className="font-bold text-main uppercase tracking-tight">{v.nome}</p></td><td className="py-3 px-5 text-center"><span className="text-[9px] font-bold text-muted uppercase tracking-wider bg-surface-2 px-2.5 py-1 rounded-md">{v.destino}</span></td><td className="py-3 px-5 text-right font-bold tracking-tighter" style={{ color: 'var(--danger)' }}>{formatarMoeda(v.valor)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto py-4 relative">
-      {finishing && (<div className="fixed inset-0 z-[60] bg-surface/60 backdrop-blur-sm flex flex-col items-center justify-center space-y-4"><RefreshCw size={48} className="text-emerald-600 animate-spin" /><p className="text-xs font-black text-main uppercase tracking-widest">Sincronizando Decisões...</p></div>)}
-      <div className="flex items-center justify-center gap-4 mb-12">
-        <button onClick={() => setStep(0)} className="h-10 w-10 bg-surface-2 text-faint rounded-2xl flex items-center justify-center hover:bg-surface-3 transition-all"><XCircle size={18} /></button>
-        {[1, 2, 3, 4, 5, 6, 7].map(i => (
-          <React.Fragment key={i}>
-            <div className={`h-10 w-10 rounded-2xl flex items-center justify-center font-black text-xs transition-all ${step >= i ? 'bg-emerald-600 text-white shadow-xl' : 'bg-surface-2 text-faint'}`}>{step > i ? <CheckCircle2 size={18} /> : i}</div>
-            {i < 7 && <div className={`h-1 w-12 rounded-full ${step > i ? 'bg-emerald-600' : 'bg-surface-2'}`} />}
-          </React.Fragment>
-        ))}
+    <div className="max-w-6xl mx-auto py-4 px-2 sm:px-4 relative">
+      {finishing && (<div className="fixed inset-0 z-[60] bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4 print:hidden"><RefreshCw size={48} className="text-[color:var(--primary)] animate-spin" /><p className="text-xs font-black text-main uppercase tracking-widest">Sincronizando Decisões...</p></div>)}
+
+      {/* Cabeçalho da página única — escondido na impressão (só a Revisão é impressa) */}
+      <div className="flex items-center gap-3 mb-6 print:hidden">
+        <button onClick={() => setModo('idle')} className="h-9 w-9 shrink-0 bg-surface-2 text-faint rounded-2xl flex items-center justify-center hover:bg-surface-3 transition-all"><XCircle size={18} /></button>
+        <div className="min-w-0">
+          <h3 className="text-[16px] font-semibold text-main truncate">Novo Aporte Mensal</h3>
+          <p className="text-[12px] text-muted mt-0.5">Preencha as seções em sequência — os cálculos atualizam sozinhos</p>
+        </div>
       </div>
 
-      {step === 1 && (
-        <div className="bg-surface p-8 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] space-y-8 animate-in fade-in slide-in-from-bottom-4">
-          <div className="text-center">
-            <h3 className="text-[20px] font-bold text-main uppercase">Fluxo de Aporte</h3>
-            <p className="text-faint font-bold uppercase text-[10px] mt-1 tracking-wider">Defina o capital disponível para o protocolo mensal</p>
-          </div>
+      {/* Nav horizontal (mobile) */}
+      <SecaoNav secoes={SECOES} enabledMap={secEnabled} variante="mobile" />
 
-          <div className="max-w-xl mx-auto space-y-8">
-            <div className="bg-surface-2 p-8 rounded-xl border border-subtle space-y-5">
-              <div className="flex justify-between items-center">
-                <label className="block text-[10px] font-bold text-faint uppercase tracking-wider">Capital Disponível</label>
-                <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-[6px]">
+      <div className="lg:grid lg:grid-cols-[180px_1fr] lg:gap-8">
+        <SecaoNav secoes={SECOES} enabledMap={secEnabled} variante="lateral" />
+
+        <div className="space-y-10 pb-32 min-w-0">
+          <SectionShell id="sec-capital" numero={1} hideOnPrint titulo="Capital Disponível" descricao="Defina o valor do aporte e confirme as vendas sinalizadas">
+          <div className="max-w-3xl space-y-4">
+            <div className={`${cardCls} space-y-4`}>
+              <div className="flex flex-wrap justify-between items-center gap-2">
+                <label className={kpiLabel}>Capital Disponível</label>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-2 text-faint">
                   <Landmark size={12} />
-                  <span className="text-[9px] font-bold uppercase tracking-wider">Saldo em Conta</span>
+                  <span className="text-[10px] font-semibold">Saldo em conta</span>
                 </div>
               </div>
               <div className="relative">
@@ -483,219 +580,166 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                   autoFocus
                   value={new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(aporte)}
                   onChange={e => setAporte(parseInt(e.target.value.replace(/\D/g, "") || "0") / 100)}
-                  className="w-full pl-12 bg-transparent border-b-2 border-subtle text-[32px] font-bold text-main outline-none pb-2 focus:border-emerald-500 transition-all tracking-tighter"
+                  className="w-full pl-12 bg-transparent border-b-2 border-subtle text-[28px] sm:text-[32px] font-bold text-main outline-none pb-2 focus:border-[color:var(--primary)] transition-all tracking-tighter"
                 />
               </div>
-              <p className="text-[10px] text-faint font-bold uppercase tracking-wider">O valor será distribuído conforme a estratégia definida no resumo geral.</p>
+              <p className="text-[12px] text-faint">O valor será distribuído conforme a estratégia definida no resumo geral.</p>
             </div>
 
-            <div className="bg-surface p-5 rounded-xl border border-subtle space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+            <div className={`${cardCls} space-y-3`}>
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Estratégia Atual</span>
-                <span className="text-[10px] font-bold text-main uppercase tracking-wider">{modelosDisponiveis.find(m => m.id === estrategiaId)?.nome || 'Não definida'}</span>
+                <span className={kpiLabel}>Estratégia atual</span>
+                <span className="text-[12px] font-semibold text-main">{modelosDisponiveis.find(m => m.id === estrategiaId)?.nome || 'Não definida'}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Tese de Investimento</span>
-                <span className="text-[10px] font-bold text-main uppercase tracking-wider">{tesesDisponiveis.find(t => t.id === teseId)?.nome || 'Não definida'}</span>
+                <span className={kpiLabel}>Tese de investimento</span>
+                <span className="text-[12px] font-semibold text-main">{tesesDisponiveis.find(t => t.id === teseId)?.nome || 'Não definida'}</span>
               </div>
             </div>
 
-            <button
-              onClick={() => setStep(2)}
-              disabled={aporte <= 0 || !estrategiaId || loading}
-              className="w-full h-12 bg-emerald-600 text-white font-bold rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[11px] tracking-wider hover:bg-emerald-700 transition-all disabled:opacity-50"
-            >
-              Confirmar Aporte e Avançar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ────── STEP 2: DESINVESTIMENTO ────── */}
-      {step === 2 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-          <div className="bg-surface p-6 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] space-y-6">
-            <div className="text-center">
-              <h3 className="text-[20px] font-bold text-main uppercase tracking-tight">Desinvestimento</h3>
-              <p className="text-faint font-bold uppercase text-[10px] mt-1 tracking-wider">Selecione ativos para venda e defina o destino do saldo</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-surface-2 border-b border-subtle">
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider">Ativo</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Controle</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Classe</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Desvio Meta</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Objetivo</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-right">Saldo</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-rose-600 uppercase tracking-wider text-right">Valor Venda</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Destino do Saldo</th>
-                    <th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-right">Ação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-subtle text-[12px]">
-                  {(ativosComControle || []).filter((a: any) => a.valor_atual > 0.01).map((at: any) => {
-                    const isVendendo = !!vendas[at.id];
-                    const venda = vendas[at.id];
-                    const objetivo = (at.distribuicao_objetivos || [])[0]?.tipo || 'independencia';
-                    const DESTINOS: { key: DestinoVenda; label: string; color: string }[] = [
-                      { key: 'reserva', label: 'Reserva', color: 'bg-sky-50 text-sky-600 border-sky-200' },
-                      { key: 'projetos', label: 'Projetos', color: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
-                      { key: 'independencia', label: 'Indep.', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-                      { key: 'livre', label: 'Livre', color: 'bg-surface-2 text-muted border-subtle' },
-                    ];
-                    return (
-                      <tr key={at.id} className={`hover:bg-surface-2/50 transition-colors ${isVendendo ? 'bg-rose-50/30' : ''}`}>
-                        <td className="py-3 px-4">
-                          <p className="font-bold text-main uppercase tracking-tight">{at.nome}</p>
-                          <p className="text-[10px] text-muted font-bold uppercase mt-0.5">{at.ticker || at.cnpj || '---'}</p>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wider ${at.statusControle === 'Ok' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : at.statusControle === 'Fora da estratégia' ? 'bg-rose-50 text-rose-600 border-rose-100' : at.statusControle === 'Fora da faixa' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-surface-2 text-faint border-subtle'}`}>
-                            {at.statusControle}
+            {/* Vendas e desinvestimentos — seção expansível, mesclada do antigo Passo 2 */}
+            <div className="border border-subtle rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setVendasExpandido(v => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 bg-surface-2 hover:bg-surface-3 transition-colors"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Trash2 size={16} className="text-[color:var(--danger)] shrink-0" />
+                  <span className="text-[13px] font-semibold text-main truncate">Vendas e desinvestimentos</span>
+                  {Object.keys(vendas).length > 0 && (
+                    <Badge variant="danger" size="sm">{Object.keys(vendas).length} sinalizada(s)</Badge>
+                  )}
+                </div>
+                <ChevronRight size={16} className={`text-faint transition-transform ${vendasExpandido ? 'rotate-90' : ''}`} />
+              </button>
+              {vendasExpandido && (
+                <div className="p-5 space-y-4 border-t border-subtle">
+                  <p className="text-[12px] text-faint">Vendas sinalizadas na Carteira Ativa — ajuste valores e destinos lá; aqui você só confirma ou cancela para este mês</p>
+                  {Object.keys(vendas).length === 0 ? (
+                    <div className="py-8 text-center border border-dashed border-subtle rounded-lg">
+                      <p className="text-[11px] text-faint">Nenhum ativo sinalizado para venda. Marque "Sinalizar venda" na Carteira Ativa para que apareça aqui.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {Object.keys(vendas).map((id: string) => {
+                        const at = (ativos || []).find((a: any) => a.id === id);
+                        if (!at) return null;
+                        const venda = vendas[id];
+                        const destinoInfo = DESTINOS_VENDA.find(d => d.key === venda.destino) || DESTINOS_VENDA[DESTINOS_VENDA.length - 1];
+                        return (
+                          <div key={id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg" style={{ backgroundColor: 'rgba(248,113,113,0.05)' }}>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-main text-[13px]">{at.nome}</p>
+                              <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj || '---'}</p>
+                            </div>
+                            <div className="flex items-center gap-4 shrink-0">
+                              <div className="text-right">
+                                <p className={kpiLabel}>Valor a vender</p>
+                                <p className="text-[13px] font-bold tracking-tighter" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</p>
+                              </div>
+                              <span className={`px-2.5 py-1 rounded-md border text-[9px] font-bold uppercase tracking-wider whitespace-nowrap ${destinoInfo.color}`}>{destinoInfo.label}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleVenda(id, at.valor_atual)}
+                                className="px-3 h-7 rounded-md text-[11px] font-semibold transition-colors border hover:opacity-90 shrink-0"
+                                style={{ backgroundColor: 'var(--danger)', color: '#fff', borderColor: 'var(--danger)' }}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
                           </div>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`font-bold ${at.temIndependencia ? 'text-main' : 'text-faint'}`}>{at.pesoNaClasse.toFixed(1)}%</span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {at.temIndependencia && at.metaAlvo > 0 ? (
-                            <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${Math.abs(at.desvio) <= 2 ? 'bg-surface-2 text-faint border-subtle' : at.desvio > 2 ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                              <span className="text-[9px] font-bold uppercase tracking-wider">{Math.abs(at.desvio) <= 2 ? 'OK' : `${at.desvio > 0 ? '+' : ''}${at.desvio.toFixed(1)}%`}</span>
-                            </div>
-                          ) : (<div className="h-0.5 w-3 bg-surface-3 rounded-full mx-auto" />)}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="text-[9px] font-bold text-muted uppercase bg-surface-2 px-2 py-0.5 rounded-md tracking-wider">{objetivo}</span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-main tracking-tighter">{formatarMoeda(at.valor_atual)}</td>
-                        <td className="py-3 px-4 text-right">
-                          {isVendendo ? (
-                            <input
-                              type="number"
-                              value={venda.valor}
-                              onChange={e => handleUpdateVenda(at.id, { valor: parseFloat(e.target.value) || 0 })}
-                              className="w-24 px-2 h-7 bg-surface border border-rose-200 rounded-md text-right text-[12px] font-bold text-rose-600 outline-none focus:ring-1 focus:ring-rose-500"
-                            />
-                          ) : <span className="text-faint">—</span>}
-                        </td>
-                        <td className="py-3 px-4">
-                          {isVendendo && (
-                            <div className="flex items-center gap-1 justify-center flex-wrap">
-                              {DESTINOS.map(d => (
-                                <button
-                                  key={d.key}
-                                  onClick={() => handleUpdateVenda(at.id, { destino: d.key })}
-                                  className={`px-2 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wider transition-colors ${venda.destino === d.key ? d.color + ' ring-1 ring-offset-1 ring-current' : 'bg-surface text-faint border-subtle hover:border-subtle'
-                                    }`}
-                                >
-                                  {d.label}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => handleToggleVenda(at.id, at.valor_atual)}
-                            className={`px-3 h-7 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors border ${isVendendo ? 'bg-rose-500 text-white border-rose-600 shadow-sm hover:bg-rose-600' : 'bg-surface text-muted border-subtle hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
-                              }`}
-                          >
-                            {isVendendo ? 'Cancelar' : 'Vender'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {totalVendas > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-surface-2 rounded-xl border border-subtle">
+                      <div>
+                        <p className={`${kpiLabel} mb-1`}>Aporte base</p>
+                        <p className="text-[14px] font-bold text-main tracking-tighter">{formatarMoeda(aporte)}</p>
+                      </div>
+                      <div>
+                        <p className={`${kpiLabel} mb-1`}>Saldo de vendas</p>
+                        <p className="text-[14px] font-bold tracking-tighter" style={{ color: 'var(--danger)' }}>{formatarMoeda(totalVendas)}</p>
+                      </div>
+                      <div>
+                        <p className={`${kpiLabel} mb-1`} style={{ color: 'var(--primary)' }}>Total disponível</p>
+                        <p className="text-[14px] font-bold tracking-tighter" style={{ color: 'var(--primary)' }}>{formatarMoeda(aporte + totalVendas)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            {/* Total banner */}
-            <div className="grid grid-cols-3 gap-4 p-5 bg-surface-2 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <div>
-                <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Aporte Base</p>
-                <p className="text-[16px] font-bold text-main tracking-tighter">{formatarMoeda(aporte)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Saldo de Vendas</p>
-                <p className="text-[16px] font-bold text-rose-500 tracking-tighter">{formatarMoeda(totalVendas)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">Total Disponível</p>
-                <p className="text-[16px] font-bold text-emerald-600 tracking-tighter">{formatarMoeda(aporte + totalVendas)}</p>
-              </div>
+
+          </div>
+          </SectionShell>
+
+          <SectionShell id="sec-distribuicao" numero={2} hideOnPrint titulo="Resumo da Distribuição" descricao="Alvos calculados para Reserva, Projetos e Independência" disabled={!secEnabled['sec-distribuicao']} hint="Defina o capital e a estratégia para calcular a distribuição">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className={cardCls}><ShieldCheck size={20} className="mb-4" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Reserva</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.reserva || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'reserva') && <p className="text-[11px] font-semibold mt-2" style={{ color: 'var(--info)' }}>+ saldo de vendas</p>}</div>
+              <div className={cardCls}><Target size={20} className="mb-4" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Projetos</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.projetos || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'projetos') && <p className="text-[11px] font-semibold mt-2 text-[#c4b5fd]">+ saldo de vendas</p>}</div>
+              <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white shadow-sm"><Bird size={20} className="text-emerald-400 mb-4" /><p className={kpiLabel}>Alvo Independência</p><p className="text-[22px] font-bold tracking-tight leading-none mt-2">{formatarMoeda(resumo?.independencia || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'independencia') && <p className="text-[11px] font-semibold text-emerald-400 mt-2">+ saldo de vendas</p>}</div>
             </div>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => setStep(1)} className="flex-1 h-9 font-bold text-muted border border-subtle rounded-[8px] uppercase text-[10px] tracking-wider shadow-sm hover:bg-surface-2 transition-colors">Voltar</button>
-            <button onClick={handleCalcularClasses} disabled={loading} className="flex-[2] h-9 font-bold text-white bg-emerald-600 rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[10px] tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50">
-              {loading ? 'Processando...' : 'Calcular Distribuição'}
-            </button>
-          </div>
-        </div>
-      )}
+          </SectionShell>
 
-      {step === 3 && resumo && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-surface p-6 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><ShieldCheck size={20} className="text-emerald-500 mb-4" /><p className="text-[10px] font-bold text-faint uppercase tracking-wider">Alvo Reserva</p><p className="text-[20px] font-bold tracking-tighter">{formatarMoeda(resumo.reserva)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'reserva') && <p className="text-[9px] font-bold text-sky-500 mt-1 uppercase tracking-wider">+ saldo de vendas</p>}</div>
-            <div className="bg-surface p-6 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><Target size={20} className="text-emerald-500 mb-4" /><p className="text-[10px] font-bold text-faint uppercase tracking-wider">Alvo Projetos</p><p className="text-[20px] font-bold tracking-tighter">{formatarMoeda(resumo.projetos)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'projetos') && <p className="text-[9px] font-bold text-indigo-500 mt-1 uppercase tracking-wider">+ saldo de vendas</p>}</div>
-            <div className="bg-surface-3 p-6 rounded-xl text-white shadow-lg"><Bird size={20} className="text-emerald-400 mb-4" /><p className="text-[10px] font-bold text-faint uppercase tracking-wider">Alvo Independência</p><p className="text-[20px] font-bold tracking-tighter">{formatarMoeda(resumo.independencia)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'independencia') && <p className="text-[9px] font-bold text-emerald-400 mt-1 uppercase tracking-wider">+ saldo de vendas</p>}</div>
-          </div>
-          <div className="flex gap-3"><button onClick={() => setStep(2)} className="flex-1 h-9 font-bold text-muted border border-subtle rounded-[8px] uppercase text-[10px] tracking-wider shadow-sm hover:bg-surface-2 transition-colors">Voltar</button><button onClick={() => setStep(4)} className="flex-[2] h-9 font-bold text-white bg-emerald-600 rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[10px] tracking-wider hover:bg-emerald-700 transition-colors">Próximo: Destino Manual</button></div>
-        </div>
-      )}
-
-      {step === 4 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-          <section className="bg-surface p-6 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-subtle"><div><h3 className="font-bold text-main uppercase tracking-tight text-[16px]">Reserva</h3><p className="text-[10px] text-muted font-bold tracking-wider mt-0.5">Meta: {formatarMoeda(resumo.reserva)}</p></div><div className="px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-[8px] text-[10px] font-bold tracking-wider">Alocado: {formatarMoeda(totalAlocadoReserva)}</div></div>
-            {reservaAlloc.map((it, idx) => (<div key={it.id} className="flex items-center gap-3"><div className="flex-1 px-4 py-3 bg-surface-2 rounded-[8px] font-bold text-[11px] uppercase tracking-wider text-main">{it.nome}</div><div className="w-40"><PriceInputCell initialValue={it.valor} onConfirm={val => { const n = [...reservaAlloc]; n[idx].valor = val; setReservaAlloc(n); }} /></div><button onClick={() => setReservaAlloc(reservaAlloc.filter(x => x.id !== it.id))} className="p-2 text-faint hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>))}
+          <SectionShell id="sec-alocacao" numero={3} hideOnPrint titulo="Alocação Manual" descricao="Direcione valores para a Reserva e Projetos antes do simulador" disabled={!secEnabled['sec-alocacao']} hint="Aguardando o cálculo da distribuição">
+            <div className="space-y-4">
+          <section className={`${cardCls} space-y-4`}>
+            <div className="flex flex-wrap justify-between items-center gap-3 pb-4 border-b border-subtle"><div><h3 className={sectionTitleCls}>Reserva</h3><p className="text-[12px] text-muted mt-0.5">Meta: {formatarMoeda(resumo?.reserva || 0)}</p></div><div className="px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: 'var(--primary-soft)', color: 'var(--primary)' }}>Alocado: {formatarMoeda(totalAlocadoReserva)}</div></div>
+            {reservaAlloc.map((it, idx) => (<div key={it.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3"><div className="flex-1 min-w-0 px-4 py-3 bg-surface-2 rounded-lg font-semibold text-[12px] text-main truncate">{it.nome}</div><div className="flex items-center gap-2"><div className="w-full sm:w-40"><PriceInputCell initialValue={it.valor} onConfirm={val => { const n = [...reservaAlloc]; n[idx].valor = val; setReservaAlloc(n); }} /></div><button onClick={() => setReservaAlloc(reservaAlloc.filter(x => x.id !== it.id))} className="p-2 text-faint hover:text-[color:var(--danger)] transition-colors shrink-0"><Trash2 size={16} /></button></div></div>))}
             <SelectorAtivo onSelect={(val: string) => { const ex = ativos.find((a: any) => a.id === val || a.nome === val); setReservaAlloc([...reservaAlloc, { id: ex?.id || `new-${Date.now()}`, nome: ex?.nome || val, valor: 0, ticker: ex?.ticker, ativo_id: ex?.id }]); }} placeholder="Adicionar à Reserva..." ativos={ativos} />
           </section>
-          <section className="bg-surface p-6 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] space-y-6">
-            <div className="flex justify-between items-center pb-4 border-b border-subtle"><div><h3 className="font-bold text-main uppercase tracking-tight text-[16px]">Projetos</h3><p className="text-[10px] text-muted font-bold tracking-wider mt-0.5">Meta: {formatarMoeda(resumo.projetos)}</p></div><div className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-[8px] text-[10px] font-bold tracking-wider">Alocado: {formatarMoeda(totalAlocadoProjetos)}</div></div>
-            {projetosAlloc.map((it, idx) => (<div key={it.id} className="flex items-center gap-3"><div className="flex-1 px-4 py-3 bg-surface-2 rounded-[8px] font-bold text-[11px] uppercase tracking-wider text-main">{it.nome}</div><div className="w-40"><PriceInputCell initialValue={it.valor} onConfirm={val => { const n = [...projetosAlloc]; n[idx].valor = val; setProjetosAlloc(n); }} /></div><button onClick={() => setProjetosAlloc(projetosAlloc.filter(x => x.id !== it.id))} className="p-2 text-faint hover:text-rose-500 transition-colors"><Trash2 size={16} /></button></div>))}
+          <section className={`${cardCls} space-y-4`}>
+            <div className="flex flex-wrap justify-between items-center gap-3 pb-4 border-b border-subtle"><div><h3 className={sectionTitleCls}>Projetos</h3><p className="text-[12px] text-muted mt-0.5">Meta: {formatarMoeda(resumo?.projetos || 0)}</p></div><div className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-[rgba(167,139,250,0.14)] text-[#c4b5fd]">Alocado: {formatarMoeda(totalAlocadoProjetos)}</div></div>
+            {projetosAlloc.map((it, idx) => (<div key={it.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3"><div className="flex-1 min-w-0 px-4 py-3 bg-surface-2 rounded-lg font-semibold text-[12px] text-main truncate">{it.nome}</div><div className="flex items-center gap-2"><div className="w-full sm:w-40"><PriceInputCell initialValue={it.valor} onConfirm={val => { const n = [...projetosAlloc]; n[idx].valor = val; setProjetosAlloc(n); }} /></div><button onClick={() => setProjetosAlloc(projetosAlloc.filter(x => x.id !== it.id))} className="p-2 text-faint hover:text-[color:var(--danger)] transition-colors shrink-0"><Trash2 size={16} /></button></div></div>))}
             <SelectorAtivo onSelect={(val: string) => { const ex = ativos.find((a: any) => a.id === val || a.nome === val); setProjetosAlloc([...projetosAlloc, { id: ex?.id || `new-${Date.now()}`, nome: ex?.nome || val, valor: 0, ticker: ex?.ticker, ativo_id: ex?.id }]); }} placeholder="Adicionar aos Projetos..." ativos={ativos} />
           </section>
-          <div className="flex gap-3"><button onClick={() => setStep(3)} className="flex-1 h-9 font-bold text-muted border border-subtle rounded-[8px] uppercase text-[10px] tracking-wider shadow-sm hover:bg-surface-2 transition-colors">Voltar</button><button onClick={() => setStep(5)} className="flex-[2] h-9 font-bold text-white bg-emerald-600 rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[10px] tracking-wider hover:bg-emerald-700 transition-colors">Próximo: Rebate por Classes</button></div>
-        </div>
-      )}
+            </div>
+          </SectionShell>
 
-      {step === 5 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-          <div className="bg-surface p-6 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><table className="w-full text-left"><thead><tr className="bg-surface-2 border-b border-subtle"><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider">Classe</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-right">Saldo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-center">% Alvo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-emerald-600 tracking-wider text-right">Aporte</th></tr></thead><tbody className="divide-y divide-subtle">{rebateClasses.map((c, i) => (<tr key={i}><td className="px-5 py-3 font-bold text-main uppercase text-[12px] tracking-tight">{c.classe}</td><td className="px-5 py-3 text-right font-bold text-muted text-[12px]">{formatarMoeda(c.saldo_atual)}</td><td className="px-5 py-3 text-center font-bold text-faint text-[11px]">{c.alvo_perc}%</td><td className="px-5 py-3 text-right font-bold text-emerald-600 text-[13px]">{formatarMoeda(c.aporte_sugerido)}</td></tr>))}</tbody></table></div>
-          <div className="flex gap-3"><button onClick={() => setStep(4)} className="flex-1 h-9 font-bold text-muted border border-subtle rounded-[8px] uppercase text-[10px] tracking-wider shadow-sm hover:bg-surface-2 transition-colors">Voltar</button><button onClick={handleCalcularAtivos} className="flex-[2] h-9 font-bold text-white bg-emerald-600 rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[10px] tracking-wider hover:bg-emerald-700 transition-colors">Explorar Simulador Tático</button></div>
-        </div>
-      )}
-
-      {step === 6 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-          <div className="bg-surface-3 p-5 rounded-xl text-white flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-            <div className="relative z-10 text-center md:text-left"><span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-1">Simulador de Ordens de Compra</span><p className="text-[20px] font-bold tracking-tighter">{formatarMoeda(resumo.independencia)} <span className="text-[10px] text-muted uppercase tracking-wider ml-1">Aporte IF Total</span></p>{faixaAplicada && (<div className="mt-2 flex items-center gap-2"><span className="text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-md uppercase tracking-wider">Tese: {faixaAplicada.estrategias_base?.nome || 'Estratégia Base'} • Faixa: {faixaAplicada.nome}</span></div>)}</div>
-            <div className="relative z-10 text-right"><p className="text-[10px] font-bold text-muted uppercase tracking-wider">Patrimônio IF Projetado</p><p className="text-[20px] font-bold tracking-tighter text-emerald-400">{formatarMoeda(patrimonioProjetado)}</p></div>
+          <SectionShell id="sec-tatico" numero={4} hideOnPrint titulo="Simulador Tático" descricao="Ajuste preço de mercado e aporte efetivo por ativo" disabled={!secEnabled['sec-tatico']} hint="Conclua a alocação manual para liberar o simulador">
+            <div className="space-y-4">
+          <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden shadow-sm">
+            <div className="relative z-10 text-center md:text-left"><span className={`${kpiLabel} block mb-1`}>Simulador de ordens de compra</span><p className="text-[20px] font-bold tracking-tight">{formatarMoeda(resumo?.independencia || 0)} <span className="text-[11px] text-muted ml-1">Aporte IF total</span></p>{faixaAplicada && (<div className="mt-2 flex items-center gap-2"><Badge variant="primary" size="sm">Tese: {faixaAplicada.estrategias_base?.nome || 'Estratégia Base'} • Faixa: {faixaAplicada.nome}</Badge></div>)}</div>
+            <div className="relative z-10 text-right"><p className={kpiLabel}>Patrimônio IF projetado</p><p className="text-[20px] font-bold tracking-tight text-emerald-400">{formatarMoeda(patrimonioProjetado)}</p></div>
             <Landmark size={120} className="absolute -bottom-10 -right-10 text-white/5 pointer-events-none" />
           </div>
+
+          {/* Resumo por classe — mesclado do antigo passo isolado "Rebate por Classes" */}
+          <div className="bg-surface rounded-xl border border-subtle overflow-hidden shadow-sm"><table className="w-full text-left"><thead><tr className="bg-surface-2 border-b border-subtle"><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider">Classe</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-right">Saldo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-center">% Alvo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-emerald-600 tracking-wider text-right">Aporte</th></tr></thead><tbody className="divide-y divide-subtle">{rebateClasses.map((c, i) => (<tr key={i}><td className="px-5 py-3 font-bold text-main uppercase text-[12px] tracking-tight">{c.classe}</td><td className="px-5 py-3 text-right font-bold text-muted text-[12px]">{formatarMoeda(c.saldo_atual)}</td><td className="px-5 py-3 text-center font-bold text-faint text-[11px]">{c.alvo_perc}%</td><td className="px-5 py-3 text-right font-bold text-emerald-600 text-[13px]">{formatarMoeda(c.aporte_sugerido)}</td></tr>))}</tbody></table></div>
+
           <div className="space-y-4">
             {distribuicaoAtivos.map((classe, cIdx) => {
               const isClasseSkip = classe.valor_aporte_classe <= 0.01;
               return (
                 <Accordion key={cIdx} title={classe.classe} subtitle={isClasseSkip ? 'CATEGORIA IGNORADA (Redistribuído)' : `${classe.ativos.filter((a: any) => a.acao === 'COMPRAR').length} ativos em compra • Fundo: ${formatarMoeda(classe.valor_aporte_classe)}`} defaultOpen={!isClasseSkip}>
-                  <div className="overflow-x-auto mt-4"><table className="w-full text-left"><thead><tr className="bg-surface-2 border-b border-subtle"><th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider">Ativo</th><th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Atual</th><th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Sugerida</th><th className="py-3 px-4 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-right">Sugerido</th><th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center w-28">Preço Mercado</th><th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Cotas</th><th className="py-3 px-4 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-center w-36">Aporte Efetivo</th><th className="py-3 px-4 text-[10px] font-bold text-faint uppercase tracking-wider text-right">Ação</th></tr></thead>
+                  <div className="mt-4"><table className="w-full text-left table-fixed">
+                    <colgroup>
+                      <col className="w-[22%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[14%]" />
+                      <col className="w-[7%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[15%]" />
+                    </colgroup>
+                    <thead><tr className="bg-surface-2 border-b border-subtle"><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider">Ativo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Atual</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Sugerida</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-right">Sugerido</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Preço Mercado</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Cotas</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-center">Aporte Efetivo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-right">Ação</th></tr></thead>
                     <tbody className="divide-y divide-subtle">
                       {classe.ativos.map((at: any, aIdx: number) => {
                         const isComprando = at.acao === 'COMPRAR';
                         return (
                           <tr key={aIdx} className={`hover:bg-surface-2/50 transition-colors ${!isComprando ? 'opacity-50 grayscale bg-surface-2/30' : ''}`}>
-                            <td className="py-3 px-4"><div className="flex items-center gap-2">{!isComprando && <AlertCircle size={10} className="text-faint" />}<div><p className="text-[12px] font-bold text-main uppercase tracking-tight">{at.nome}</p><p className="text-[10px] text-muted font-bold uppercase mt-0.5 tracking-wider">{at.ticker || at.cnpj || '---'}</p></div></div></td>
-                            <td className="py-3 px-4 text-center text-[11px] font-bold text-muted">{at.alocacao_atual.toFixed(1)}%</td>
-                            <td className="py-3 px-4 text-center text-[11px] font-bold text-main bg-emerald-50/50 rounded-md">{at.alocacao_atualizada.toFixed(1)}%</td>
-                            <td className="py-3 px-4 text-right font-bold text-emerald-600 text-[12px]">{at.aporte_sugerido > 0.01 ? formatarMoeda(at.aporte_sugerido) : '---'}</td>
-                            <td className="py-3 px-4"><PriceInputCell initialValue={at.preco_mercado} onConfirm={v => updateManual(at.id, { preco_mercado: v })} /></td>
-                            <td className="py-3 px-4 text-center"><span className={`text-[12px] font-bold ${at.cotas > 0 ? 'text-emerald-600' : 'text-faint'}`}>{at.cotas || 0}</span></td>
-                            <td className="py-3 px-4"><PriceInputCell initialValue={manualSettings[at.id]?.aporte_efetivo || 0} onConfirm={v => updateManual(at.id, { aporte_efetivo: v })} /></td>
-                            <td className="py-3 px-4 text-right"><button onClick={() => updateManual(at.id, { status_manual: at.acao !== 'COMPRAR' })} className={`px-3 h-7 rounded-md text-[9px] font-bold uppercase tracking-wider transition-colors border ${isComprando ? 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100' : 'bg-surface-2 text-muted border-subtle hover:bg-surface-2'}`}>{isComprando ? 'Comprar' : 'Ignorar'}</button></td>
+                            <td className="py-3 px-2 sm:px-3"><div className="flex items-center gap-2 min-w-0">{!isComprando && <AlertCircle size={10} className="text-faint shrink-0" />}<div className="min-w-0"><p className="text-[12px] font-bold text-main uppercase tracking-tight truncate">{at.nome}</p><p className="text-[10px] text-muted font-bold uppercase mt-0.5 tracking-wider truncate">{at.ticker || at.cnpj || '---'}</p></div></div></td>
+                            <td className="py-3 px-2 sm:px-3 text-center text-[11px] font-bold text-muted">{at.alocacao_atual.toFixed(1)}%</td>
+                            <td className="py-3 px-2 sm:px-3 text-center text-[11px] font-bold text-main rounded-md" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>{at.alocacao_atualizada.toFixed(1)}%</td>
+                            <td className="py-3 px-2 sm:px-3 text-right font-bold text-[12px] whitespace-nowrap" style={{ color: 'var(--primary)' }}>{at.aporte_sugerido > 0.01 ? formatarMoeda(at.aporte_sugerido) : '---'}</td>
+                            <td className="py-3 px-1.5 sm:px-2"><PriceInputCell initialValue={at.preco_mercado} onConfirm={v => updateManual(at.id, { preco_mercado: v })} /></td>
+                            <td className="py-3 px-2 sm:px-3 text-center"><span className="text-[12px] font-bold" style={{ color: at.cotas > 0 ? 'var(--primary)' : 'var(--text-faint)' }}>{at.cotas || 0}</span></td>
+                            <td className="py-3 px-1.5 sm:px-2"><PriceInputCell initialValue={manualSettings[at.id]?.aporte_efetivo || 0} onConfirm={v => updateManual(at.id, { aporte_efetivo: v })} /></td>
+                            <td className="py-3 px-2 sm:px-3 text-right"><button onClick={() => updateManual(at.id, { status_manual: at.acao !== 'COMPRAR' })} className={`w-full px-2 h-7 rounded-md text-[9px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors border ${isComprando ? 'hover:opacity-80' : 'bg-surface-2 text-muted border-subtle hover:bg-surface-2'}`} style={isComprando ? { backgroundColor: 'rgba(16,185,129,0.12)', color: 'var(--primary)', borderColor: 'rgba(16,185,129,0.25)' } : undefined}>{isComprando ? 'Comprar' : 'Ignorar'}</button></td>
                           </tr>
                         );
                       })}
@@ -703,198 +747,339 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
               );
             })}
           </div>
-          <div className="flex gap-3"><button onClick={() => setStep(5)} className="flex-1 h-9 font-bold text-muted border border-subtle rounded-[8px] uppercase text-[10px] tracking-wider shadow-sm hover:bg-surface-2 transition-colors">Voltar</button><button onClick={() => setStep(7)} className="flex-[2] h-9 font-bold text-white bg-emerald-600 rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[10px] tracking-wider hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">Revisar Resumo Final <ArrowRight size={16} /></button></div>
-        </div>
-      )}
-
-      {step === 7 && (
-        <div className="space-y-8 animate-in fade-in slide-in-from-right-4 pb-20">
-          <div className="bg-surface p-8 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] space-y-8">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-6 border-b border-subtle">
-              <div>
-                <h3 className="text-[20px] font-bold text-main uppercase tracking-tight">Resumo da Estratégia</h3>
-                <p className="text-faint font-bold uppercase text-[10px] mt-1 tracking-wider">Configuração Consolidada para Execução</p>
-              </div>
-              <div className="flex gap-4">
-                <div className="bg-surface-2 px-4 py-3 rounded-[8px] border border-subtle shadow-sm">
-                  <span className="text-[9px] font-bold text-faint uppercase block mb-1 tracking-wider">Asset Mix</span>
-                  <p className="text-[12px] font-bold text-main uppercase tracking-tight">{modelosDisponiveis.find(m => m.id === estrategiaId)?.nome}</p>
-                </div>
-                <div className="bg-surface-2 px-4 py-3 rounded-[8px] border border-subtle shadow-sm">
-                  <span className="text-[9px] font-bold text-faint uppercase block mb-1 tracking-wider">Tese / Faixa</span>
-                  <p className="text-[12px] font-bold text-main uppercase tracking-tight">{tesesDisponiveis.find(t => t.id === teseId)?.nome} • {faixaAplicada?.nome}</p>
-                </div>
-              </div>
             </div>
+          </SectionShell>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-emerald-600 p-5 rounded-xl text-white shadow-sm">
-                <span className="text-[10px] font-bold text-emerald-200 uppercase tracking-wider block mb-1">Aporte Novo</span>
-                <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda(aporte)}</p>
-              </div>
-              <div className="bg-rose-500 p-5 rounded-xl text-white shadow-sm">
-                <span className="text-[10px] font-bold text-rose-100 uppercase tracking-wider block mb-1">Saldo de Vendas</span>
-                <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda(totalVendas)}</p>
-              </div>
-              <div className="bg-surface-3 p-5 rounded-xl text-white shadow-sm col-span-2 flex justify-between items-center">
+          <SectionShell id="sec-revisao" numero={5} titulo="Revisão Final" descricao="Prévia formal do relatório — confira antes de gerar o PDF ou finalizar" disabled={!secEnabled['sec-revisao']} hint="Defina ao menos um aporte efetivo ou alocação para revisar">
+            {/* Documento de revisão — layout formal, serve como prévia de tela e de impressão/PDF. */}
+            <div className="bg-surface rounded-xl border border-subtle shadow-sm overflow-hidden print:shadow-none print:border-black/15">
+              {/* Cabeçalho tipo timbrado */}
+              <div className="px-5 sm:px-8 py-6 border-b border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <span className="text-[10px] font-bold text-faint uppercase tracking-wider block mb-1">Total Disponível</span>
-                  <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda(aporte + totalVendas)}</p>
-                </div>
-                <Landmark size={28} className="text-main" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-4">
-                <div className="flex items-center gap-2.5 text-emerald-600">
-                  <ShieldCheck size={18} />
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider">Reserva de Emergência</h4>
-                </div>
-                <div className="bg-surface-2 p-5 rounded-xl border border-subtle space-y-4 shadow-sm">
-                  <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                    <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Total Alocado</span>
-                    <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoReserva)}</span>
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-[18px] font-semibold text-main">Relatório de Aporte Mensal</h3>
+                    <span className="print:hidden"><Badge variant="info" size="sm">Prévia</Badge></span>
                   </div>
-                  <div className="space-y-2.5">
-                    {reservaAlloc.filter(r => r.valor > 0.01).map(r => (
-                      <div key={r.id} className="flex justify-between text-[11px] font-bold text-muted">
-                        <span className="uppercase">{r.nome}</span>
-                        <span className="font-bold">{formatarMoeda(r.valor)}</span>
-                      </div>
-                    ))}
+                  <p className="text-[12px] text-muted mt-1">
+                    {cliente?.nome || 'Cliente'} • {new Date().toLocaleDateString('pt-BR')}{planejador?.nome ? ` • Consultor: ${planejador.nome}` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <div className="text-right">
+                    <span className={kpiLabel}>Asset Mix</span>
+                    <p className="text-[12px] font-semibold text-main mt-0.5">{modelosDisponiveis.find(m => m.id === estrategiaId)?.nome}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={kpiLabel}>Tese / Faixa</span>
+                    <p className="text-[12px] font-semibold text-main mt-0.5">{tesesDisponiveis.find(t => t.id === teseId)?.nome} • {faixaAplicada?.nome}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center gap-2.5 text-emerald-600">
-                  <Target size={18} />
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider">Projetos / Objetivos</h4>
-                </div>
-                <div className="bg-surface-2 p-5 rounded-xl border border-subtle space-y-4 shadow-sm">
-                  <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                    <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Total Alocado</span>
-                    <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoProjetos)}</span>
-                  </div>
-                  <div className="space-y-2.5">
-                    {projetosAlloc.filter(p => p.valor > 0.01).map(p => (
-                      <div key={p.id} className="flex justify-between text-[11px] font-bold text-muted">
-                        <span className="uppercase">{p.nome}</span>
-                        <span className="font-bold">{formatarMoeda(p.valor)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center gap-2.5 text-emerald-600">
-                  <Bird size={18} />
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider">Independência Financeira</h4>
-                </div>
-                <div className="bg-surface-2 p-5 rounded-xl border border-subtle space-y-4 shadow-sm">
-                  <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                    <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Aporte Sugerido</span>
-                    <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(resumo.independencia)}</span>
-                  </div>
-                  <div className="space-y-2.5">
-                    {rebateClasses.filter(c => c.aporte_sugerido > 0.01).map((c, i) => (
-                      <div key={i} className="flex justify-between text-[11px] font-bold text-muted">
-                        <span className="uppercase">{c.classe}</span>
-                        <span className="font-bold">{formatarMoeda(c.aporte_sugerido)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="flex items-center gap-2.5 text-main">
-                <ShoppingCart size={18} />
-                <h4 className="text-[11px] font-bold uppercase tracking-wider">Ordens de Compra (Simulador Tático)</h4>
-              </div>
-              <div className="space-y-4">
-                {distribuicaoAtivos.filter(c => c.ativos.some((a: any) => a.acao === 'COMPRAR')).map((classe, cIdx) => (
-                  <div key={cIdx} className="bg-surface border border-subtle rounded-xl overflow-hidden shadow-sm">
-                    <div className="bg-surface-2 px-5 py-3 border-b border-subtle flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-main uppercase tracking-wider">{classe.classe}</span>
-                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Fundo: {formatarMoeda(classe.valor_aporte_classe)}</span>
+              <div className="p-5 sm:p-8 space-y-8">
+                {/* 01 — Resumo executivo */}
+                <div className="space-y-4">
+                  <DocSectionTitle numero="01" titulo="Resumo Executivo" icon={<Landmark size={16} className="text-faint" />} />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-[color:var(--primary)] rounded-xl p-4 sm:p-5 text-[#0b0e14] shadow-sm">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-70">Aporte Novo</span>
+                      <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(aporte)}</p>
                     </div>
-                    <table className="w-full text-left">
-                      <tbody className="divide-y divide-subtle text-[12px]">
-                        {classe.ativos.filter((a: any) => a.acao === 'COMPRAR').map((at: any, aIdx: number) => (
-                          <tr key={aIdx}>
-                            <td className="py-3 px-5">
-                              <p className="font-bold text-main uppercase tracking-tight">{at.nome}</p>
-                              <p className="text-[10px] text-muted font-bold uppercase mt-0.5 tracking-wider">{at.ticker || at.cnpj}</p>
-                            </td>
-                            <td className="py-3 px-5 text-right">
-                              <div className="flex flex-col items-end">
-                                <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">Aporte: {formatarMoeda(manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido)}</span>
-                                <span className="text-[9px] font-bold text-faint uppercase mt-0.5 tracking-wider">Cotas: {at.cotas || 0}</span>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="rounded-xl p-4 sm:p-5 text-white shadow-sm" style={{ backgroundColor: 'var(--danger)' }}>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-80">Saldo de Vendas</span>
+                      <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(totalVendas)}</p>
+                    </div>
+                    <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white shadow-sm sm:col-span-2 flex justify-between items-center">
+                      <div>
+                        <span className={kpiLabel}>Total Disponível</span>
+                        <p className="text-[22px] font-bold tracking-tight mt-0.5">{formatarMoeda(aporte + totalVendas)}</p>
+                      </div>
+                      <Landmark size={26} className="text-main opacity-60" />
+                    </div>
                   </div>
-                ))}
+                </div>
+
+                {/* 02 — Distribuição por objetivo */}
+                <div className="space-y-4">
+                  <DocSectionTitle numero="02" titulo="Distribuição por Objetivo" icon={<Target size={16} className="text-faint" />} />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-emerald-600"><ShieldCheck size={15} /><span className="text-[12px] font-semibold">Reserva de Emergência</span></div>
+                      <div className={`${cardCls} space-y-3`}>
+                        <div className="flex justify-between items-center pb-3 border-b border-subtle">
+                          <span className={kpiLabel}>Total Alocado</span>
+                          <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoReserva)}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {reservaAlloc.filter(r => r.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : reservaAlloc.filter(r => r.valor > 0.01).map(r => (
+                            <div key={r.id} className="flex justify-between text-[12px] font-medium text-muted">
+                              <span>{r.nome}</span>
+                              <span className="font-semibold text-main">{formatarMoeda(r.valor)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-emerald-600"><Target size={15} /><span className="text-[12px] font-semibold">Projetos / Objetivos</span></div>
+                      <div className={`${cardCls} space-y-3`}>
+                        <div className="flex justify-between items-center pb-3 border-b border-subtle">
+                          <span className={kpiLabel}>Total Alocado</span>
+                          <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoProjetos)}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {projetosAlloc.filter(p => p.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : projetosAlloc.filter(p => p.valor > 0.01).map(p => (
+                            <div key={p.id} className="flex justify-between text-[12px] font-medium text-muted">
+                              <span>{p.nome}</span>
+                              <span className="font-semibold text-main">{formatarMoeda(p.valor)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-emerald-600"><Bird size={15} /><span className="text-[12px] font-semibold">Independência Financeira</span></div>
+                      <div className={`${cardCls} space-y-3`}>
+                        <div className="flex justify-between items-center pb-3 border-b border-subtle">
+                          <span className={kpiLabel}>Aporte Sugerido</span>
+                          <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(resumo?.independencia || 0)}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {rebateClasses.filter(c => c.aporte_sugerido > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : rebateClasses.filter(c => c.aporte_sugerido > 0.01).map((c, i) => (
+                            <div key={i} className="flex justify-between text-[12px] font-medium text-muted">
+                              <span>{c.classe}</span>
+                              <span className="font-semibold text-main">{formatarMoeda(c.aporte_sugerido)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 03 — Ordens de compra */}
+                <div className="space-y-4">
+                  <DocSectionTitle numero="03" titulo="Ordens de Compra (Simulador Tático)" icon={<ShoppingCart size={16} className="text-faint" />} />
+                  <div className="space-y-3">
+                    {distribuicaoAtivos.filter(c => c.ativos.some((a: any) => a.acao === 'COMPRAR')).map((classe, cIdx) => (
+                      <div key={cIdx} className="bg-surface border border-subtle rounded-xl overflow-hidden">
+                        <div className="bg-surface-2 px-5 py-2.5 border-b border-subtle flex justify-between items-center">
+                          <span className="text-[12px] font-semibold text-main">{classe.classe}</span>
+                          <span className="text-[11px] font-semibold text-emerald-600">Fundo: {formatarMoeda(classe.valor_aporte_classe)}</span>
+                        </div>
+                        <table className="w-full text-left">
+                          <tbody className="divide-y divide-subtle text-[12px]">
+                            {classe.ativos.filter((a: any) => a.acao === 'COMPRAR').map((at: any, aIdx: number) => (
+                              <tr key={aIdx}>
+                                <td className="py-2.5 px-5">
+                                  <p className="font-semibold text-main">{at.nome}</p>
+                                  <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
+                                </td>
+                                <td className="py-2.5 px-5 text-right">
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-[12px] font-semibold text-emerald-600">Aporte: {formatarMoeda(manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido)}</span>
+                                    <span className="text-[10px] text-faint mt-0.5">Cotas: {at.cotas || 0}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 04 — Ordens de venda (só quando há desinvestimento) */}
+                {Object.keys(vendas).length > 0 && (
+                  <div className="space-y-4">
+                    <DocSectionTitle numero="04" titulo="Ordens de Venda (Desinvestimento)" icon={<Trash2 size={16} className="text-faint" />} />
+                    <div className="bg-surface rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}>
+                              <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th>
+                              <th className="px-5 py-3 text-[10px] font-bold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th>
+                              <th className="px-5 py-3 text-[10px] font-bold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-subtle text-[12px]">
+                            {(Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
+                              const at = ativos.find((a: any) => a.id === id);
+                              if (!at) return null;
+                              return (
+                                <tr key={id}>
+                                  <td className="py-2.5 px-5">
+                                    <p className="font-semibold text-main">{at.nome}</p>
+                                    <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
+                                  </td>
+                                  <td className="py-2.5 px-5 text-center">
+                                    <span className="text-[10px] font-semibold text-muted bg-surface-2 px-2.5 py-1 rounded-md">{venda.destino}</span>
+                                  </td>
+                                  <td className="py-2.5 px-5 text-right font-bold tracking-tight" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Rodapé do documento — ação de prévia em PDF, escondida na impressão */}
+              <div className="px-5 sm:px-8 py-5 border-t border-subtle bg-surface-2/40 flex flex-col sm:flex-row items-center justify-between gap-3 print:hidden">
+                <p className="text-[11px] text-faint">Esta é uma prévia. Gere o PDF para revisar o layout de impressão ou compartilhar com o cliente.</p>
+                <button
+                  type="button"
+                  onClick={handleGerarPDF}
+                  disabled={!resumo}
+                  className="h-10 px-5 inline-flex items-center gap-2 rounded-lg border border-subtle text-muted text-[12px] font-semibold hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                >
+                  <Download size={15} /> Gerar Prévia em PDF
+                </button>
               </div>
             </div>
-
-            {Object.keys(vendas).length > 0 && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-2.5 text-rose-600">
-                  <Trash2 size={18} />
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider">Ordens de Venda (Desinvestimento)</h4>
-                </div>
-                <div className="bg-surface border border-rose-200 rounded-xl overflow-hidden shadow-sm">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-rose-50 border-b border-rose-200">
-                        <th className="px-5 py-3 text-[10px] font-bold text-rose-500 uppercase tracking-wider">Ativo</th>
-                        <th className="px-5 py-3 text-[10px] font-bold text-rose-500 uppercase text-center tracking-wider">Destino</th>
-                        <th className="px-5 py-3 text-[10px] font-bold text-rose-600 uppercase text-right tracking-wider">Valor Venda</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-rose-50 text-[12px]">
-                      {(Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
-                        const at = ativos.find((a: any) => a.id === id);
-                        if (!at) return null;
-                        return (
-                          <tr key={id}>
-                            <td className="py-3 px-5">
-                              <p className="font-bold text-main uppercase tracking-tight">{at.nome}</p>
-                              <p className="text-[10px] text-muted font-bold uppercase mt-0.5 tracking-wider">{at.ticker || at.cnpj}</p>
-                            </td>
-                            <td className="py-3 px-5 text-center">
-                              <span className="text-[9px] font-bold text-muted uppercase tracking-wider bg-surface-2 px-2.5 py-1 rounded-md">{venda.destino}</span>
-                            </td>
-                            <td className="py-3 px-5 text-right font-bold text-rose-600 tracking-tighter">{formatarMoeda(venda.valor)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="flex gap-3"><button onClick={() => setStep(6)} className="flex-1 h-9 font-bold text-muted border border-subtle rounded-[8px] uppercase text-[10px] tracking-wider shadow-sm hover:bg-surface-2 transition-colors">Voltar ao Simulador</button><button onClick={handleFinalizarEfetivo} className="flex-[2] h-9 font-bold text-white bg-emerald-600 rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[10px] tracking-wider hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">Finalizar e Sincronizar Carteira <ShoppingCart size={16} /></button></div>
+          </SectionShell>
         </div>
-      )
+      </div>
+
+      {/* Rodapé fixo de conclusão — escondido na impressão */}
+      <div className="print:hidden sticky bottom-0 z-30 -mx-2 sm:-mx-4 mt-2 px-2 sm:px-4 py-3 bg-surface/85 backdrop-blur-sm border-t border-subtle">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+          {!podeFinalizar && <span className="text-[10px] font-bold text-faint uppercase tracking-wider self-center sm:mr-auto">Preencha capital, estratégia e ao menos um aporte/alocação</span>}
+          <button
+            onClick={handleFinalizarEfetivo}
+            disabled={!podeFinalizar || finishing}
+            className="h-11 px-6 font-bold text-[#0b0e14] bg-[color:var(--primary)] rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[11px] tracking-wider hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Finalizar e Sincronizar Carteira <ShoppingCart size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Casca de seção da página única: número + título calmo (sem uppercase/tracking-widest) + estado
+// desabilitado (dim/sem interação) até o pré-requisito existir. `numero` replica o motivo da SecaoNav
+// para reforçar a sequência. `hideOnPrint` esconde a seção ao imprimir — só a Revisão é impressa.
+const SectionShell = ({ id, numero, titulo, descricao, disabled = false, hint, hideOnPrint = false, children }: { id: string; numero?: number; titulo: string; descricao?: string; disabled?: boolean; hint?: string; hideOnPrint?: boolean; children: React.ReactNode }) => (
+  <section id={id} className={`scroll-mt-24 ${hideOnPrint ? 'print:hidden' : ''}`}>
+    <div className="flex items-center gap-2.5 mb-4">
+      {numero != null && <span className="h-6 w-6 shrink-0 rounded-md bg-surface-2 text-faint flex items-center justify-center text-[11px] font-black">{numero}</span>}
+      <div className="min-w-0">
+        <h3 className={sectionTitleCls}>{titulo}</h3>
+        {descricao && <p className="text-[12px] text-muted mt-0.5">{descricao}</p>}
+      </div>
+    </div>
+    <div className={disabled ? 'opacity-40 pointer-events-none select-none' : ''}>{children}</div>
+    {disabled && hint && (
+      <div className="mt-3 text-[11px] font-semibold text-faint flex items-center gap-1.5"><AlertCircle size={12} /> {hint}</div>
+    )}
+  </section>
+);
+
+// Cabeçalho numerado de seção dentro do documento de Revisão (relatório formal).
+const DocSectionTitle = ({ numero, titulo, icon }: { numero: string; titulo: string; icon?: React.ReactNode }) => (
+  <div className="flex items-center gap-2.5 pb-3 border-b border-subtle">
+    <span className="text-[11px] font-mono font-semibold text-faint">{numero}</span>
+    {icon}
+    <h4 className="text-[13px] font-semibold text-main">{titulo}</h4>
+  </div>
+);
+
+// Localiza o ancestral scrollável (o <main> do layout tem overflow-y-auto).
+const findScrollParent = (el: HTMLElement | null): HTMLElement | null => {
+  let p = el?.parentElement || null;
+  while (p && p !== document.body) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+    p = p.parentElement;
+  }
+  return null;
+};
+
+// Navegação entre seções com scroll-spy. 'lateral' = sticky no desktop; 'mobile' = barra horizontal.
+// Usa um listener de scroll (não IntersectionObserver, que não acompanha de forma confiável o
+// contêiner aninhado overflow-y-auto deste layout) para destacar a seção atual.
+const SecaoNav = ({ secoes, enabledMap, variante }: { secoes: { id: string; label: string }[]; enabledMap: Record<string, boolean>; variante: 'lateral' | 'mobile' }) => {
+  const [active, setActive] = useState(secoes[0].id);
+  useEffect(() => {
+    const container = findScrollParent(document.getElementById(secoes[0].id));
+    const target: HTMLElement | Window = container || window;
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
+      const refTop = (container ? container.getBoundingClientRect().top : 0) + 140;
+      let current = secoes[0].id;
+      for (const s of secoes) {
+        const el = document.getElementById(s.id);
+        if (el && el.getBoundingClientRect().top <= refTop) current = s.id;
       }
-    </div >
+      setActive(current);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(compute); };
+    compute();
+    target.addEventListener('scroll', onScroll, { passive: true } as any);
+    window.addEventListener('resize', onScroll);
+    return () => { target.removeEventListener('scroll', onScroll as any); window.removeEventListener('resize', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [secoes]);
+
+  // Rola o contêiner scrollável até a seção — scrollIntoView não move esse contêiner aninhado de
+  // forma confiável, então calculamos o offset e usamos scrollTo.
+  const go = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const p = findScrollParent(el);
+    if (p) {
+      const top = el.getBoundingClientRect().top - p.getBoundingClientRect().top + p.scrollTop - 16;
+      p.scrollTo({ top, behavior: 'smooth' });
+    } else {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  if (variante === 'mobile') {
+    return (
+      <nav className="lg:hidden print:hidden flex gap-2 overflow-x-auto pb-3 mb-2 -mx-2 px-2">
+        {secoes.map((s, i) => {
+          const en = enabledMap[s.id]; const isActive = active === s.id;
+          return (
+            <button key={s.id} type="button" disabled={!en} onClick={() => en && go(s.id)}
+              className={`shrink-0 px-3 h-8 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14] border-transparent' : en ? 'bg-surface-2 text-muted border-subtle' : 'bg-surface-2 text-faint/50 border-subtle cursor-not-allowed'}`}>
+              {i + 1}. {s.label}
+            </button>
+          );
+        })}
+      </nav>
+    );
+  }
+
+  return (
+    <nav className="hidden lg:flex print:hidden flex-col gap-1 sticky top-4 self-start">
+      {secoes.map((s, i) => {
+        const en = enabledMap[s.id]; const isActive = active === s.id;
+        return (
+          <button key={s.id} type="button" disabled={!en} onClick={() => en && go(s.id)}
+            className={`text-left px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors flex items-center gap-2.5 ${isActive ? 'bg-[color:var(--primary-soft)] text-[color:var(--primary)]' : en ? 'text-muted hover:bg-surface-2' : 'text-faint/40 cursor-not-allowed'}`}>
+            <span className={`h-5 w-5 shrink-0 rounded-md flex items-center justify-center text-[10px] font-black ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14]' : 'bg-surface-2 text-faint'}`}>{i + 1}</span>
+            {s.label}
+          </button>
+        );
+      })}
+    </nav>
   );
 };
 
 const SelectorAtivo = ({ onSelect, placeholder, ativos }: any) => {
   const [inp, setInp] = useState(''); const [show, setShow] = useState(false);
   const fil = (ativos || []).filter((a: any) => a.nome?.toLowerCase().includes(inp.toLowerCase()));
-  return (<div className="relative"><div className="relative group"><input type="text" placeholder={placeholder} value={inp} onChange={e => { setInp(e.target.value); setShow(true); }} onFocus={() => setShow(true)} className="w-full h-10 pl-10 pr-4 bg-surface-2 border border-subtle rounded-[8px] text-[12px] font-bold text-main outline-none focus:bg-surface focus:border-emerald-300 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-sm" /><Search size={14} className="absolute left-4 top-3 text-faint" /><button type="button" disabled={!inp} onClick={() => { onSelect(inp); setInp(''); setShow(false); }} className="absolute right-2 top-2 h-6 w-6 flex items-center justify-center bg-emerald-600 text-white rounded-[4px] hover:bg-emerald-700 disabled:opacity-20 transition-all"><Plus size={12} strokeWidth={3} /></button></div>{show && inp && (<div className="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-subtle rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">{fil.map((a: any) => (<button key={a.id} type="button" onClick={() => { onSelect(a.id); setInp(''); setShow(false); }} className="w-full p-3 text-left text-[11px] font-bold text-main uppercase hover:bg-emerald-50 flex justify-between items-center transition-colors">{a.nome}</button>))}</div>)}{show && <div className="fixed inset-0 z-40" onClick={() => setShow(false)} />}</div>);
+  return (<div className="relative"><div className="relative group"><input type="text" placeholder={placeholder} value={inp} onChange={e => { setInp(e.target.value); setShow(true); }} onFocus={() => setShow(true)} className="w-full h-10 pl-10 pr-4 bg-surface-2 border border-subtle rounded-[8px] text-[12px] font-bold text-main outline-none focus:bg-surface focus:border-[color:var(--primary)] focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-sm" /><Search size={14} className="absolute left-4 top-3 text-faint" /><button type="button" disabled={!inp} onClick={() => { onSelect(inp); setInp(''); setShow(false); }} className="absolute right-2 top-2 h-6 w-6 flex items-center justify-center bg-[color:var(--primary)] text-[#0b0e14] rounded-[4px] hover:opacity-90 disabled:opacity-20 transition-all"><Plus size={12} strokeWidth={3} /></button></div>{show && inp && (<div className="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-subtle rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">{fil.map((a: any) => (<button key={a.id} type="button" onClick={() => { onSelect(a.id); setInp(''); setShow(false); }} className="w-full p-3 text-left text-[11px] font-bold text-main uppercase hover:bg-surface-2 flex justify-between items-center transition-colors">{a.nome}</button>))}</div>)}{show && <div className="fixed inset-0 z-40" onClick={() => setShow(false)} />}</div>);
 };
 
 export default RebalanceamentoInvestimentos;

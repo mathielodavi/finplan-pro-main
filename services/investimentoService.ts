@@ -101,6 +101,19 @@ export const investimentoService = {
     return data;
   },
 
+  /** Edita um lançamento existente de historico_patrimonio (Histórico de Aportes). */
+  async atualizarHistoricoMensal(id: string, patch: Partial<HistoricoPatrimonio>) {
+    const { data, error } = await supabase.from('historico_patrimonio').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  /** Remove um lançamento de historico_patrimonio (Histórico de Aportes). */
+  async excluirHistoricoMensal(id: string) {
+    const { error } = await supabase.from('historico_patrimonio').delete().eq('id', id);
+    if (error) throw error;
+  },
+
   /**
    * Snapshot automático do patrimônio de independência (soma dos ativos vinculados ao objetivo
    * 'independencia') com UPSERT MENSAL: se já houver um ponto no mês corrente para o cliente,

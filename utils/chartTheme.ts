@@ -49,3 +49,6 @@ export const tooltipStyle = {
 
 /** Estilo do label do tooltip. */
 export const tooltipLabelStyle = { color: '#9ba1b0', fontWeight: 600 } as const;
+
+/** Realce do cursor ao passar o mouse sobre barras/áreas (substitui o cinza/branco padrão do Recharts). */
+export const tooltipCursor = { fill: 'rgba(255,255,255,0.04)' } as const;

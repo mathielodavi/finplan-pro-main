@@ -72,7 +72,10 @@ export function projetarIndependencia(
   consumo?: ConsumoPatrimonio
 ): ResultadoProjecao {
   const taxaMensal = Math.pow(1 + params.taxa_real_anual / 100, 1 / 12) - 1;
-  const patrimonioNecessario = (params.renda_alvo * 12) / (params.taxa_real_anual / 100 || 1);
+  // O capital necessário precisa ser calculado com a MESMA taxa usada na fase de consumo
+  // (senão o patrimônio nunca estabiliza: cresceria ou cairia indefinidamente após "atingir a meta").
+  const taxaAlvoAnual = consumo ? consumo.taxaRentabilizacaoAnual : params.taxa_real_anual;
+  const patrimonioNecessario = (params.renda_alvo * 12) / (taxaAlvoAnual / 100 || 1);
 
   const dataInicio = new Date(params.data_inicio);
   const totalMesesPlano = params.prazo_anos * 12;

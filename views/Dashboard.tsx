@@ -5,7 +5,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Cartes
 import { dashboardService } from '../services/dashboardService';
 import { reuniaoService } from '../services/reuniaoService';
 import { formatarMoeda, formatarData } from '../utils/formatadores';
-import { CHART_COLORS, CHART_TERMOMETRO, CHART_GRID, axisTick, tooltipStyle } from '../utils/chartTheme';
+import { CHART_COLORS, CHART_TERMOMETRO, CHART_GRID, axisTick, tooltipStyle, tooltipCursor } from '../utils/chartTheme';
 import { categorizarAgendaCliente } from '../utils/agendaUtils';
 
 import Badge from '../components/UI/Badge';
@@ -377,7 +377,7 @@ const Dashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID} />
                   <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={axisTick} dy={10} />
                   <YAxis axisLine={false} tickLine={false} tick={axisTick} />
-                  <Tooltip contentStyle={tooltipStyle} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={tooltipCursor} />
                   <Legend content={legendContent} />
                   <Bar dataKey="ativos" name="Ativos" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} barSize={12} />
                   <Bar dataKey="novos" name="Novos" fill={CHART_COLORS.info} radius={[3, 3, 0, 0]} barSize={12} style={{ cursor: 'pointer' }} onClick={(data: any) => {
@@ -495,7 +495,7 @@ const Dashboard: React.FC = () => {
                   <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={axisTick} dy={10} />
                   <YAxis axisLine={false} tickLine={false} tick={axisTick}
                     tickFormatter={(value) => `R$ ${value >= 1000 ? (value / 1000).toFixed(1) + 'k' : value}`} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value: any) => formatarMoeda(value)} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={tooltipCursor} formatter={(value: any) => formatarMoeda(value)} />
                   <Legend content={legendContent} />
                   <Bar dataKey="planejamento" name="Planejamento" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} barSize={18} />
                   <Bar dataKey="extra" name="Extras" fill={CHART_COLORS.warning} radius={[3, 3, 0, 0]} barSize={18} />

@@ -59,7 +59,7 @@ const AbaInvestimentos: React.FC<AbaInvestimentosProps> = ({ clienteId }) => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="min-h-[500px] animate-slide-up">
-        {activeSub === 'resumo' && <ResumoInvestimentos clienteId={clienteId} ativos={ativos} cliente={cliente} onRefresh={loadData} />}
+        {activeSub === 'resumo' && <ResumoInvestimentos clienteId={clienteId} ativos={ativos} cliente={cliente} onRefresh={loadData} onNavigateAportes={() => setActiveSub('rebalanceamento')} />}
         {activeSub === 'carteira' && <CarteiraInvestimentos clienteId={clienteId} cliente={cliente} ativos={ativos} onRefresh={loadData} />}
         {activeSub === 'rebalanceamento' && <RebalanceamentoInvestimentos clienteId={clienteId} ativos={ativos} onFinish={() => { setActiveSub('resumo'); loadData(); }} />}
       </div>

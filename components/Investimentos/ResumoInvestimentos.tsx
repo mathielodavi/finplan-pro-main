@@ -11,13 +11,13 @@ import { configService } from '../../services/configuracoesService';
 import { protecaoService } from '../../services/protecaoService';
 import { calcularIdade } from '../../utils/calculosFinanceiros';
 import { projetarIndependencia, calcularPrazoERentabilidade } from '../../utils/independenciaUtils';
-import { CHART_GRID, axisTick, tooltipStyle } from '../../utils/chartTheme';
+import { CHART_GRID, axisTick, tooltipStyle, tooltipCursor } from '../../utils/chartTheme';
 import SidePanel from '../UI/SidePanel';
 import Button from '../UI/Button';
 import ObjetivoFormDrawer from './ObjetivoFormDrawer';
 import { ShieldCheck, Target, Settings, SlidersHorizontal, Plus, TrendingUp, Clock } from 'lucide-react';
 
-const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => {
+const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigateAportes }: any) => {
    const [drawerContas, setDrawerContas] = useState(false);
    const [drawerPremissas, setDrawerPremissas] = useState(false);
    const [drawerObjetivo, setDrawerObjetivo] = useState(false);
@@ -30,7 +30,6 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
    const [savingPrem, setSavingPrem] = useState(false);
    const [idadeCliente, setIdadeCliente] = useState<number | null>(null);
    const [taxaRentabilizacao, setTaxaRentabilizacao] = useState(6.25);
-   const [novoHist, setNovoHist] = useState({ data: new Date().toISOString().split('T')[0], valor: '0', aporte: '0' });
 
    const [premissas, setPremissas] = useState<PremissasIndependencia>({
       cliente_id: clienteId,
@@ -173,32 +172,11 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
       finally { setSavingPrem(false); }
    };
 
-   const handleAddHistorico = async () => {
-      const valor = parseInt((novoHist.valor || '0').replace(/\D/g, '')) / 100;
-      const aporte = parseInt((novoHist.aporte || '0').replace(/\D/g, '')) / 100;
-      try {
-         await investimentoService.registrarSaldoMensal({
-            cliente_id: clienteId,
-            data_historico: novoHist.data,
-            valor_patrimonio: valor,
-            valor_aporte: aporte,
-         });
-         const hist = await investimentoService.getHistoricoMensal(clienteId);
-         setHistorico(hist || []);
-         setNovoHist({ data: new Date().toISOString().split('T')[0], valor: '0', aporte: '0' });
-      } catch { alert('Erro ao registrar histórico.'); }
-   };
-
    const selectCls = 'w-full px-3 h-9 bg-surface-2 border border-subtle rounded-lg font-semibold text-[13px] text-main outline-none focus:border-primary transition-colors';
    const inputCls = 'w-full px-3 h-9 bg-surface-2 border border-subtle rounded-lg font-semibold text-[13px] text-main outline-none focus:border-primary transition-colors';
    const labelCls = 'block text-[11px] font-semibold text-muted mb-1.5';
    const kpiLabel = 'text-[11px] font-semibold text-faint uppercase tracking-wider';
    const cardCls = 'bg-surface rounded-xl border border-subtle p-4';
-
-   const handleHistMoeda = (campo: 'valor' | 'aporte', v: string) => {
-      const n = parseInt(v.replace(/\D/g, '') || '0') / 100;
-      setNovoHist(p => ({ ...p, [campo]: n.toString() }));
-   };
 
    const formatarMesAno = (meses: number) => {
       if (meses < 12) return `${meses} ${meses === 1 ? 'mês' : 'meses'}`;
@@ -352,7 +330,7 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID} />
                               <XAxis dataKey="classe" axisLine={false} tickLine={false} tick={axisTick} dy={8} />
                               <YAxis axisLine={false} tickLine={false} tick={axisTick} tickFormatter={(v) => `${v}%`} />
-                              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                              <Tooltip contentStyle={tooltipStyle} cursor={tooltipCursor} formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
                               <Legend content={() => (
                                  <div className="flex justify-center gap-4 mt-2">
                                     <span className="flex items-center gap-1.5 text-[11px] text-muted"><span className="h-2 w-2 rounded-full bg-[color:var(--text-faint)] opacity-50" /> Alvo (modelo)</span>
@@ -386,7 +364,7 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID} />
                            <XAxis dataKey="label" axisLine={false} tickLine={false} tick={axisTick} dy={8} />
                            <YAxis hide domain={[0, 'dataMax + 100000']} />
-                           <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [formatarMoeda(v), name]} />
+                           <Tooltip contentStyle={tooltipStyle} cursor={{ stroke: '#454c63', strokeWidth: 1 }} formatter={(v: any, name: any) => [formatarMoeda(v), name]} />
                            <ReferenceLine y={projecao.patrimonioNecessario} stroke="#3a4254" strokeDasharray="5 5" />
                            <Line type="monotone" dataKey="plano" name="Patrimônio Ideal (até 90 anos)" stroke="#6b7280" strokeWidth={2} dot={false} />
                            <Area type="monotone" dataKey="real" name="Patrimônio Real + Projeção" stroke="var(--primary)" strokeWidth={2.5} fill="url(#gradReal)" connectNulls />
@@ -490,40 +468,14 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh }: any) => 
                </div>
 
                <div className="pt-4 border-t border-subtle">
-                  <h4 className="text-[12px] font-semibold text-main mb-1">Inserir histórico mensal (manual)</h4>
-                  <p className="text-[10px] text-faint mb-3">Registre o patrimônio do mês e, se houver, o aporte realizado no período.</p>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                     <div>
-                        <label className={labelCls}>Data</label>
-                        <input type="date" className={inputCls} value={novoHist.data} onChange={e => setNovoHist(p => ({ ...p, data: e.target.value }))} />
-                     </div>
-                     <div>
-                        <label className={labelCls}>Patrimônio (independência)</label>
-                        <input className={inputCls} value={new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(parseFloat(novoHist.valor || '0'))} onChange={e => handleHistMoeda('valor', e.target.value)} />
-                     </div>
-                  </div>
-                  <div className="flex items-end gap-2">
-                     <div className="flex-1">
-                        <label className={labelCls}>Aporte do período</label>
-                        <input className={inputCls} value={new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(parseFloat(novoHist.aporte || '0'))} onChange={e => handleHistMoeda('aporte', e.target.value)} />
-                     </div>
-                     <button onClick={handleAddHistorico} className="h-9 w-9 flex items-center justify-center rounded-lg bg-[color:var(--primary)] text-[#0b0e14] shrink-0" title="Registrar"><Plus size={16} /></button>
-                  </div>
-                  {historico.length > 0 && (
-                     <div className="mt-3 max-h-40 overflow-y-auto custom-scrollbar space-y-1">
-                        {[...historico].reverse().map(h => (
-                           <div key={h.id} className="flex justify-between items-center text-[12px] px-2 py-1.5 rounded-lg bg-surface-2">
-                              <span className="text-muted">{new Date(h.data_historico).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}</span>
-                              <span className="text-right">
-                                 <span className="text-main font-semibold">{formatarMoeda(Number(h.valor_patrimonio))}</span>
-                                 {Number(h.valor_aporte) > 0 && (
-                                    <span className="text-faint ml-1.5">· aporte {formatarMoeda(Number(h.valor_aporte))}</span>
-                                 )}
-                              </span>
-                           </div>
-                        ))}
-                     </div>
-                  )}
+                  <p className="text-[10px] text-faint mb-3">{historico.length} ponto(s) de histórico mensal registrados.</p>
+                  <button
+                     type="button"
+                     onClick={() => { setDrawerPremissas(false); onNavigateAportes?.(); }}
+                     className="w-full h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors"
+                  >
+                     Ver histórico completo (Aporte Mensal)
+                  </button>
                </div>
             </div>
          </SidePanel>
