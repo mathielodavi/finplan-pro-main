@@ -52,6 +52,7 @@ const Dashboard: React.FC = () => {
   const [endividamentoTotal, setEndividamentoTotal] = useState(0);
   const [coberturaProtecao, setCoberturaProtecao] = useState(0);
   const [geoData, setGeoData] = useState<any[]>([]);
+  const [contratosPorOrigem, setContratosPorOrigem] = useState<any[]>([]);
 
   const [filterAgenda, setFilterAgenda] = useState<'all' | 'late' | 'upcoming' | 'pending'>('all');
   const [filterRenovacao, setFilterRenovacao] = useState<'all' | 'critical' | 'attention' | 'safe'>('all');
@@ -97,7 +98,7 @@ const Dashboard: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [summary, term, proj, exp, churn, ltv, endividamento, protecao, geo] = await Promise.all([
+      const [summary, term, proj, exp, churn, ltv, endividamento, protecao, geo, origemContratos] = await Promise.all([
         dashboardService.getSummaryKPIs(),
         dashboardService.getTermometroStats(),
         dashboardService.getIncomeProjection(),
@@ -106,7 +107,8 @@ const Dashboard: React.FC = () => {
         dashboardService.getLTVMetrics(),
         dashboardService.getEndividamentoTotal(),
         dashboardService.getCoberturaProtecao(),
-        dashboardService.getDistribuicaoGeografica()
+        dashboardService.getDistribuicaoGeografica(),
+        dashboardService.getContratosPorOrigem()
       ]);
       setKpis(summary);
       setTermometroData(term);
@@ -117,6 +119,7 @@ const Dashboard: React.FC = () => {
       setEndividamentoTotal(endividamento);
       setCoberturaProtecao(protecao);
       setGeoData(geo);
+      setContratosPorOrigem(origemContratos);
     } catch (err) {
       console.error(err);
     } finally {
@@ -414,8 +417,29 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Contratos por Origem */}
+        <div className={`${panelCls} lg:col-span-5`}>
+          <PanelLabel title="Contratos por Origem" hint="Total · ativos · inativos" />
+          <div className="p-4 flex-1 min-h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={contratosPorOrigem} margin={{ top: 5, right: 8, bottom: 0, left: -16 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID} />
+                <XAxis dataKey="origem" axisLine={false} tickLine={false} tick={axisTick} dy={10} interval={0}
+                  tickFormatter={(v: string) => (v && v.length > 12 ? v.slice(0, 11) + '…' : v)} />
+                <YAxis axisLine={false} tickLine={false} tick={axisTick} allowDecimals={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={tooltipCursor} />
+                <Legend content={legendContent} />
+                <Bar dataKey="total" name="Total" fill={CHART_COLORS.info} radius={[3, 3, 0, 0]} barSize={14} />
+                <Bar dataKey="ativos" name="Ativos" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} barSize={14} />
+                <Bar dataKey="inativos" name="Inativos" fill={CHART_COLORS.danger} radius={[3, 3, 0, 0]} barSize={14} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
         {/* Vencimentos */}
-        <div className={`${panelCls} overflow-hidden`}>
+        <div className={`${panelCls} lg:col-span-7 overflow-hidden`}>
           <div className={panelHeadCls}>
             <div className="flex gap-2 items-baseline">
               <h3 className="text-[13px] font-semibold text-main">Renovação</h3>
@@ -465,6 +489,7 @@ const Dashboard: React.FC = () => {
               <button onClick={() => setPageVencimentos(p => p + 1)} className="h-6 w-6 flex items-center justify-center bg-surface hover:bg-surface-3 rounded border border-subtle transition-colors"><ChevronRight size={12} className="text-muted" /></button>
             </div>
           </div>
+        </div>
         </div>
       </section>
 
