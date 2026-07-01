@@ -36,8 +36,9 @@ const MapaBrasil: React.FC<Props> = ({ dados, onSelectEstado }) => {
   const maxTotal = Math.max(1, ...dados.map(d => d.total));
 
   return (
-    <div className="w-full h-full flex flex-col flex-1">
-      <svg viewBox={BRASIL_VIEWBOX} className="w-full flex-1">
+    <div className="w-full h-full flex flex-col flex-1 min-h-0">
+      <div className="relative flex-1 min-h-0">
+        <svg viewBox={BRASIL_VIEWBOX} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 w-full h-full">
         {BRASIL_ESTADOS.map(uf => {
           const d = porEstado.get(uf.id);
           const total = d?.total || 0;
@@ -58,7 +59,8 @@ const MapaBrasil: React.FC<Props> = ({ dados, onSelectEstado }) => {
             </path>
           );
         })}
-      </svg>
+        </svg>
+      </div>
       <div className="flex items-center justify-center gap-2 mt-1 flex-shrink-0">
         <span className="text-[11px] font-medium text-faint">Menos clientes</span>
         <div className="flex h-2 w-24 rounded-full overflow-hidden">

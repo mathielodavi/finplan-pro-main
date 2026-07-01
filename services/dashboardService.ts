@@ -89,7 +89,10 @@ export const dashboardService = {
     const sumMesesG = contratos.reduce((acc, c) => acc + (Number(c.prazo_meses) || 1), 0);
     const ticketMedioGeral = sumValorG / (sumMesesG || 1);
 
-    const aum = clientes.reduce((acc, c) => acc + (Number(c.patrimonio_total) || 0), 0);
+    // KPI: Patrimônio sob Gestão — apenas clientes ativos
+    const aum = clientes
+      .filter(c => c.status === 'Ativo')
+      .reduce((acc, c) => acc + (Number(c.patrimonio_total) || 0), 0);
 
     return {
       totalClientes: totalClientesPlan,
@@ -418,8 +421,8 @@ export const dashboardService = {
   /**
    * Calcula métricas de LTV agregadas e por cliente.
    * LTV = saldo líquido contratual (parcelas × repasse) por cliente, considerando todo o
-   * histórico (passado, sem limite) somado à projeção futura limitada a 12 meses a partir de
-   * hoje — para não inflar o indicador com parcelas de contratos longos ainda muito distantes.
+   * valor contratual (histórico realizado + projeção futura completa, sem teto). Apenas
+   * clientes ATIVOS entram no cálculo, em linha com os demais KPIs da Visão Geral.
    */
   async getLTVMetrics() {
     const { data: allContratos } = await supabase.from('contratos').select('id, cliente_id, tipo, repasse_percentual, prazo_meses, data_inicio');
@@ -432,10 +435,6 @@ export const dashboardService = {
     const contratos = allContratos || [];
     const clientes = allClientes || [];
     const parcelas = allParcelas || [];
-
-    const hoje = new Date();
-    const limiteFuturo = new Date(hoje);
-    limiteFuturo.setMonth(limiteFuturo.getMonth() + 12);
 
     // Mapa de repasse por contrato
     const contratoMap = new Map<string, { cliente_id: string; tipo: string; repasse: number; prazo_meses: number; data_inicio: string }>();
@@ -453,9 +452,13 @@ export const dashboardService = {
     // Agrupar por cliente
     const clienteMap = new Map<string, { nome: string; status: string; receitaLiquida: number; meses: number; contratos: number; primeiroContrato: Date | null }>();
 
-    clientes.forEach(cli => {
-      clienteMap.set(cli.id, { nome: cli.nome, status: cli.status, receitaLiquida: 0, meses: 0, contratos: 0, primeiroContrato: null });
-    });
+    // Apenas clientes ativos entram no LTV (consistente com os demais KPIs da Visão Geral).
+    // Clientes fora do mapa têm suas parcelas/contratos ignorados naturalmente abaixo.
+    clientes
+      .filter(cli => cli.status === 'Ativo')
+      .forEach(cli => {
+        clienteMap.set(cli.id, { nome: cli.nome, status: cli.status, receitaLiquida: 0, meses: 0, contratos: 0, primeiroContrato: null });
+      });
 
     // Contabilizar contratos (apenas contagem e primeiro contrato — "meses" passa a vir das parcelas)
     contratos.forEach(c => {
@@ -471,7 +474,7 @@ export const dashboardService = {
       }
     });
 
-    // Calcular receita líquida via parcelas — histórico total + futuro limitado a 12 meses
+    // Calcular receita líquida via parcelas — histórico realizado + futuro contratual completo
     parcelas.forEach(p => {
       const contrato = contratoMap.get(p.contrato_id);
       if (!contrato) return;
@@ -479,16 +482,13 @@ export const dashboardService = {
       const entry = clienteMap.get(p.cliente_id || contrato.cliente_id);
       if (!entry) return;
 
-      const dataVencimento = new Date(p.data_vencimento);
-      if (dataVencimento > limiteFuturo) return; // fora do range: futuro distante demais
-
       const repasse = contrato.repasse / 100;
 
       if (p.status === 'pago') {
         // Parcela paga: usar valor_pago real
         entry.receitaLiquida += (Number(p.valor_pago) || 0) * repasse;
       } else {
-        // Parcela pendente/atrasada dentro do range: usar valor_previsto como projeção
+        // Parcela pendente/atrasada: usar valor_previsto como projeção
         entry.receitaLiquida += (Number(p.valor_previsto) || 0) * repasse;
       }
       entry.meses += 1;
@@ -538,8 +538,13 @@ export const dashboardService = {
    * clientes. Fonte única da fórmula: dividasService.getSaldoDevedorPorCliente().
    */
   async getEndividamentoTotal() {
+    const { data: allClientes } = await supabase.from('clientes').select('id, status');
+    const idsAtivos = new Set((allClientes || []).filter(c => c.status === 'Ativo').map(c => c.id));
+
     const saldos = await dividasService.getSaldoDevedorPorCliente();
-    return Array.from(saldos.values()).reduce((acc, v) => acc + v, 0);
+    return Array.from(saldos.entries())
+      .filter(([clienteId]) => idsAtivos.has(clienteId))
+      .reduce((acc, [, v]) => acc + v, 0);
   },
 
   /**
