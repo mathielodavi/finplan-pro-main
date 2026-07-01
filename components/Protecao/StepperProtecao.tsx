@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Check, Clock, Save } from 'lucide-react';
 import { protecaoService, ClienteSeguro, DependenteSeguro, ParametrosCalculo } from '../../services/protecaoService';
+import { obterClientePorId } from '../../services/clienteService';
 import { useProntuarioNav } from '../../context/ProntuarioNavContext';
 import { useAutoSave } from './useAutoSave';
 import EtapaDadosPessoais from './EtapaDadosPessoais';
@@ -65,12 +66,32 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
         const init = async () => {
             setLoading(true);
             try {
-                const [d, deps, params] = await Promise.all([
+                const [d, deps, params, cli] = await Promise.all([
                     protecaoService.getOrCreate(clienteId),
                     protecaoService.getDependentes(clienteId),
                     protecaoService.getParametros(),
+                    obterClientePorId(clienteId).catch(() => null),
                 ]);
-                setDados(d);
+
+                // Vincula identificação do titular ao cadastro do cliente (fonte única):
+                // e-mail, telefone, estado e data de nascimento sempre vêm de `clientes`.
+                let dadosIniciais = d;
+                if (cli) {
+                    const vinculo: any = {
+                        email_cliente: cli.email || null,
+                        telefone_cliente: cli.telefone || null,
+                        estado_cliente: cli.estado || null,
+                        data_nascimento_cliente: cli.data_nascimento || null,
+                    };
+                    dadosIniciais = { ...d, ...vinculo };
+                    // Espelha no levantamento se estiver divergente, mantendo o banco vinculado.
+                    const divergente = (d.email_cliente || null) !== vinculo.email_cliente
+                        || (d.telefone_cliente || null) !== vinculo.telefone_cliente
+                        || (d.estado_cliente || null) !== vinculo.estado_cliente
+                        || (d.data_nascimento_cliente || null) !== vinculo.data_nascimento_cliente;
+                    if (divergente) protecaoService.update(clienteId, vinculo).catch(console.error);
+                }
+                setDados(dadosIniciais);
                 setDependentes(deps.length > 0 ? deps : [{
                     cliente_id: clienteId,
                     ordem: 0,

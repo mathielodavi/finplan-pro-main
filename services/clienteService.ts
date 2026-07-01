@@ -27,6 +27,7 @@ export interface Cliente {
   estado?: string;
   telefone?: string;
   email?: string;
+  data_nascimento?: string | null;
   // Situação inicial (snapshot de onboarding) — informativo, não alimenta cálculos vivos
   dividas_iniciais?: number;
   reserva_emergencia_inicial?: number;

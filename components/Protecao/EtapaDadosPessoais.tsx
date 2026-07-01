@@ -137,8 +137,16 @@ const BlocoIdentificacao: React.FC<{
     const cpfValido = cpfRaw.replace(/\D/g, '').length === 11 ? validarCPF(cpfRaw) : true;
     const idade = calcularIdade(dados[`data_nascimento_${prefix}` as keyof ClienteSeguro] as string || '');
 
+    // Para o titular, e-mail/telefone/estado/data de nascimento são vinculados ao
+    // cadastro do cliente (fonte única) e ficam somente-leitura nesta tela.
+    const travado = prefix === 'cliente';
+    const lockCls = travado ? 'opacity-60 cursor-not-allowed bg-surface-2' : '';
+
     return (
-        <BlocoSecao titulo="Dados de Identificação">
+        <BlocoSecao
+            titulo="Dados de Identificação"
+            descricao={travado ? 'E-mail, telefone, estado e data de nascimento são vinculados ao cadastro do cliente. Para alterá-los, edite o cadastro.' : undefined}
+        >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="lg:col-span-3">
                     <label className={lbl}>Nome completo <span className="text-rose-400">*</span></label>
@@ -152,20 +160,23 @@ const BlocoIdentificacao: React.FC<{
                     <input type="email"
                         value={dados[`email_${prefix}` as keyof ClienteSeguro] as string || ''}
                         onChange={e => onChange(`email_${prefix}` as keyof ClienteSeguro, e.target.value)}
-                        className={inp} placeholder="email@exemplo.com" />
+                        disabled={travado}
+                        className={`${inp} ${lockCls}`} placeholder="email@exemplo.com" />
                 </div>
                 <div>
                     <label className={lbl}>Telefone</label>
                     <input type="text"
                         value={dados[`telefone_${prefix}` as keyof ClienteSeguro] as string || ''}
                         onChange={e => onChange(`telefone_${prefix}` as keyof ClienteSeguro, mascaraTelefone(e.target.value))}
-                        className={inp} placeholder="(11) 99999-9999" maxLength={16} />
+                        disabled={travado}
+                        className={`${inp} ${lockCls}`} placeholder="(11) 99999-9999" maxLength={16} />
                 </div>
                 <div>
                     <label className={lbl}>Estado</label>
                     <select value={dados[`estado_${prefix}` as keyof ClienteSeguro] as string || ''}
                         onChange={e => onChange(`estado_${prefix}` as keyof ClienteSeguro, e.target.value)}
-                        className={inp}>
+                        disabled={travado}
+                        className={`${inp} ${lockCls}`}>
                         <option value="">Selecione...</option>
                         {ESTADOS_BR.map(e => <option key={e} value={e}>{e}</option>)}
                     </select>
@@ -175,7 +186,8 @@ const BlocoIdentificacao: React.FC<{
                     <input type="date"
                         value={dados[`data_nascimento_${prefix}` as keyof ClienteSeguro] as string || ''}
                         onChange={e => onChange(`data_nascimento_${prefix}` as keyof ClienteSeguro, e.target.value)}
-                        className={inp} max={new Date().toISOString().split('T')[0]} />
+                        disabled={travado}
+                        className={`${inp} ${lockCls}`} max={new Date().toISOString().split('T')[0]} />
                     {idade !== null && (
                         <p className="text-[11px] font-medium text-emerald-600 ml-1 mt-1">{idade} anos</p>
                     )}

@@ -592,5 +592,36 @@ export const dashboardService = {
       total: v.ativos + v.inativos,
       clientes: v.clientes,
     }));
+  },
+
+  /**
+   * Contagem de contratos por origem do cliente (total, ativos e inativos).
+   * "Ativos" = contratos com status 'ativo'; "inativos" = demais status
+   * (concluído/cancelado). Usado pelo gráfico de barras da Visão Geral.
+   */
+  async getContratosPorOrigem() {
+    const [{ data: clientes }, { data: origens }, { data: contratos }] = await Promise.all([
+      supabase.from('clientes').select('id, origem_id'),
+      supabase.from('origens').select('id, nome'),
+      supabase.from('contratos').select('cliente_id, status'),
+    ]);
+
+    const origemNome = new Map((origens || []).map((o: any) => [o.id, o.nome]));
+    const clienteOrigem = new Map((clientes || []).map((c: any) => [c.id, c.origem_id]));
+
+    const porOrigem = new Map<string, { total: number; ativos: number; inativos: number }>();
+    (contratos || []).forEach((ct: any) => {
+      const origemId = clienteOrigem.get(ct.cliente_id);
+      const nome = (origemId && origemNome.get(origemId)) || 'Sem origem';
+      const entry = porOrigem.get(nome) || { total: 0, ativos: 0, inativos: 0 };
+      entry.total += 1;
+      if (ct.status === 'ativo') entry.ativos += 1;
+      else entry.inativos += 1;
+      porOrigem.set(nome, entry);
+    });
+
+    return Array.from(porOrigem.entries())
+      .map(([origem, v]) => ({ origem, ...v }))
+      .sort((a, b) => b.total - a.total);
   }
 };

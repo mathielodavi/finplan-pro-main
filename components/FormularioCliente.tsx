@@ -33,6 +33,7 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
   const [estado, setEstado] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
 
   // Novos estados para Origens e Protocolos
   const [origens, setOrigens] = useState<Origem[]>([]);
@@ -80,6 +81,7 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
       setEstado(clienteInicial.estado || '');
       setTelefone(clienteInicial.telefone || '');
       setEmail(clienteInicial.email || '');
+      setDataNascimento(clienteInicial.data_nascimento || '');
       setDividasIniciais((clienteInicial.dividas_iniciais || 0).toString());
       setReservaInicial((clienteInicial.reserva_emergencia_inicial || 0).toString());
     }
@@ -155,6 +157,7 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
         estado: estado || undefined,
         telefone: telefone || undefined,
         email: email || undefined,
+        data_nascimento: dataNascimento || null,
         dividas_iniciais: parseFloat(dividasIniciais) || 0,
         reserva_emergencia_inicial: parseFloat(reservaInicial) || 0,
         // Mantém suporte retrógrado se necessário para lógica de exibição
@@ -240,6 +243,18 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
               <option value="">Não informado</option>
               {UFS.map(uf => <option key={uf.sigla} value={uf.sigla}>{uf.nome}</option>)}
             </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelStyle}>Data de Nascimento</label>
+            <input
+              type="date"
+              value={dataNascimento}
+              onChange={(e) => setDataNascimento(e.target.value)}
+              max={new Date().toISOString().split('T')[0]}
+              className={inputStyle}
+            />
           </div>
         </div>
       </section>
