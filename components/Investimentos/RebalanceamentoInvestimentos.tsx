@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { investimentoService } from '../../services/investimentoService';
 import { obterClientePorId, atualizarCliente } from '../../services/clienteService';
 import { configService } from '../../services/configuracoesService';
@@ -10,13 +10,12 @@ import {
   Bird, Plus, Trash2, Search,
   ChevronRight, ShoppingCart, Landmark, History,
   XCircle, AlertCircle, RefreshCw,
-  Download
+  Download, FileText, ArrowLeft
 } from 'lucide-react';
 import Accordion from '../UI/Accordion';
-import Modal from '../Modal';
-import { gerarRelatorioAportePDF } from '../../utils/pdfGenerator';
 import { supabase } from '../../services/supabaseClient';
 import { DestinoVenda, DESTINOS_VENDA } from '../../utils/destinosVenda';
+import { baixarElementoComoPDF } from '../../utils/pdfFromElement';
 import HistoricoAportes from './HistoricoAportes';
 import Badge from '../UI/Badge';
 
@@ -90,7 +89,6 @@ const SECOES = [
   { id: 'sec-distribuicao', label: 'Distribuição' },
   { id: 'sec-alocacao', label: 'Alocação' },
   { id: 'sec-tatico', label: 'Simulador Tático' },
-  { id: 'sec-revisao', label: 'Revisão' },
 ];
 
 // Tokens de estilo compartilhados — alinhados ao padrão calmo já usado em ResumoInvestimentos.tsx
@@ -100,9 +98,12 @@ const kpiLabel = 'text-[11px] font-semibold text-faint uppercase tracking-wider'
 const sectionTitleCls = 'text-[14px] font-semibold text-main';
 
 const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
-  // 'idle' = tela de entrada (histórico + botões); 'novo' = página única editável; 'revisao' = página única em leitura.
-  const [modo, setModo] = useState<'idle' | 'novo' | 'revisao'>('idle');
+  // 'idle' = entrada (histórico + botões); 'novo' = fluxo editável (seções 1-4);
+  // 'relatorio' = tela de relatório/revisão (download PDF + finalizar); 'revisao' = leitura do último aporte.
+  const [modo, setModo] = useState<'idle' | 'novo' | 'relatorio' | 'revisao'>('idle');
   const [ultimoRebal, setUltimoRebal] = useState<any>(null);
+  const relatorioRef = useRef<HTMLDivElement>(null);
+  const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const [aporte, setAporte] = useState(0);
   // Pré-semeado a partir de ativos já sinalizados como "Vender" na Carteira Ativa (status + destino_venda
@@ -129,7 +130,6 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   const [loading, setLoading] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [showPdfModal, setShowPdfModal] = useState(false);
   const [resumo, setResumo] = useState<any>(null);
   const [rebateClasses, setRebateClasses] = useState<any[]>([]);
   const [patrimonioProjetado, setPatrimonioProjetado] = useState(0);
@@ -278,7 +278,6 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     'sec-distribuicao': !!resumo,
     'sec-alocacao': !!resumo,
     'sec-tatico': distribuicaoAtivos.length > 0,
-    'sec-revisao': temAporteEfetivo || temReservaAlloc || temProjetosAlloc,
   };
   const podeFinalizar = aporte > 0 && !!estrategiaId && (temAporteEfetivo || temReservaAlloc || temProjetosAlloc);
 
@@ -341,96 +340,254 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       // Atualiza o snapshot mensal do patrimônio de independência (upsert mensal)
       await investimentoService.snapshotPatrimonioIndependencia(clienteId, aporte).catch(() => {});
       setSuccess(true);
-      setShowPdfModal(true);
     } catch (err: any) {
       alert("Erro técnico ao salvar: " + (err.message || "Erro desconhecido"));
     } finally { setFinishing(false); }
   };
 
-  const handleGerarPDF = () => {
-    if (!distribuicaoAtivos || distribuicaoAtivos.length === 0) return;
-
-    const ordensCompra: any[] = [];
-    distribuicaoAtivos.forEach((c: any) => {
-      (c.ativos || []).filter((a: any) => a.acao === 'COMPRAR').forEach((at: any) => {
-        ordensCompra.push({
-          classe: c.classe,
-          nome: at.nome,
-          ticker: at.ticker || at.cnpj,
-          valor: manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido,
-          cotas: at.cotas
-        });
-      });
-    });
-
-    const ordensVenda: any[] = [];
-    Object.entries(vendas).forEach(([id, valor]) => {
-      const at = ativos.find((a: any) => a.id === id);
-      if (at) {
-        ordensVenda.push({
-          classe: at.tipo_ativo,
-          nome: at.nome,
-          ticker: at.ticker || at.cnpj,
-          valor: valor
-        });
-      }
-    });
-
-    const totalVendas = Object.values(vendas).reduce((a, b: any) => a + b.valor, 0);
-
-    const saldoAtualReserva = (ativos || []).filter((a: any) => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'reserva')).reduce((acc: number, a: any) => acc + ((a.valor_atual || 0) * (a.distribuicao_objetivos.find((o: any) => o.tipo === 'reserva')?.percentual / 100)), 0);
-    const acumuladoReserva = saldoAtualReserva + totalAlocadoReserva;
-
-    const saldoAtualProjetos = (ativos || []).filter((a: any) => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'projetos')).reduce((acc: number, a: any) => acc + ((a.valor_atual || 0) * (a.distribuicao_objetivos.find((o: any) => o.tipo === 'projetos')?.percentual / 100)), 0);
-    const acumuladoProjetos = saldoAtualProjetos + totalAlocadoProjetos;
-
-    gerarRelatorioAportePDF({
-      cliente,
-      planejador,
-      estrategia: modelosDisponiveis.find(m => m.id === estrategiaId)?.nome || 'N/A',
-      tese: tesesDisponiveis.find(t => t.id === teseId)?.nome || 'N/A',
-      faixa: faixaAplicada?.nome || '',
-      aporteTotal: aporte,
-      totalVendas: totalVendas,
-      assetMix: rebateClasses.map(c => ({
-        ...c,
-        cor: distribuicaoAtivos?.find(d => d.classe === c.classe)?.cor || '#10b981'
-      })),
-      reservaAlloc,
-      projetosAlloc,
-      distribuicao: {
-        reserva: resumo.reserva,
-        projetos: resumo.projetos,
-        independencia: resumo.independencia,
-        acumuladoReserva,
-        acumuladoProjetos
-      },
-      ordensCompra,
-      ordensVenda,
-      dataGeracao: new Date().toLocaleDateString('pt-BR')
-    });
-
-    setShowPdfModal(false);
+  // Gera o PDF a partir do próprio layout do relatório na tela (substitui a geração programática antiga).
+  const handleDownloadRelatorio = async () => {
+    if (!relatorioRef.current) return;
+    setBaixandoPdf(true);
+    try {
+      const nomeArq = `Relatorio_Aporte_${(cliente?.nome || 'cliente').replace(/\s+/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+      await baixarElementoComoPDF(relatorioRef.current, nomeArq);
+    } catch (err: any) {
+      alert('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
+    } finally {
+      setBaixandoPdf(false);
+    }
   };
 
-  if (success) {
-    return (
-      <div className="py-16 px-4 text-center space-y-8 animate-in zoom-in-95 duration-500">
-        <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl border" style={{ backgroundColor: 'var(--primary-soft)', color: 'var(--primary)', borderColor: 'rgba(16,185,129,0.25)' }}><CheckCircle2 size={40} strokeWidth={2.5} /></div>
-        <div className="space-y-3">
-          <h3 className="text-2xl sm:text-3xl font-black text-main uppercase tracking-tight">Protocolo Finalizado!</h3>
-          <p className="text-muted font-bold uppercase text-[10px] tracking-[0.3em] italic">O histórico de rebalanceamento foi registrado com sucesso.</p>
+  // Documento do relatório de aporte — layout formal usado na tela de revisão e no PDF (html2canvas).
+  // Cores em tokens/hex (sem paleta padrão do Tailwind, que é oklch e quebra o html2canvas).
+  const renderRelatorioDoc = () => (
+    <div ref={relatorioRef} className="bg-surface rounded-xl border border-subtle shadow-sm overflow-hidden">
+      {/* Cabeçalho tipo timbrado */}
+      <div className="px-5 sm:px-8 py-6 border-b border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-[18px] font-semibold text-main">Relatório de Aporte Mensal</h3>
+          <p className="text-[12px] text-muted mt-1">
+            {cliente?.nome || 'Cliente'} • {new Date().toLocaleDateString('pt-BR')}{planejador?.nome ? ` • Consultor: ${planejador.nome}` : ''}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-4">
+          <div className="text-right">
+            <span className={kpiLabel}>Asset Mix</span>
+            <p className="text-[12px] font-semibold text-main mt-0.5">{modelosDisponiveis.find(m => m.id === estrategiaId)?.nome}</p>
+          </div>
+          <div className="text-right">
+            <span className={kpiLabel}>Tese / Faixa</span>
+            <p className="text-[12px] font-semibold text-main mt-0.5">{tesesDisponiveis.find(t => t.id === teseId)?.nome} • {faixaAplicada?.nome}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 sm:p-8 space-y-8">
+        {/* 01 — Resumo executivo */}
+        <div className="space-y-4">
+          <DocSectionTitle numero="01" titulo="Resumo Executivo" icon={<Landmark size={16} className="text-faint" />} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-[color:var(--primary)] rounded-xl p-4 sm:p-5 text-[#0b0e14] shadow-sm">
+              <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-70">Aporte Novo</span>
+              <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(aporte)}</p>
+            </div>
+            <div className="rounded-xl p-4 sm:p-5 text-white shadow-sm" style={{ backgroundColor: 'var(--danger)' }}>
+              <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-80">Saldo de Vendas</span>
+              <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(totalVendas)}</p>
+            </div>
+            <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white shadow-sm sm:col-span-2 flex justify-between items-center">
+              <div>
+                <span className={kpiLabel}>Total Disponível</span>
+                <p className="text-[22px] font-bold tracking-tight mt-0.5">{formatarMoeda(aporte + totalVendas)}</p>
+              </div>
+              <Landmark size={26} className="text-main opacity-60" />
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+        {/* 02 — Distribuição por objetivo */}
+        <div className="space-y-4">
+          <DocSectionTitle numero="02" titulo="Distribuição por Objetivo" icon={<Target size={16} className="text-faint" />} />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-[color:var(--primary)]"><ShieldCheck size={15} /><span className="text-[12px] font-semibold">Reserva de Emergência</span></div>
+              <div className={`${cardCls} space-y-3`}>
+                <div className="flex justify-between items-center pb-3 border-b border-subtle">
+                  <span className={kpiLabel}>Total Alocado</span>
+                  <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoReserva)}</span>
+                </div>
+                <div className="space-y-2">
+                  {reservaAlloc.filter(r => r.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : reservaAlloc.filter(r => r.valor > 0.01).map(r => (
+                    <div key={r.id} className="flex justify-between text-[12px] font-medium text-muted">
+                      <span>{r.nome}</span>
+                      <span className="font-semibold text-main">{formatarMoeda(r.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-[color:var(--primary)]"><Target size={15} /><span className="text-[12px] font-semibold">Projetos / Objetivos</span></div>
+              <div className={`${cardCls} space-y-3`}>
+                <div className="flex justify-between items-center pb-3 border-b border-subtle">
+                  <span className={kpiLabel}>Total Alocado</span>
+                  <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoProjetos)}</span>
+                </div>
+                <div className="space-y-2">
+                  {projetosAlloc.filter(p => p.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : projetosAlloc.filter(p => p.valor > 0.01).map(p => (
+                    <div key={p.id} className="flex justify-between text-[12px] font-medium text-muted">
+                      <span>{p.nome}</span>
+                      <span className="font-semibold text-main">{formatarMoeda(p.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-[color:var(--primary)]"><Bird size={15} /><span className="text-[12px] font-semibold">Independência Financeira</span></div>
+              <div className={`${cardCls} space-y-3`}>
+                <div className="flex justify-between items-center pb-3 border-b border-subtle">
+                  <span className={kpiLabel}>Aporte Sugerido</span>
+                  <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(resumo?.independencia || 0)}</span>
+                </div>
+                <div className="space-y-2">
+                  {rebateClasses.filter(c => c.aporte_sugerido > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : rebateClasses.filter(c => c.aporte_sugerido > 0.01).map((c, i) => (
+                    <div key={i} className="flex justify-between text-[12px] font-medium text-muted">
+                      <span>{c.classe}</span>
+                      <span className="font-semibold text-main">{formatarMoeda(c.aporte_sugerido)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 03 — Ordens de compra */}
+        <div className="space-y-4">
+          <DocSectionTitle numero="03" titulo="Ordens de Compra (Simulador Tático)" icon={<ShoppingCart size={16} className="text-faint" />} />
+          <div className="space-y-3">
+            {distribuicaoAtivos.filter(c => c.ativos.some((a: any) => a.acao === 'COMPRAR')).map((classe, cIdx) => (
+              <div key={cIdx} className="bg-surface border border-subtle rounded-xl overflow-hidden">
+                <div className="bg-surface-2 px-5 py-2.5 border-b border-subtle flex justify-between items-center">
+                  <span className="text-[12px] font-semibold text-main">{classe.classe}</span>
+                  <span className="text-[11px] font-semibold text-[color:var(--primary)]">Fundo: {formatarMoeda(classe.valor_aporte_classe)}</span>
+                </div>
+                <table className="w-full text-left">
+                  <tbody className="divide-y divide-subtle text-[12px]">
+                    {classe.ativos.filter((a: any) => a.acao === 'COMPRAR').map((at: any, aIdx: number) => (
+                      <tr key={aIdx}>
+                        <td className="py-2.5 px-5">
+                          <p className="font-semibold text-main">{at.nome}</p>
+                          <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
+                        </td>
+                        <td className="py-2.5 px-5 text-right">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[12px] font-semibold text-[color:var(--primary)]">Aporte: {formatarMoeda(manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido)}</span>
+                            <span className="text-[10px] text-faint mt-0.5">Cotas: {at.cotas || 0}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 04 — Ordens de venda (só quando há desinvestimento) */}
+        {Object.keys(vendas).length > 0 && (
+          <div className="space-y-4">
+            <DocSectionTitle numero="04" titulo="Ordens de Venda (Desinvestimento)" icon={<Trash2 size={16} className="text-faint" />} />
+            <div className="bg-surface rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-subtle text-[12px]">
+                  {(Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
+                    const at = ativos.find((a: any) => a.id === id);
+                    if (!at) return null;
+                    return (
+                      <tr key={id}>
+                        <td className="py-2.5 px-5">
+                          <p className="font-semibold text-main">{at.nome}</p>
+                          <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
+                        </td>
+                        <td className="py-2.5 px-5 text-center">
+                          <span className="text-[10px] font-semibold text-muted bg-surface-2 px-2.5 py-1 rounded-md">{venda.destino}</span>
+                        </td>
+                        <td className="py-2.5 px-5 text-right font-bold tracking-tight" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // Tela de relatório/revisão — separada do fluxo de edição. Baixa o PDF (mesmo layout) ou finaliza.
+  if (modo === 'relatorio') {
+    return (
+      <div className="max-w-5xl mx-auto py-4 px-2 sm:px-4 relative animate-in fade-in slide-in-from-bottom-4">
+        {finishing && (<div className="fixed inset-0 z-[60] bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4"><RefreshCw size={48} className="text-[color:var(--primary)] animate-spin" /><p className="text-xs font-black text-main uppercase tracking-widest">Sincronizando Decisões...</p></div>)}
+
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => setModo('novo')} disabled={success} className="h-9 w-9 shrink-0 bg-surface-2 text-faint rounded-2xl flex items-center justify-center hover:bg-surface-3 transition-all disabled:opacity-40 disabled:cursor-not-allowed"><ArrowLeft size={18} /></button>
+          <div className="min-w-0">
+            <h3 className="text-[16px] font-semibold text-main truncate">Relatório de Alocação</h3>
+            <p className="text-[12px] text-muted mt-0.5">Revise, baixe o relatório em PDF e finalize a sincronização</p>
+          </div>
+        </div>
+
+        {success && (
+          <div className="mb-6 flex items-center gap-3 rounded-xl border p-4" style={{ backgroundColor: 'var(--primary-soft)', borderColor: 'rgba(16,185,129,0.25)' }}>
+            <CheckCircle2 size={20} style={{ color: 'var(--primary)' }} />
+            <div>
+              <p className="text-[13px] font-semibold text-main">Aporte finalizado e sincronizado</p>
+              <p className="text-[12px] text-muted">O histórico foi registrado e já aparece na tela de aportes.</p>
+            </div>
+          </div>
+        )}
+
+        {renderRelatorioDoc()}
+
+        <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:justify-end">
           <button
-            onClick={handleGerarPDF}
-            className="w-full sm:w-auto px-10 py-4 bg-[color:var(--primary)] text-[#0b0e14] font-black rounded-2xl text-[10px] uppercase tracking-widest hover:opacity-90 transition-all shadow-xl flex items-center justify-center gap-3"
+            onClick={handleDownloadRelatorio}
+            disabled={baixandoPdf}
+            className="h-11 px-6 inline-flex items-center justify-center gap-2 rounded-lg border border-subtle bg-surface-2 text-main text-[12px] font-semibold hover:bg-surface-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Download size={18} />
-            Gerar Relatório PDF
+            <Download size={16} /> {baixandoPdf ? 'Gerando PDF...' : 'Gerar Relatório'}
           </button>
-          <button onClick={onFinish} className="w-full sm:w-auto px-10 py-4 bg-surface-3 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-strong transition-all shadow-xl">Voltar ao Resumo</button>
+          {!success ? (
+            <button
+              onClick={handleFinalizarEfetivo}
+              disabled={finishing}
+              className="h-11 px-6 inline-flex items-center justify-center gap-2 rounded-lg bg-[color:var(--primary)] text-[#0b0e14] text-[12px] font-semibold hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)] disabled:opacity-50"
+            >
+              Finalizar e Sincronizar <ShoppingCart size={16} />
+            </button>
+          ) : (
+            <button
+              onClick={onFinish}
+              className="h-11 px-6 inline-flex items-center justify-center gap-2 rounded-lg bg-surface-3 text-white text-[12px] font-semibold hover:bg-strong transition-colors"
+            >
+              Voltar ao Resumo
+            </button>
+          )}
         </div>
       </div>
     );
@@ -564,7 +721,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
         <div className="space-y-10 pb-32 min-w-0">
           <SectionShell id="sec-capital" numero={1} hideOnPrint titulo="Capital Disponível" descricao="Defina o valor do aporte e confirme as vendas sinalizadas">
-          <div className="max-w-3xl space-y-4">
+          <div className="space-y-4">
             <div className={`${cardCls} space-y-4`}>
               <div className="flex flex-wrap justify-between items-center gap-2">
                 <label className={kpiLabel}>Capital Disponível</label>
@@ -749,215 +906,19 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           </div>
             </div>
           </SectionShell>
-
-          <SectionShell id="sec-revisao" numero={5} titulo="Revisão Final" descricao="Prévia formal do relatório — confira antes de gerar o PDF ou finalizar" disabled={!secEnabled['sec-revisao']} hint="Defina ao menos um aporte efetivo ou alocação para revisar">
-            {/* Documento de revisão — layout formal, serve como prévia de tela e de impressão/PDF. */}
-            <div className="bg-surface rounded-xl border border-subtle shadow-sm overflow-hidden print:shadow-none print:border-black/15">
-              {/* Cabeçalho tipo timbrado */}
-              <div className="px-5 sm:px-8 py-6 border-b border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2.5">
-                    <h3 className="text-[18px] font-semibold text-main">Relatório de Aporte Mensal</h3>
-                    <span className="print:hidden"><Badge variant="info" size="sm">Prévia</Badge></span>
-                  </div>
-                  <p className="text-[12px] text-muted mt-1">
-                    {cliente?.nome || 'Cliente'} • {new Date().toLocaleDateString('pt-BR')}{planejador?.nome ? ` • Consultor: ${planejador.nome}` : ''}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-4">
-                  <div className="text-right">
-                    <span className={kpiLabel}>Asset Mix</span>
-                    <p className="text-[12px] font-semibold text-main mt-0.5">{modelosDisponiveis.find(m => m.id === estrategiaId)?.nome}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className={kpiLabel}>Tese / Faixa</span>
-                    <p className="text-[12px] font-semibold text-main mt-0.5">{tesesDisponiveis.find(t => t.id === teseId)?.nome} • {faixaAplicada?.nome}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5 sm:p-8 space-y-8">
-                {/* 01 — Resumo executivo */}
-                <div className="space-y-4">
-                  <DocSectionTitle numero="01" titulo="Resumo Executivo" icon={<Landmark size={16} className="text-faint" />} />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-[color:var(--primary)] rounded-xl p-4 sm:p-5 text-[#0b0e14] shadow-sm">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-70">Aporte Novo</span>
-                      <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(aporte)}</p>
-                    </div>
-                    <div className="rounded-xl p-4 sm:p-5 text-white shadow-sm" style={{ backgroundColor: 'var(--danger)' }}>
-                      <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-80">Saldo de Vendas</span>
-                      <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(totalVendas)}</p>
-                    </div>
-                    <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white shadow-sm sm:col-span-2 flex justify-between items-center">
-                      <div>
-                        <span className={kpiLabel}>Total Disponível</span>
-                        <p className="text-[22px] font-bold tracking-tight mt-0.5">{formatarMoeda(aporte + totalVendas)}</p>
-                      </div>
-                      <Landmark size={26} className="text-main opacity-60" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* 02 — Distribuição por objetivo */}
-                <div className="space-y-4">
-                  <DocSectionTitle numero="02" titulo="Distribuição por Objetivo" icon={<Target size={16} className="text-faint" />} />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 text-emerald-600"><ShieldCheck size={15} /><span className="text-[12px] font-semibold">Reserva de Emergência</span></div>
-                      <div className={`${cardCls} space-y-3`}>
-                        <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                          <span className={kpiLabel}>Total Alocado</span>
-                          <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoReserva)}</span>
-                        </div>
-                        <div className="space-y-2">
-                          {reservaAlloc.filter(r => r.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : reservaAlloc.filter(r => r.valor > 0.01).map(r => (
-                            <div key={r.id} className="flex justify-between text-[12px] font-medium text-muted">
-                              <span>{r.nome}</span>
-                              <span className="font-semibold text-main">{formatarMoeda(r.valor)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 text-emerald-600"><Target size={15} /><span className="text-[12px] font-semibold">Projetos / Objetivos</span></div>
-                      <div className={`${cardCls} space-y-3`}>
-                        <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                          <span className={kpiLabel}>Total Alocado</span>
-                          <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoProjetos)}</span>
-                        </div>
-                        <div className="space-y-2">
-                          {projetosAlloc.filter(p => p.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : projetosAlloc.filter(p => p.valor > 0.01).map(p => (
-                            <div key={p.id} className="flex justify-between text-[12px] font-medium text-muted">
-                              <span>{p.nome}</span>
-                              <span className="font-semibold text-main">{formatarMoeda(p.valor)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 text-emerald-600"><Bird size={15} /><span className="text-[12px] font-semibold">Independência Financeira</span></div>
-                      <div className={`${cardCls} space-y-3`}>
-                        <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                          <span className={kpiLabel}>Aporte Sugerido</span>
-                          <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(resumo?.independencia || 0)}</span>
-                        </div>
-                        <div className="space-y-2">
-                          {rebateClasses.filter(c => c.aporte_sugerido > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : rebateClasses.filter(c => c.aporte_sugerido > 0.01).map((c, i) => (
-                            <div key={i} className="flex justify-between text-[12px] font-medium text-muted">
-                              <span>{c.classe}</span>
-                              <span className="font-semibold text-main">{formatarMoeda(c.aporte_sugerido)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 03 — Ordens de compra */}
-                <div className="space-y-4">
-                  <DocSectionTitle numero="03" titulo="Ordens de Compra (Simulador Tático)" icon={<ShoppingCart size={16} className="text-faint" />} />
-                  <div className="space-y-3">
-                    {distribuicaoAtivos.filter(c => c.ativos.some((a: any) => a.acao === 'COMPRAR')).map((classe, cIdx) => (
-                      <div key={cIdx} className="bg-surface border border-subtle rounded-xl overflow-hidden">
-                        <div className="bg-surface-2 px-5 py-2.5 border-b border-subtle flex justify-between items-center">
-                          <span className="text-[12px] font-semibold text-main">{classe.classe}</span>
-                          <span className="text-[11px] font-semibold text-emerald-600">Fundo: {formatarMoeda(classe.valor_aporte_classe)}</span>
-                        </div>
-                        <table className="w-full text-left">
-                          <tbody className="divide-y divide-subtle text-[12px]">
-                            {classe.ativos.filter((a: any) => a.acao === 'COMPRAR').map((at: any, aIdx: number) => (
-                              <tr key={aIdx}>
-                                <td className="py-2.5 px-5">
-                                  <p className="font-semibold text-main">{at.nome}</p>
-                                  <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
-                                </td>
-                                <td className="py-2.5 px-5 text-right">
-                                  <div className="flex flex-col items-end">
-                                    <span className="text-[12px] font-semibold text-emerald-600">Aporte: {formatarMoeda(manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido)}</span>
-                                    <span className="text-[10px] text-faint mt-0.5">Cotas: {at.cotas || 0}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 04 — Ordens de venda (só quando há desinvestimento) */}
-                {Object.keys(vendas).length > 0 && (
-                  <div className="space-y-4">
-                    <DocSectionTitle numero="04" titulo="Ordens de Venda (Desinvestimento)" icon={<Trash2 size={16} className="text-faint" />} />
-                    <div className="bg-surface rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}>
-                              <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th>
-                              <th className="px-5 py-3 text-[10px] font-bold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th>
-                              <th className="px-5 py-3 text-[10px] font-bold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-subtle text-[12px]">
-                            {(Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
-                              const at = ativos.find((a: any) => a.id === id);
-                              if (!at) return null;
-                              return (
-                                <tr key={id}>
-                                  <td className="py-2.5 px-5">
-                                    <p className="font-semibold text-main">{at.nome}</p>
-                                    <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
-                                  </td>
-                                  <td className="py-2.5 px-5 text-center">
-                                    <span className="text-[10px] font-semibold text-muted bg-surface-2 px-2.5 py-1 rounded-md">{venda.destino}</span>
-                                  </td>
-                                  <td className="py-2.5 px-5 text-right font-bold tracking-tight" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Rodapé do documento — ação de prévia em PDF, escondida na impressão */}
-              <div className="px-5 sm:px-8 py-5 border-t border-subtle bg-surface-2/40 flex flex-col sm:flex-row items-center justify-between gap-3 print:hidden">
-                <p className="text-[11px] text-faint">Esta é uma prévia. Gere o PDF para revisar o layout de impressão ou compartilhar com o cliente.</p>
-                <button
-                  type="button"
-                  onClick={handleGerarPDF}
-                  disabled={!resumo}
-                  className="h-10 px-5 inline-flex items-center gap-2 rounded-lg border border-subtle text-muted text-[12px] font-semibold hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                >
-                  <Download size={15} /> Gerar Prévia em PDF
-                </button>
-              </div>
-            </div>
-          </SectionShell>
         </div>
       </div>
 
-      {/* Rodapé fixo de conclusão — escondido na impressão */}
+      {/* Rodapé fixo — leva à tela de relatório (revisão) para baixar o PDF e finalizar */}
       <div className="print:hidden sticky bottom-0 z-30 -mx-2 sm:-mx-4 mt-2 px-2 sm:px-4 py-3 bg-surface/85 backdrop-blur-sm border-t border-subtle">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
-          {!podeFinalizar && <span className="text-[10px] font-bold text-faint uppercase tracking-wider self-center sm:mr-auto">Preencha capital, estratégia e ao menos um aporte/alocação</span>}
+          {!podeFinalizar && <span className="text-[11px] font-semibold text-faint self-center sm:mr-auto">Preencha capital, estratégia e ao menos um aporte/alocação</span>}
           <button
-            onClick={handleFinalizarEfetivo}
-            disabled={!podeFinalizar || finishing}
-            className="h-11 px-6 font-bold text-[#0b0e14] bg-[color:var(--primary)] rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] uppercase text-[11px] tracking-wider hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setModo('relatorio')}
+            disabled={!podeFinalizar}
+            className="h-11 px-6 inline-flex items-center justify-center gap-2 bg-[color:var(--primary)] text-[#0b0e14] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.05)] text-[12px] font-semibold hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Finalizar e Sincronizar Carteira <ShoppingCart size={16} />
+            Gerar Relatório <FileText size={16} />
           </button>
         </div>
       </div>
