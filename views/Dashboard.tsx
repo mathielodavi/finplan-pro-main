@@ -7,6 +7,7 @@ import { reuniaoService } from '../services/reuniaoService';
 import { formatarMoeda, formatarData } from '../utils/formatadores';
 import { CHART_COLORS, CHART_TERMOMETRO, CHART_GRID, axisTick, tooltipStyle, tooltipCursor } from '../utils/chartTheme';
 import { categorizarAgendaCliente } from '../utils/agendaUtils';
+import { useProntuarioNav } from '../context/ProntuarioNavContext';
 
 import Badge from '../components/UI/Badge';
 import MapaBrasil from '../components/Dashboard/MapaBrasil';
@@ -40,8 +41,16 @@ const legendContent = (props: any) => (
   </div>
 );
 
+const VISAO_TABS = [
+  { id: 'atendimento', label: 'Atendimento', icon: <Users size={16} /> },
+  { id: 'contratos', label: 'Contratos', icon: <ShieldCheck size={16} /> },
+  { id: 'financeiro', label: 'Financeiro', icon: <DollarSign size={16} /> },
+];
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { setNav } = useProntuarioNav();
+  const [activeTab, setActiveTab] = useState('atendimento');
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState<any>(null);
   const [termometroData, setTermometroData] = useState<any[]>([]);
@@ -129,6 +138,12 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => { loadData(); }, []);
 
+  // Publica as abas da Visão Geral no header (Navbar), como no prontuário
+  useEffect(() => {
+    setNav({ tabs: VISAO_TABS, activeTab, setActiveTab });
+    return () => setNav(null);
+  }, [activeTab, setNav]);
+
   // ─── Lógica de Agenda por CLIENTE (sem duplicatas) ──────────────────────
   const agendaHibrida = useMemo(() => {
     if (!kpis) return [];
@@ -214,6 +229,7 @@ const Dashboard: React.FC = () => {
     <div className="space-y-5 animate-fade-in pb-20">
 
       {/* ════════ SEÇÃO 1 — ATENDIMENTO ════════ */}
+      {activeTab === 'atendimento' && (
       <section>
         <SectionTitle hint="Engajamento, pautas, check-ins e saúde financeira da carteira">Atendimento</SectionTitle>
 
@@ -354,7 +370,10 @@ const Dashboard: React.FC = () => {
         </div>
       </section>
 
+      )}
+
       {/* ════════ SEÇÃO 2 — CONTRATOS ════════ */}
+      {activeTab === 'contratos' && (
       <section>
         <SectionTitle hint="Saúde da base, retenção e renovação de contratos">Contratos</SectionTitle>
 
@@ -493,7 +512,10 @@ const Dashboard: React.FC = () => {
         </div>
       </section>
 
+      )}
+
       {/* ════════ SEÇÃO 3 — FINANCEIRO ════════ */}
+      {activeTab === 'financeiro' && (
       <section>
         <SectionTitle hint="Receita e valor do cliente">Financeiro</SectionTitle>
 
@@ -580,6 +602,8 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </section>
+
+      )}
 
       {/* Modais */}
       {modalClientes.isOpen && (
