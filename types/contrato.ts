@@ -12,6 +12,9 @@ export interface Contrato {
   data_inicio: string;
   data_vencimento?: string; 
   data_fim?: string | null;
+  /** Data em que o cliente ficou inadimplente. Se anterior ao cancelamento, o corte
+   *  de parcelas respeita esta data, sem aplicar a carência (prazo de recebimento). */
+  data_inadimplencia?: string | null;
   status: ContratoStatus;
   forma_pagamento: FormaPagamento;
   prazo_meses: number;

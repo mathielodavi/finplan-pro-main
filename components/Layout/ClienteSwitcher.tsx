@@ -82,7 +82,7 @@ const ClienteSwitcher: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[320px] rounded-xl border border-subtle bg-surface shadow-[var(--shadow-float)] z-50 overflow-hidden animate-fade-in">
+        <div className="absolute left-0 mt-2 w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border border-subtle bg-surface shadow-[var(--shadow-float)] z-[60] overflow-hidden animate-fade-in">
           <div className="p-2 border-b border-subtle">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-2.5 text-faint" />

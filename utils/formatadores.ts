@@ -10,6 +10,13 @@ export const formatarMoeda = (valor: number | string): string => {
   }).format(n);
 };
 
+/** Formata percentual no padrão pt-BR: "#0,00%" (ex.: 43.4 → "43,40%"). */
+export const formatarPercentual = (valor: number | string): string => {
+  const n = typeof valor === 'string' ? parseFloat(valor) : valor;
+  if (isNaN(n)) return '0,00%';
+  return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+};
+
 /**
  * Formata data respeitando o fuso local (Brasília).
  * Garante que timestamps completos e strings de data simples sejam tratados sem desvios.

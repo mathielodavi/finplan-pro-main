@@ -61,7 +61,7 @@ const Dashboard: React.FC = () => {
   const [endividamentoTotal, setEndividamentoTotal] = useState(0);
   const [coberturaProtecao, setCoberturaProtecao] = useState(0);
   const [geoData, setGeoData] = useState<any[]>([]);
-  const [contratosPorOrigem, setContratosPorOrigem] = useState<any[]>([]);
+  const [clientesPorOrigem, setClientesPorOrigem] = useState<any[]>([]);
 
   const [filterAgenda, setFilterAgenda] = useState<'all' | 'late' | 'upcoming' | 'pending'>('all');
   const [filterRenovacao, setFilterRenovacao] = useState<'all' | 'critical' | 'attention' | 'safe'>('all');
@@ -117,7 +117,7 @@ const Dashboard: React.FC = () => {
         dashboardService.getEndividamentoTotal(),
         dashboardService.getCoberturaProtecao(),
         dashboardService.getDistribuicaoGeografica(),
-        dashboardService.getContratosPorOrigem()
+        dashboardService.getClientesPorOrigem()
       ]);
       setKpis(summary);
       setTermometroData(term);
@@ -128,7 +128,7 @@ const Dashboard: React.FC = () => {
       setEndividamentoTotal(endividamento);
       setCoberturaProtecao(protecao);
       setGeoData(geo);
-      setContratosPorOrigem(origemContratos);
+      setClientesPorOrigem(origemContratos);
     } catch (err) {
       console.error(err);
     } finally {
@@ -437,12 +437,12 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Contratos por Origem */}
+        {/* Clientes por Origem */}
         <div className={`${panelCls} lg:col-span-5`}>
-          <PanelLabel title="Contratos por Origem" hint="Total · ativos · inativos" />
+          <PanelLabel title="Clientes por Origem" hint="Total · ativos · inativos" />
           <div className="p-4 flex-1 min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={contratosPorOrigem} margin={{ top: 5, right: 8, bottom: 0, left: -16 }}>
+              <ComposedChart data={clientesPorOrigem} margin={{ top: 5, right: 8, bottom: 0, left: -16 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID} />
                 <XAxis dataKey="origem" axisLine={false} tickLine={false} tick={axisTick} dy={10} interval={0}
                   tickFormatter={(v: string) => (v && v.length > 12 ? v.slice(0, 11) + '…' : v)} />
