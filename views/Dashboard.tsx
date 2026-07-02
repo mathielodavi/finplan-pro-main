@@ -68,6 +68,7 @@ const Dashboard: React.FC = () => {
   const [pageAgenda, setPageAgenda] = useState(1);
   const [pageVencimentos, setPageVencimentos] = useState(1);
   const [editingAgendaModal, setEditingAgendaModal] = useState<any | null>(null);
+  const [savingAgenda, setSavingAgenda] = useState(false);
 
   const [modalClientes, setModalClientes] = useState<{
     isOpen: boolean;
@@ -85,6 +86,7 @@ const Dashboard: React.FC = () => {
 
     if (!novaData || !editingAgendaModal) return;
 
+    setSavingAgenda(true);
     try {
       if (editingAgendaModal.reuniao_id) {
         await reuniaoService.salvar({ id: editingAgendaModal.reuniao_id, data_reuniao: novaData });
@@ -101,6 +103,8 @@ const Dashboard: React.FC = () => {
     } catch (err) {
       console.error('Erro ao salvar reunião da agenda:', err);
       alert('Erro ao salvar agendamento.');
+    } finally {
+      setSavingAgenda(false);
     }
   };
 
@@ -660,7 +664,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div className="flex justify-end gap-2 mt-2">
                 <button type="button" onClick={() => setEditingAgendaModal(null)} className="px-4 py-2 text-[13px] font-medium text-muted hover:bg-surface-2 rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" className="px-4 py-2 text-[13px] font-semibold text-[#0b0e14] rounded-lg transition-colors" style={{ backgroundColor: 'var(--primary)' }}>Salvar</button>
+                <button type="submit" disabled={savingAgenda} className="px-4 py-2 text-[13px] font-semibold text-[#0b0e14] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--primary)' }}>{savingAgenda ? 'Salvando...' : 'Salvar'}</button>
               </div>
             </form>
           </div>

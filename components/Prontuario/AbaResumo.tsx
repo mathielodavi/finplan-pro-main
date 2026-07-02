@@ -50,6 +50,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const [loadingParcelas, setLoadingParcelas] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [cancelData, setCancelData] = useState({ data_cancelamento: '', data_inadimplencia: '' });
+  const [removendo, setRemovendo] = useState(false);
 
   const [step, setStep] = useState(1);
   const [accordionEncerrados, setAccordionEncerrados] = useState(false);
@@ -993,13 +994,16 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       <Confirmacao
         isOpen={modalExcluirConfirm}
         onClose={() => setModalExcluirConfirm(false)}
+        loading={removendo}
         onConfirm={async () => {
+          setRemovendo(true);
           try {
             await deletarContrato(contratoSelecionado.id);
             setModalExcluirConfirm(false);
             setModalExtrato(false);
             fetchData();
           } catch (err) { alert("Erro ao deletar."); }
+          finally { setRemovendo(false); }
         }}
         title="Remover Acordo"
         message={`Deseja realmente excluir o contrato "${contratoSelecionado?.descricao}"? Todos os lançamentos financeiros vinculados também serão removidos.`}

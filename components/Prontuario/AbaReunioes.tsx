@@ -17,6 +17,7 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
   const [reuniaoEdit, setReuniaoEdit] = useState<Partial<Reuniao> | null>(null);
   const [rawDate, setRawDate] = useState(''); 
   const [loading, setLoading] = useState(false);
+  const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
 
   /**
@@ -100,10 +101,11 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
     // Para ações rápidas, preservamos a data original para evitar fallback do banco para now()
     const original = reunioes.find(r => r.id === id);
     if (original) {
+      setAcaoEmCurso(id);
       try {
-        await reuniaoService.salvar({ 
-            id: original.id, 
-            status, 
+        await reuniaoService.salvar({
+            id: original.id,
+            status,
             data_reuniao: original.data_reuniao,
             cliente_id: original.cliente_id,
             notas: original.notas
@@ -111,17 +113,22 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
         onRefresh();
       } catch (err) {
         alert("Erro ao atualizar status.");
+      } finally {
+        setAcaoEmCurso(null);
       }
     }
   };
 
   const handleExcluir = async (id: string) => {
     if (!window.confirm("Deseja excluir este registro permanentemente?")) return;
+    setAcaoEmCurso(id);
     try {
       await reuniaoService.excluir(id);
       onRefresh();
     } catch (err) {
       alert("Erro ao excluir.");
+    } finally {
+      setAcaoEmCurso(null);
     }
   };
 
@@ -176,8 +183,8 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
                 </div>
                 <div className="flex gap-1 opacity-20 group-hover:opacity-100 transition-all">
                    <button onClick={() => { setReuniaoEdit(r); setModalOpen(true); }} title="Editar Agendamento" className="h-7 w-7 flex items-center justify-center bg-surface-2 text-faint rounded-md hover:bg-surface-3 hover:text-muted transition-all"><Edit3 size={14} /></button>
-                   <button onClick={() => handleAction(r.id!, 'realizada')} title="Confirmar Realização" className="h-7 w-7 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-500 hover:text-white transition-all"><CheckCircle2 size={14} /></button>
-                   <button onClick={() => handleAction(r.id!, 'cancelada')} title="Cancelar Reunião" className="h-7 w-7 flex items-center justify-center bg-rose-50 text-rose-600 rounded-md hover:bg-rose-500 hover:text-white transition-all"><XCircle size={14} /></button>
+                   <button onClick={() => handleAction(r.id!, 'realizada')} disabled={acaoEmCurso === r.id} title="Confirmar Realização" className="h-7 w-7 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"><CheckCircle2 size={14} /></button>
+                   <button onClick={() => handleAction(r.id!, 'cancelada')} disabled={acaoEmCurso === r.id} title="Cancelar Reunião" className="h-7 w-7 flex items-center justify-center bg-rose-50 text-rose-600 rounded-md hover:bg-rose-500 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"><XCircle size={14} /></button>
                 </div>
              </div>
            ))}
@@ -233,7 +240,7 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
                       </div>
                       <div className="flex gap-0.5 opacity-20 group-hover:opacity-100 transition-all">
                         <button onClick={() => { setReuniaoEdit(r); setModalOpen(true); }} className="h-7 w-7 flex items-center justify-center text-faint hover:bg-surface-2 hover:text-indigo-600 rounded-md transition-colors"><Edit3 size={14} /></button>
-                        <button onClick={() => handleExcluir(r.id!)} className="h-7 w-7 flex items-center justify-center text-faint hover:bg-surface-2 hover:text-rose-500 rounded-md transition-colors"><Trash2 size={14} /></button>
+                        <button onClick={() => handleExcluir(r.id!)} disabled={acaoEmCurso === r.id} className="h-7 w-7 flex items-center justify-center text-faint hover:bg-surface-2 hover:text-rose-500 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"><Trash2 size={14} /></button>
                       </div>
                    </div>
                    <div className={`p-3 rounded-lg border transition-colors ${r.status === 'realizada' ? 'bg-surface-2 border-subtle' : 'bg-surface-2/50 border-transparent opacity-60'}`}>
