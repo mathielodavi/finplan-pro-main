@@ -1,6 +1,7 @@
 
 import React from 'react';
 import Modal from './Modal';
+import { AlertTriangle } from 'lucide-react';
 
 interface ConfirmacaoProps {
   isOpen: boolean;
@@ -9,32 +10,42 @@ interface ConfirmacaoProps {
   title: string;
   message: string;
   loading?: boolean;
+  /** Ação destrutiva/irreversível (padrão true): mostra aviso e botão vermelho. */
+  danger?: boolean;
+  /** Rótulo do botão de confirmação (padrão "Confirmar"). */
+  confirmLabel?: string;
 }
 
-const Confirmacao: React.FC<ConfirmacaoProps> = ({ isOpen, onClose, onConfirm, title, message, loading }) => {
+const Confirmacao: React.FC<ConfirmacaoProps> = ({
+  isOpen, onClose, onConfirm, title, message, loading, danger = true, confirmLabel = 'Confirmar',
+}) => {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title}>
-      <div className="space-y-6">
-        <p className="text-muted font-medium">{message}</p>
-        <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-700 font-bold flex items-center gap-2">
-           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-           </svg>
-           ESTA AÇÃO NÃO PODE SER DESFEITA
-        </div>
-        <div className="flex gap-3">
+    <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
+      <div className="space-y-5">
+        <p className="text-[13px] text-muted">{message}</p>
+        {danger && (
+          <div className="flex items-center gap-2 bg-surface-2 border border-subtle rounded-lg px-3 py-2.5 text-[11px] font-medium text-[color:var(--danger)]">
+            <AlertTriangle size={14} className="shrink-0" />
+            Esta ação não pode ser desfeita.
+          </div>
+        )}
+        <div className="flex gap-2">
           <button
+            type="button"
             onClick={onClose}
-            className="flex-1 py-3 px-4 bg-surface-2 hover:bg-surface-3 text-main font-bold rounded-xl transition-all"
+            disabled={loading}
+            className="flex-1 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-200 transition-all disabled:opacity-50"
+            className="flex-1 h-9 rounded-lg font-semibold text-[12px] transition-all flex items-center justify-center disabled:opacity-50"
+            style={{ backgroundColor: danger ? 'var(--danger)' : 'var(--primary)', color: danger ? '#fff' : '#0b0e14' }}
           >
-            {loading ? 'Processando...' : 'Confirmar'}
+            {loading ? 'Processando...' : confirmLabel}
           </button>
         </div>
       </div>

@@ -138,7 +138,7 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
   };
 
   const inputStyle = "w-full px-4 py-2.5 bg-surface-2 border border-subtle rounded-xl font-bold text-main outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-600 transition-all text-xs";
-  const labelStyle = "block text-[9px] font-black text-faint uppercase tracking-widest ml-1 mb-1.5";
+  const labelStyle = "block text-[9px] font-black text-faint ml-1 mb-1.5";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -264,14 +264,14 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
             <button
               type="button"
               onClick={() => setFormaPagamento('vista')}
-              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formaPagamento === 'vista' ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint hover:text-muted'}`}
+              className={`flex-1 py-2 text-[10px] font-black rounded-lg transition-all ${formaPagamento === 'vista' ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint hover:text-muted'}`}
             >
               À Vista
             </button>
             <button
               type="button"
               onClick={() => setFormaPagamento('parcelado')}
-              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formaPagamento === 'parcelado' ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint hover:text-muted'}`}
+              className={`flex-1 py-2 text-[10px] font-black rounded-lg transition-all ${formaPagamento === 'parcelado' ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint hover:text-muted'}`}
             >
               Parcelado
             </button>
@@ -315,10 +315,10 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
       )}
 
       <div className="flex gap-3 pt-2">
-        <Button variant="ghost" onClick={onCancel} className="flex-1 text-xs uppercase tracking-widest">
+        <Button variant="ghost" onClick={onCancel} className="flex-1 text-xs">
           Cancelar
         </Button>
-        <Button variant="primary" type="submit" isLoading={loading} className="flex-1 text-xs uppercase tracking-widest">
+        <Button variant="primary" type="submit" isLoading={loading} className="flex-1 text-xs">
           Salvar Contrato
         </Button>
       </div>

@@ -221,8 +221,8 @@ const FormPlanejamento = ({ item, onSave, onCancel }: any) => {
        </div>
 
        <div className="flex gap-3 pt-6 border-t border-subtle">
-          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Cancelar</Button>
-          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Confirmar Modelo</Button>
+          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Cancelar</Button>
+          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-semibold">Confirmar Modelo</Button>
        </div>
     </form>
   );
@@ -464,8 +464,8 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
        </div>
 
        <div className="flex gap-3 pt-6 border-t border-subtle">
-          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Descartar</Button>
-          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider bg-surface-3 text-white hover:bg-strong">Sincronizar Modelo Extra</Button>
+          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Descartar</Button>
+          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-semibold bg-surface-3 text-white hover:bg-strong">Sincronizar Modelo Extra</Button>
        </div>
     </form>
   );

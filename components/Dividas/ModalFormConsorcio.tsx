@@ -279,8 +279,8 @@ const ModalFormConsorcio: React.FC<Props> = ({ open, onClose, onSave, initialDat
                 </div>
 
                 <div className="px-6 py-4 border-t border-subtle flex justify-end gap-3 bg-surface-2">
-                    <Button variant="outline" onClick={onClose} className="h-9 px-4 text-[11px] font-bold uppercase tracking-wider">Cancelar</Button>
-                    <Button variant="primary" onClick={handleSalvar} isLoading={salvando} className="bg-sky-600 hover:bg-sky-700 h-9 px-4 text-[11px] font-bold uppercase tracking-wider">
+                    <Button variant="outline" onClick={onClose} className="h-9 px-4 text-[11px] font-semibold">Cancelar</Button>
+                    <Button variant="primary" onClick={handleSalvar} isLoading={salvando} className="h-9 px-4 text-[11px] font-semibold">
                         <Save size={14} className="mr-1.5" />
                         {initialData ? 'Salvar Alterações' : 'Registrar Consórcio'}
                     </Button>
