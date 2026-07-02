@@ -88,7 +88,7 @@ const MigrationPage: React.FC = () => {
                     <h3 className="font-black text-main uppercase text-sm mb-2">1. Preparar Arquivo</h3>
                     <p className="text-muted text-xs font-medium leading-relaxed">Baixe o modelo JSON e use como base para pedir ao Lovable exportar seu banco de dados atual.</p>
                  </div>
-                 <button onClick={handleDownloadTemplate} className="w-full py-4 bg-surface-2 hover:bg-surface-2 rounded-2xl font-black text-[10px] uppercase tracking-widest text-muted transition-all">Baixar Modelo JSON</button>
+                 <button onClick={handleDownloadTemplate} className="w-full h-9 bg-surface-2 hover:bg-surface-3 border border-subtle rounded-lg font-semibold text-[12px] text-muted transition-all">Baixar Modelo JSON</button>
               </div>
            </Card>
 
@@ -100,7 +100,7 @@ const MigrationPage: React.FC = () => {
                     <p className="text-muted text-xs font-medium leading-relaxed">Selecione o arquivo gerado pelo sistema anterior para iniciar a validação de estrutura.</p>
                  </div>
                  <label className="cursor-pointer block">
-                    <div className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 rounded-2xl font-black text-[10px] uppercase tracking-widest text-white text-center shadow-xl shadow-indigo-100 transition-all">Selecionar Arquivo</div>
+                    <div className="w-full h-9 flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 rounded-lg font-semibold text-[12px] text-white transition-all">Selecionar Arquivo</div>
                     <input type="file" className="hidden" accept=".json" onChange={handleFileUpload} />
                  </label>
               </div>
@@ -137,11 +137,11 @@ const MigrationPage: React.FC = () => {
            </Card>
 
            <div className="flex gap-4">
-              <Button variant="ghost" onClick={() => setStep(1)} className="flex-1 py-5 text-xs uppercase tracking-widest">Voltar</Button>
+              <Button variant="ghost" onClick={() => setStep(1)} className="flex-1 text-xs">Voltar</Button>
               <Button 
                 onClick={execute} 
                 isLoading={loading} 
-                className="flex-1 py-5 text-xs uppercase tracking-[0.2em] shadow-xl shadow-indigo-100"
+                className="flex-1 text-xs"
                 leftIcon={<ArrowRight size={18} />}
               >
                 Executar Migração
@@ -171,7 +171,7 @@ const MigrationPage: React.FC = () => {
               </div>
            </div>
 
-           <Button onClick={() => window.location.hash = '/clientes'} variant="primary" className="px-12 py-5 text-xs uppercase tracking-widest">Ver Carteira Atualizada</Button>
+           <Button onClick={() => window.location.hash = '/clientes'} variant="primary" className="px-12 text-xs">Ver Carteira Atualizada</Button>
         </div>
       )}
 

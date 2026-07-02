@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { reuniaoService, Reuniao } from '../../services/reuniaoService';
 import { formatarData } from '../../utils/formatadores';
 import Modal from '../Modal';
+import Confirmacao from '../Confirmacao';
 import { Calendar, CheckCircle2, XCircle, Clock, Search, MessageSquare, History, Edit3, Trash2, CalendarCheck, FileText } from 'lucide-react';
 import Badge from '../UI/Badge';
 
@@ -17,6 +18,9 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
   const [reuniaoEdit, setReuniaoEdit] = useState<Partial<Reuniao> | null>(null);
   const [rawDate, setRawDate] = useState(''); 
   const [loading, setLoading] = useState(false);
+  const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
+  const [excluirTarget, setExcluirTarget] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
   const [busca, setBusca] = useState('');
 
   /**
@@ -100,10 +104,11 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
     // Para ações rápidas, preservamos a data original para evitar fallback do banco para now()
     const original = reunioes.find(r => r.id === id);
     if (original) {
+      setAcaoEmCurso(id);
       try {
-        await reuniaoService.salvar({ 
-            id: original.id, 
-            status, 
+        await reuniaoService.salvar({
+            id: original.id,
+            status,
             data_reuniao: original.data_reuniao,
             cliente_id: original.cliente_id,
             notas: original.notas
@@ -111,17 +116,23 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
         onRefresh();
       } catch (err) {
         alert("Erro ao atualizar status.");
+      } finally {
+        setAcaoEmCurso(null);
       }
     }
   };
 
-  const handleExcluir = async (id: string) => {
-    if (!window.confirm("Deseja excluir este registro permanentemente?")) return;
+  const confirmarExclusao = async () => {
+    if (!excluirTarget) return;
+    setExcluindo(true);
     try {
-      await reuniaoService.excluir(id);
+      await reuniaoService.excluir(excluirTarget);
+      setExcluirTarget(null);
       onRefresh();
     } catch (err) {
       alert("Erro ao excluir.");
+    } finally {
+      setExcluindo(false);
     }
   };
 
@@ -176,8 +187,8 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
                 </div>
                 <div className="flex gap-1 opacity-20 group-hover:opacity-100 transition-all">
                    <button onClick={() => { setReuniaoEdit(r); setModalOpen(true); }} title="Editar Agendamento" className="h-7 w-7 flex items-center justify-center bg-surface-2 text-faint rounded-md hover:bg-surface-3 hover:text-muted transition-all"><Edit3 size={14} /></button>
-                   <button onClick={() => handleAction(r.id!, 'realizada')} title="Confirmar Realização" className="h-7 w-7 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-500 hover:text-white transition-all"><CheckCircle2 size={14} /></button>
-                   <button onClick={() => handleAction(r.id!, 'cancelada')} title="Cancelar Reunião" className="h-7 w-7 flex items-center justify-center bg-rose-50 text-rose-600 rounded-md hover:bg-rose-500 hover:text-white transition-all"><XCircle size={14} /></button>
+                   <button onClick={() => handleAction(r.id!, 'realizada')} disabled={acaoEmCurso === r.id} title="Confirmar Realização" className="h-7 w-7 flex items-center justify-center bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"><CheckCircle2 size={14} /></button>
+                   <button onClick={() => handleAction(r.id!, 'cancelada')} disabled={acaoEmCurso === r.id} title="Cancelar Reunião" className="h-7 w-7 flex items-center justify-center bg-rose-50 text-rose-600 rounded-md hover:bg-rose-500 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"><XCircle size={14} /></button>
                 </div>
              </div>
            ))}
@@ -233,7 +244,7 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
                       </div>
                       <div className="flex gap-0.5 opacity-20 group-hover:opacity-100 transition-all">
                         <button onClick={() => { setReuniaoEdit(r); setModalOpen(true); }} className="h-7 w-7 flex items-center justify-center text-faint hover:bg-surface-2 hover:text-indigo-600 rounded-md transition-colors"><Edit3 size={14} /></button>
-                        <button onClick={() => handleExcluir(r.id!)} className="h-7 w-7 flex items-center justify-center text-faint hover:bg-surface-2 hover:text-rose-500 rounded-md transition-colors"><Trash2 size={14} /></button>
+                        <button onClick={() => setExcluirTarget(r.id!)} className="h-7 w-7 flex items-center justify-center text-faint hover:bg-surface-2 hover:text-rose-500 rounded-md transition-colors"><Trash2 size={14} /></button>
                       </div>
                    </div>
                    <div className={`p-3 rounded-lg border transition-colors ${r.status === 'realizada' ? 'bg-surface-2 border-subtle' : 'bg-surface-2/50 border-transparent opacity-60'}`}>
@@ -306,19 +317,27 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
             </div>
 
             <div className="flex gap-3 pt-2">
-               <button type="button" onClick={() => setModalOpen(false)} className="flex-1 py-3 font-semibold text-[color:var(--text-muted)] uppercase text-[11px] tracking-widest hover:bg-surface-2 rounded-lg transition-colors">Descartar</button>
-               <button 
-                  type="submit" 
-                  disabled={loading} 
-                  className={`flex-1 py-3 font-bold text-white uppercase text-[11px] rounded-lg shadow-sm transition-all ${
-                    reuniaoEdit?.status === 'agendada' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                  }`}
+               <button type="button" onClick={() => setModalOpen(false)} className="flex-1 h-9 font-semibold text-[color:var(--text-muted)] text-[12px] hover:bg-surface-2 rounded-lg transition-colors">Descartar</button>
+               <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 h-9 font-semibold text-[#0b0e14] text-[12px] rounded-lg shadow-sm transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--primary)' }}
                >
                   {loading ? 'Sincronizando...' : 'Confirmar Lançamento'}
                </button>
             </div>
          </form>
       </Modal>
+
+      <Confirmacao
+        isOpen={!!excluirTarget}
+        onClose={() => setExcluirTarget(null)}
+        onConfirm={confirmarExclusao}
+        loading={excluindo}
+        title="Excluir registro"
+        message="Deseja excluir este registro de reunião permanentemente?"
+      />
     </div>
   );
 };

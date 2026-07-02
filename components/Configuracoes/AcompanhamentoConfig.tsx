@@ -206,8 +206,8 @@ const FormAcompanhamento = ({ item, onSave, onCancel }: any) => {
        </div>
 
        <div className="flex gap-3 pt-6 border-t border-subtle">
-          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Descartar</Button>
-          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Sincronizar Roteiro</Button>
+          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Descartar</Button>
+          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-semibold">Sincronizar Roteiro</Button>
        </div>
     </form>
   );

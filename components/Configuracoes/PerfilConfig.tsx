@@ -151,7 +151,7 @@ const PerfilConfig: React.FC = () => {
            <Button 
              type="submit" 
              isLoading={loading}
-             className="h-9 px-6 text-[11px] font-bold uppercase tracking-wider"
+             className="h-9 px-6 text-[11px] font-semibold"
            >
              Salvar Configurações
            </Button>

@@ -50,6 +50,9 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const [loadingParcelas, setLoadingParcelas] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [cancelData, setCancelData] = useState({ data_cancelamento: '', data_inadimplencia: '' });
+  const [removendo, setRemovendo] = useState(false);
+  const [baixaTarget, setBaixaTarget] = useState<Parcela | null>(null);
+  const [baixando, setBaixando] = useState(false);
 
   const [step, setStep] = useState(1);
   const [accordionEncerrados, setAccordionEncerrados] = useState(false);
@@ -328,17 +331,19 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
     } finally { setIsSubmitting(false); }
   };
 
-  const handleBaixarParcela = async (parcela: Parcela) => {
+  const confirmarBaixa = async () => {
+    if (!baixaTarget) return;
     const fatorRepasse = (contratoSelecionado.repasse_percentual || 100) / 100;
-    const valorLiquido = parcela.valor_previsto * fatorRepasse;
-
-    if (!window.confirm(`Confirmar recebimento líquido de ${formatarMoeda(valorLiquido)}?`)) return;
+    const valorLiquido = baixaTarget.valor_previsto * fatorRepasse;
+    setBaixando(true);
     try {
-      await financeiroService.registrarPagamento(parcela.id, valorLiquido, new Date().toISOString());
+      await financeiroService.registrarPagamento(baixaTarget.id, valorLiquido, new Date().toISOString());
       const data = await financeiroService.obterParcelasPorContrato(contratoSelecionado.id);
       setParcelasContrato(data || []);
+      setBaixaTarget(null);
       fetchData();
     } catch (err) { alert("Erro ao baixar parcela."); }
+    finally { setBaixando(false); }
   };
 
   const handleMetodologiaChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -977,7 +982,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           {(p.status === 'pendente' || p.status === 'atrasado') && contratoSelecionado.status === 'ativo' && (
-                            <button onClick={() => handleBaixarParcela(p)} className="text-[color:var(--primary)] font-semibold text-[11px] hover:underline">Baixar líquido</button>
+                            <button onClick={() => setBaixaTarget(p)} className="text-[color:var(--primary)] font-semibold text-[11px] hover:underline">Baixar líquido</button>
                           )}
                         </td>
                       </tr>
@@ -993,16 +998,30 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       <Confirmacao
         isOpen={modalExcluirConfirm}
         onClose={() => setModalExcluirConfirm(false)}
+        loading={removendo}
         onConfirm={async () => {
+          setRemovendo(true);
           try {
             await deletarContrato(contratoSelecionado.id);
             setModalExcluirConfirm(false);
             setModalExtrato(false);
             fetchData();
           } catch (err) { alert("Erro ao deletar."); }
+          finally { setRemovendo(false); }
         }}
         title="Remover Acordo"
         message={`Deseja realmente excluir o contrato "${contratoSelecionado?.descricao}"? Todos os lançamentos financeiros vinculados também serão removidos.`}
+      />
+
+      <Confirmacao
+        isOpen={!!baixaTarget}
+        onClose={() => setBaixaTarget(null)}
+        onConfirm={confirmarBaixa}
+        loading={baixando}
+        danger={false}
+        confirmLabel="Confirmar recebimento"
+        title="Baixar parcela"
+        message={baixaTarget ? `Confirmar recebimento líquido de ${formatarMoeda(baixaTarget.valor_previsto * ((contratoSelecionado?.repasse_percentual || 100) / 100))}?` : ''}
       />
     </div>
   );

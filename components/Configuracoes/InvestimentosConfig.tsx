@@ -200,7 +200,7 @@ const ParametrosForm: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" isLoading={saving} className="h-9 px-5 text-[11px] font-bold uppercase tracking-wider">Salvar parâmetros</Button>
+        <Button type="submit" isLoading={saving} className="h-9 px-5 text-[11px] font-semibold">Salvar parâmetros</Button>
         {saved && <span className="text-[12px] font-semibold" style={{ color: 'var(--primary)' }}>Salvo com sucesso.</span>}
       </div>
     </form>
@@ -322,8 +322,8 @@ const FormEstrategia = ({ item, onSave, onCancel }: any) => {
        {error && <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-widest text-center animate-slide-up">⚠ {error}</div>}
 
        <div className="flex gap-3 pt-6 border-t border-subtle">
-          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Descartar</Button>
-          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Salvar Estratégia</Button>
+          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Descartar</Button>
+          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-semibold">Salvar Estratégia</Button>
        </div>
     </form>
   );
@@ -402,8 +402,8 @@ const FormAsset = ({ item, onSave, onCancel }: any) => {
           </div>
        </div>
        <div className="flex gap-3 pt-6 border-t border-subtle">
-          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Descartar</Button>
-          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Salvar Modelo</Button>
+          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Descartar</Button>
+          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-semibold">Salvar Modelo</Button>
        </div>
     </form>
   );
@@ -439,8 +439,8 @@ const FormBanco = ({ item, onSave, onCancel }: any) => {
           </div>
        </div>
        <div className="flex gap-3 pt-6 border-t border-subtle">
-          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Cancelar</Button>
-          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-bold uppercase tracking-wider">Confirmar</Button>
+          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Cancelar</Button>
+          <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-semibold">Confirmar</Button>
        </div>
     </form>
   );

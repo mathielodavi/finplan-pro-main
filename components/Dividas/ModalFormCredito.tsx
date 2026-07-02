@@ -8,7 +8,7 @@ import Input from '../UI/Input';
 interface Props {
     open: boolean;
     onClose: () => void;
-    onSave: (credito: Partial<DividaCredito>) => void;
+    onSave: (credito: Partial<DividaCredito>) => void | Promise<void>;
     initialData?: DividaCredito;
     clienteId: string;
 }
@@ -22,6 +22,7 @@ const TYPE_OPTIONS: { value: DebtType, label: string }[] = [
 ];
 
 const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData, clienteId }) => {
+    const [salvando, setSalvando] = useState(false);
     const [formData, setFormData] = useState<Partial<DividaCredito>>({
         cliente_id: clienteId,
         debt_type: 'personal_loan',
@@ -60,7 +61,7 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
         }));
     };
 
-    const handleSalvar = () => {
+    const handleSalvar = async () => {
         // Enforcing Rule A1 (CET Annual derived from CET Monthly)
         const cetMensal = formData.cet_monthly || 0;
         const cetAnual = (Math.pow(1 + (cetMensal / 100), 12) - 1) * 100;
@@ -68,12 +69,17 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
         // Enforcing Rule A5 (Total Paid is derived, will be calculated later, but saving snapshot)
         const totalPaid = Math.max(0, (formData.total_installments || 0) - (formData.remaining_installments || 0)) * (formData.installment_value || 0);
 
-        onSave({
-            ...formData,
-            cet_annual: cetAnual,
-            total_paid: totalPaid,
-            income_commitment: 0 // Will be derived downstream based on client income
-        });
+        setSalvando(true);
+        try {
+            await onSave({
+                ...formData,
+                cet_annual: cetAnual,
+                total_paid: totalPaid,
+                income_commitment: 0 // Will be derived downstream based on client income
+            });
+        } finally {
+            setSalvando(false);
+        }
     };
 
     return createPortal(
@@ -158,8 +164,8 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
                 </div>
 
                 <div className="px-6 py-4 border-t border-subtle flex justify-end gap-3 bg-surface-2">
-                    <Button variant="outline" onClick={onClose} className="h-9 px-4 text-[11px] font-bold uppercase tracking-wider">Cancelar</Button>
-                    <Button variant="primary" onClick={handleSalvar} className="bg-indigo-600 hover:bg-indigo-700 h-9 px-4 text-[11px] font-bold uppercase tracking-wider">
+                    <Button variant="outline" onClick={onClose} className="h-9 px-4 text-[11px] font-semibold">Cancelar</Button>
+                    <Button variant="primary" onClick={handleSalvar} isLoading={salvando} className="h-9 px-4 text-[11px] font-semibold">
                         <Save size={14} className="mr-1.5" />
                         {initialData ? 'Salvar Alterações' : 'Registrar Crédito'}
                     </Button>

@@ -28,6 +28,7 @@ const sectionTitle = "text-[11px] font-semibold text-faint uppercase tracking-wi
 
 const ObjetivoFormDrawer: React.FC<Props> = ({ open, onClose, editProjeto, setEditProjeto, ativos, clienteId, onSaved }) => {
   const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const calcularAcumuladoReal = (projetoId: string) => {
@@ -48,13 +49,20 @@ const ObjetivoFormDrawer: React.FC<Props> = ({ open, onClose, editProjeto, setEd
     e.preventDefault();
     if (!editProjeto || (editProjeto.etapas || []).length === 0) return;
 
-    await investimentoService.salvarProjeto({
-      ...editProjeto,
-      cliente_id: clienteId,
-      valor_alvo: valorTotalSum,
-    });
-    onSaved();
-    onClose();
+    setSaving(true);
+    try {
+      await investimentoService.salvarProjeto({
+        ...editProjeto,
+        cliente_id: clienteId,
+        valor_alvo: valorTotalSum,
+      });
+      onSaved();
+      onClose();
+    } catch {
+      alert('Falha ao salvar objetivo.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -111,10 +119,10 @@ const ObjetivoFormDrawer: React.FC<Props> = ({ open, onClose, editProjeto, setEd
             <button
               type="submit"
               form="form-objetivo"
-              disabled={(editProjeto.etapas || []).length === 0 || !editProjeto.nome || !editProjeto.data_alvo}
+              disabled={saving || (editProjeto.etapas || []).length === 0 || !editProjeto.nome || !editProjeto.data_alvo}
               className="flex-[2] h-9 bg-[color:var(--primary)] text-[#0b0e14] font-semibold text-[12px] rounded-lg hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
             >
-              {editProjeto.id ? 'Salvar alterações' : 'Criar objetivo'}
+              {saving ? 'Salvando...' : (editProjeto.id ? 'Salvar alterações' : 'Criar objetivo')}
               <CheckCircle2 size={14} />
             </button>
           </div>

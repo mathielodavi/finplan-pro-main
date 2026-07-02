@@ -8,7 +8,7 @@ import Input from '../UI/Input';
 interface Props {
     open: boolean;
     onClose: () => void;
-    onSave: (consorcio: Partial<DividaConsorcio>) => void;
+    onSave: (consorcio: Partial<DividaConsorcio>) => void | Promise<void>;
     initialData?: DividaConsorcio;
     clienteId: string;
 }
@@ -50,6 +50,7 @@ const STRATEGY_OPTIONS: { value: BidStrategy, label: string }[] = [
 ];
 
 const ModalFormConsorcio: React.FC<Props> = ({ open, onClose, onSave, initialData, clienteId }) => {
+    const [salvando, setSalvando] = useState(false);
     const [formData, setFormData] = useState<Partial<DividaConsorcio>>({
         cliente_id: clienteId,
         asset_type: 'real_estate',
@@ -121,13 +122,18 @@ const ModalFormConsorcio: React.FC<Props> = ({ open, onClose, onSave, initialDat
         setFormData(prev => ({ ...prev, [name]: finalVal }));
     };
 
-    const handleSalvar = () => {
+    const handleSalvar = async () => {
         // Enforcing derived logic (Calculated via Motor before Save to show on Dashboard)
-        onSave({
-            ...formData,
-            real_monthly_cost: 0, // Engine calculates
-            embedded_total_cost_pct: 0 // Engine calculates
-        });
+        setSalvando(true);
+        try {
+            await onSave({
+                ...formData,
+                real_monthly_cost: 0, // Engine calculates
+                embedded_total_cost_pct: 0 // Engine calculates
+            });
+        } finally {
+            setSalvando(false);
+        }
     };
 
     return createPortal(
@@ -273,8 +279,8 @@ const ModalFormConsorcio: React.FC<Props> = ({ open, onClose, onSave, initialDat
                 </div>
 
                 <div className="px-6 py-4 border-t border-subtle flex justify-end gap-3 bg-surface-2">
-                    <Button variant="outline" onClick={onClose} className="h-9 px-4 text-[11px] font-bold uppercase tracking-wider">Cancelar</Button>
-                    <Button variant="primary" onClick={handleSalvar} className="bg-sky-600 hover:bg-sky-700 h-9 px-4 text-[11px] font-bold uppercase tracking-wider">
+                    <Button variant="outline" onClick={onClose} className="h-9 px-4 text-[11px] font-semibold">Cancelar</Button>
+                    <Button variant="primary" onClick={handleSalvar} isLoading={salvando} className="h-9 px-4 text-[11px] font-semibold">
                         <Save size={14} className="mr-1.5" />
                         {initialData ? 'Salvar Alterações' : 'Registrar Consórcio'}
                     </Button>

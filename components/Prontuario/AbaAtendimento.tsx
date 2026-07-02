@@ -19,6 +19,8 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
   const [modeloSelecionadoId, setModeloSelecionadoId] = useState('');
   const [aplicandoModelo, setAplicandoModelo] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [salvandoManual, setSalvandoManual] = useState(false);
   const [novoItem, setNovoItem] = useState({ descricao: '', fase_id: null as string | null });
 
   const loadData = useCallback(async () => {
@@ -50,12 +52,15 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
 
   const confirmarExclusao = async () => {
     if (!deleteTarget) return;
+    setExcluindo(true);
     try {
       await acompanhamentoService.excluirItem(deleteTarget);
       setItens(prev => prev.filter(item => item.id !== deleteTarget));
       setDeleteTarget(null);
     } catch (err) {
       console.error('Erro ao excluir item:', err);
+    } finally {
+      setExcluindo(false);
     }
   };
 
@@ -97,6 +102,7 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
   const handleAddManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novoItem.descricao.trim()) return;
+    setSalvandoManual(true);
     try {
       await acompanhamentoService.adicionarItemManual({
         ...novoItem,
@@ -108,6 +114,8 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
       loadData();
     } catch (err: any) {
       console.error('Erro ao adicionar tarefa:', err);
+    } finally {
+      setSalvandoManual(false);
     }
   };
 
@@ -230,7 +238,7 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
             <p className="text-[13px] font-semibold text-main">Remover esta tarefa deste cliente?</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 font-semibold text-muted border border-subtle rounded-xl text-[12px]">Cancelar</button>
-              <button onClick={confirmarExclusao} className="flex-1 py-3 font-semibold text-white bg-[color:var(--danger)] rounded-xl text-[12px] hover:opacity-90 transition-all">Remover</button>
+              <button onClick={confirmarExclusao} disabled={excluindo} className="flex-1 py-3 font-semibold text-white bg-[color:var(--danger)] rounded-xl text-[12px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">{excluindo ? 'Removendo...' : 'Remover'}</button>
             </div>
           </div>
         </div>
@@ -281,7 +289,7 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
           </div>
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={() => setModalManual(false)} className="flex-1 h-[40px] font-semibold text-muted hover:bg-surface-2 rounded-lg text-[13px] transition-colors border border-subtle">Cancelar</button>
-            <button type="submit" className="flex-1 h-[40px] font-semibold text-white bg-surface-3 rounded-lg text-[13px] shadow-sm hover:bg-strong transition-all">Confirmar Tarefa</button>
+            <button type="submit" disabled={salvandoManual} className="flex-1 h-[40px] font-semibold text-white bg-surface-3 rounded-lg text-[13px] shadow-sm hover:bg-strong disabled:opacity-50 disabled:cursor-not-allowed transition-all">{salvandoManual ? 'Salvando...' : 'Confirmar Tarefa'}</button>
           </div>
         </form>
       </Modal>

@@ -10,6 +10,7 @@ import ModalFormCredito from './ModalFormCredito';
 import ModalFormConsorcio from './ModalFormConsorcio';
 import PanelDetalheCredito from './PanelDetalheCredito';
 import PanelDetalheConsorcio from './PanelDetalheConsorcio';
+import Confirmacao from '../Confirmacao';
 
 interface Props {
 
@@ -31,6 +32,8 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
     // Selection State (Detail Panels)
     const [selectedCredito, setSelectedCredito] = useState<DividaCredito | null>(null);
     const [selectedConsorcio, setSelectedConsorcio] = useState<DividaConsorcio | null>(null);
+    const [excluirAlvo, setExcluirAlvo] = useState<{ tipo: 'credito' | 'consorcio'; id: string } | null>(null);
+    const [excluindoDivida, setExcluindoDivida] = useState(false);
 
     const loadDados = useCallback(async () => {
         setLoading(true);
@@ -88,18 +91,27 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
         }
     };
 
-    const handleDeleteCredito = async (id: string) => {
-        if (!confirm('Deseja realmente excluir esta dívida de crédito?')) return;
-        await dividasService.deleteCredito(id);
-        setSelectedCredito(null);
-        loadDados();
-    };
+    const handleDeleteCredito = (id: string) => setExcluirAlvo({ tipo: 'credito', id });
+    const handleDeleteConsorcio = (id: string) => setExcluirAlvo({ tipo: 'consorcio', id });
 
-    const handleDeleteConsorcio = async (id: string) => {
-        if (!confirm('Deseja realmente excluir este consórcio?')) return;
-        await dividasService.deleteConsorcio(id);
-        setSelectedConsorcio(null);
-        loadDados();
+    const confirmarExclusaoDivida = async () => {
+        if (!excluirAlvo) return;
+        setExcluindoDivida(true);
+        try {
+            if (excluirAlvo.tipo === 'credito') {
+                await dividasService.deleteCredito(excluirAlvo.id);
+                setSelectedCredito(null);
+            } else {
+                await dividasService.deleteConsorcio(excluirAlvo.id);
+                setSelectedConsorcio(null);
+            }
+            setExcluirAlvo(null);
+            loadDados();
+        } catch {
+            alert('Erro ao excluir.');
+        } finally {
+            setExcluindoDivida(false);
+        }
     };
 
     if (loading) {
@@ -236,6 +248,15 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
                     setSelectedConsorcio(null);
                     setModalConsorcioOpen(true);
                 }}
+            />
+
+            <Confirmacao
+                isOpen={!!excluirAlvo}
+                onClose={() => setExcluirAlvo(null)}
+                onConfirm={confirmarExclusaoDivida}
+                loading={excluindoDivida}
+                title={excluirAlvo?.tipo === 'consorcio' ? 'Excluir consórcio' : 'Excluir dívida de crédito'}
+                message={excluirAlvo?.tipo === 'consorcio' ? 'Deseja realmente excluir este consórcio?' : 'Deseja realmente excluir esta dívida de crédito?'}
             />
 
         </div>
