@@ -456,7 +456,7 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                       ))}
                    </div>
                    {formData.recorrente && (
-                      <button type="button" onClick={addFluxo} className="w-full py-3 bg-surface border-2 border-dashed border-indigo-200 text-indigo-400 rounded-2xl font-black text-[9px] uppercase tracking-widest hover:border-indigo-400 hover:text-indigo-600 transition-all">+ Adicionar Fluxo de Duração</button>
+                      <button type="button" onClick={addFluxo} className="w-full py-2.5 bg-surface border-2 border-dashed border-indigo-200 text-indigo-400 rounded-lg font-semibold text-[11px] hover:border-indigo-400 hover:text-indigo-600 transition-all">+ Adicionar Fluxo</button>
                    )}
                 </div>
              </div>
