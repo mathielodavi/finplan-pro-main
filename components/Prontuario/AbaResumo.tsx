@@ -13,7 +13,7 @@ import { formatarMoeda, formatarData, toLocalDateString } from '../../utils/form
 import { calcularTermometro } from '../../utils/termometroUtils';
 import { categorizarAgendaCliente } from '../../utils/agendaUtils';
 import { useProntuarioNav } from '../../context/ProntuarioNavContext';
-import Modal from '../Modal';
+import SidePanel from '../UI/SidePanel';
 import Badge from '../UI/Badge';
 import Button from '../UI/Button';
 import Confirmacao from '../Confirmacao';
@@ -144,15 +144,6 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
     }
   }, [padroesPlanejamento, padroesExtras]);
 
-  const showDuracaoInput = useMemo(() => {
-    if (!formContrato.padrao_id) return true;
-    if (formContrato.categoria === 'planejamento') return false;
-    const padrao = padroesExtras.find(p => p.id === formContrato.padrao_id);
-    if (!padrao) return true;
-    if (padrao.recorrente === false) return true;
-    return false;
-  }, [formContrato.padrao_id, formContrato.categoria, padroesExtras]);
-
   const fluxoProjetado = useMemo(() => {
     const parcelas = [];
     const [year, month, day] = formContrato.data_inicio.split('-').map(Number);
@@ -269,6 +260,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
     });
     setStep(2);
     setSaveSuccess(false);
+    setModalExtrato(false);
     setModalContrato(true);
   };
 
@@ -575,63 +567,73 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         />
       </div>
 
-      <Modal isOpen={modalContrato} onClose={() => setModalContrato(false)} title={formContrato.id ? 'Ajustar Parâmetros do Acordo' : 'Nova Ativação Estratégica'}>
-        {/* ... rest of modal code ... */}
-        <div className="space-y-8 animate-fade-in">
+      <SidePanel
+        open={modalContrato}
+        onClose={() => setModalContrato(false)}
+        title={formContrato.id ? 'Ajustar Parâmetros do Acordo' : 'Nova Ativação Estratégica'}
+        subtitle={cliente.nome}
+        widthClass="max-w-2xl"
+      >
+        <div className="space-y-6 animate-fade-in">
           {!saveSuccess && (
-            <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="flex items-center justify-center gap-2 mb-1">
               {[1, 2, 3].map(i => (
                 <React.Fragment key={i}>
-                  <div className={`h-8 w-8 rounded-xl flex items-center justify-center font-black text-xs transition-all ${step >= i ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-surface-2 text-faint'}`}>
-                    {step > i ? <CheckCircle2 size={16} /> : i}
+                  <div
+                    className={`h-7 w-7 rounded-full flex items-center justify-center font-semibold text-[12px] transition-all ${step >= i ? 'text-[#0b0e14]' : 'bg-surface-2 text-faint'}`}
+                    style={step >= i ? { backgroundColor: 'var(--primary)' } : undefined}
+                  >
+                    {step > i ? <CheckCircle2 size={14} /> : i}
                   </div>
-                  {i < 3 && <div className={`h-1 w-10 rounded-full ${step > i ? 'bg-emerald-600' : 'bg-surface-2'}`} />}
+                  {i < 3 && (
+                    <div className={`h-0.5 w-8 rounded-full ${step > i ? '' : 'bg-surface-2'}`} style={step > i ? { backgroundColor: 'var(--primary)' } : undefined} />
+                  )}
                 </React.Fragment>
               ))}
             </div>
           )}
 
           {saveSuccess ? (
-            <div className="py-20 text-center space-y-4 animate-in zoom-in-95 duration-500">
-              <div className="h-20 w-20 bg-emerald-50 text-emerald-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl">
-                <CheckCircle2 size={40} strokeWidth={2.5} />
+            <div className="py-16 text-center space-y-3">
+              <div className="h-14 w-14 rounded-2xl flex items-center justify-center mx-auto text-[color:var(--primary)]" style={{ backgroundColor: 'var(--primary-soft)' }}>
+                <CheckCircle2 size={28} strokeWidth={2.5} />
               </div>
-              <h3 className="text-2xl font-black text-main uppercase">Acordo Formalizado!</h3>
-              <p className="text-faint font-medium italic text-sm">Sincronizando fluxo de caixa com o motor financeiro...</p>
+              <h3 className="text-[16px] font-semibold text-main">Acordo formalizado</h3>
+              <p className="text-[13px] text-faint">Sincronizando fluxo de caixa com o motor financeiro...</p>
             </div>
           ) : (
             <>
               {step === 1 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     onClick={() => { setFormContrato({ ...formContrato, categoria: 'planejamento', padrao_id: '' }); setStep(2); }}
-                    className="p-10 bg-surface border border-subtle rounded-3xl hover:border-emerald-500 hover:shadow-2xl hover:shadow-emerald-500/10 transition-all group flex flex-col items-center text-center space-y-6"
+                    className="p-6 bg-surface-2 border border-subtle rounded-xl hover:border-primary transition-colors flex flex-col items-center text-center gap-3"
                   >
-                    <div className="h-14 w-14 rounded-2xl flex items-center justify-center transition-all text-[color:var(--primary)] group-hover:text-white group-hover:bg-emerald-600" style={{ backgroundColor: 'var(--primary-soft)' }}>
-                      <FileText size={28} />
+                    <div className="h-11 w-11 rounded-xl flex items-center justify-center text-[color:var(--primary)]" style={{ backgroundColor: 'var(--primary-soft)' }}>
+                      <FileText size={22} />
                     </div>
                     <div>
-                      <h4 className="text-lg font-black text-main uppercase tracking-tight">Planejamento</h4>
-                      <p className="text-[10px] text-faint font-bold uppercase mt-2 leading-relaxed tracking-widest">Consultoria e Ciclos Anuais</p>
+                      <h4 className="text-[14px] font-semibold text-main">Planejamento</h4>
+                      <p className="text-[11px] text-faint mt-1">Consultoria e ciclos anuais</p>
                     </div>
                   </button>
                   <button
                     onClick={() => { setFormContrato({ ...formContrato, categoria: 'extra', padrao_id: '' }); setStep(2); }}
-                    className="p-10 bg-surface border border-subtle rounded-3xl hover:border-amber-500 hover:shadow-2xl hover:shadow-amber-500/10 transition-all group flex flex-col items-center text-center space-y-6"
+                    className="p-6 bg-surface-2 border border-subtle rounded-xl hover:border-[color:var(--warning)] transition-colors flex flex-col items-center text-center gap-3"
                   >
-                    <div className="h-14 w-14 rounded-2xl flex items-center justify-center transition-all text-[color:var(--warning)] group-hover:bg-amber-600 group-hover:text-white" style={{ backgroundColor: 'rgba(251,191,36,0.12)' }}>
-                      <Plus size={28} />
+                    <div className="h-11 w-11 rounded-xl flex items-center justify-center text-[color:var(--warning)]" style={{ backgroundColor: 'rgba(251,191,36,0.12)' }}>
+                      <Plus size={22} />
                     </div>
                     <div>
-                      <h4 className="text-lg font-black text-main uppercase tracking-tight">Serviços Extras</h4>
-                      <p className="text-[10px] text-faint font-bold uppercase mt-2 leading-relaxed tracking-widest">Implementações Sob Demanda</p>
+                      <h4 className="text-[14px] font-semibold text-main">Serviços Extras</h4>
+                      <p className="text-[11px] text-faint mt-1">Implementações sob demanda</p>
                     </div>
                   </button>
                 </div>
               )}
               {step === 2 && (
-                <div className="space-y-8 animate-slide-up">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-6 animate-slide-up">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className={labelStyle}>Status do Acordo</label>
                       <select
@@ -654,55 +656,59 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                       </select>
                     </div>
                     <div>
-                      <label className={labelStyle}>Padrão de Recebimento</label>
+                      <label className={labelStyle}>Padrão de Recebimento <span className="text-[color:var(--danger)]">*</span></label>
                       <select
                         value={formContrato.padrao_id}
                         onChange={e => aplicarPadrao(e.target.value, formContrato.categoria)}
                         className={inputStyle}
+                        required
                       >
-                        <option value="">Configuração Personalizada...</option>
+                        <option value="" disabled>Selecione um padrão...</option>
                         {(formContrato.categoria === 'planejamento' ? padroesPlanejamento : padroesExtras).map(p => (
                           <option key={p.id} value={p.id}>{p.nome}</option>
                         ))}
                       </select>
+                      {!formContrato.padrao_id && (
+                        <p className="text-[11px] text-[color:var(--warning)] font-medium mt-1.5">Selecione um padrão — ele define duração, repasse e prazo de recebimento.</p>
+                      )}
                     </div>
                     {formContrato.status === 'cancelado' && (
-                      <div className="md:col-span-2 bg-rose-50/50 p-4 rounded-2xl border border-rose-100/50">
-                        <label className={`${labelStyle} !text-rose-500`}>Data Efetiva de Cancelamento</label>
-                        <div className="relative mt-1">
-                          <Calendar size={18} className="absolute left-4 top-3.5 text-rose-300" />
+                      <div className="sm:col-span-2 bg-surface-2 p-3 rounded-lg border border-subtle">
+                        <label className={`${labelStyle} !text-[color:var(--danger)]`}>Data Efetiva de Cancelamento</label>
+                        <div className="relative">
+                          <Calendar size={14} className="absolute left-3 top-[11px] text-faint" />
                           <input
                             type="date"
                             required
                             value={formContrato.data_cancelamento || ''}
                             onChange={e => setFormContrato({ ...formContrato, data_cancelamento: e.target.value })}
-                            className={`${inputStyle} pl-12 font-black border-rose-200 focus:border-rose-500 focus:ring-rose-500/10 text-rose-700 bg-surface`}
+                            className={`${inputStyle} pl-9`}
                           />
                         </div>
-                        <p className="text-[10px] text-rose-400 font-bold mt-2 ml-1">O motor de encerramento blindará cancelamentos de parcelas passadas. Apenas parcelas com repasse posterior ao prazo D+{formContrato.prazo_recebimento_dias || 0} dias da data escolhida acima serão descartadas.</p>
+                        <p className="text-[11px] text-faint mt-2">O motor de encerramento blinda parcelas passadas. Apenas parcelas com repasse posterior a D+{formContrato.prazo_recebimento_dias || 0} dias desta data serão descartadas.</p>
                       </div>
                     )}
                     <div>
                       <label className={labelStyle}>Data Base do Acordo</label>
                       <div className="relative">
-                        <Calendar size={18} className="absolute left-4 top-4 text-faint" />
-                        <input type="date" required value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} className={`${inputStyle} pl-12 font-black`} />
+                        <Calendar size={14} className="absolute left-3 top-[11px] text-faint" />
+                        <input type="date" required value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} className={`${inputStyle} pl-9`} />
                       </div>
                     </div>
                     <div>
                       <label className={labelStyle}>Forma de Pagamento</label>
-                      <div className="flex bg-surface-2 p-1 rounded-xl h-[42px]">
+                      <div className="flex bg-surface-2 p-1 rounded-lg h-9 border border-subtle">
                         <button
                           type="button"
                           onClick={() => setFormContrato({ ...formContrato, forma_pagamento: 'vista' })}
-                          className={`flex-1 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formContrato.forma_pagamento === 'vista' ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint hover:text-muted'}`}
+                          className={`flex-1 text-[12px] font-semibold rounded-md transition-all ${formContrato.forma_pagamento === 'vista' ? 'bg-surface text-[color:var(--primary)] shadow-sm' : 'text-faint hover:text-muted'}`}
                         >
                           À Vista
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormContrato({ ...formContrato, forma_pagamento: 'parcelado' })}
-                          className={`flex-1 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formContrato.forma_pagamento === 'parcelado' ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint hover:text-muted'}`}
+                          className={`flex-1 text-[12px] font-semibold rounded-md transition-all ${formContrato.forma_pagamento === 'parcelado' ? 'bg-surface text-[color:var(--primary)] shadow-sm' : 'text-faint hover:text-muted'}`}
                         >
                           Parcelado
                         </button>
@@ -711,92 +717,108 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                     <div>
                       <label className={labelStyle}>{formContrato.categoria === 'extra' ? 'Mensalidade Bruta' : 'Ticket Mensal'}</label>
                       <div className="relative">
-                        <DollarSign size={18} className="absolute left-4 top-4 text-faint" />
-                        <input type="number" step="0.01" required value={formContrato.ticket_mensal} onChange={e => setFormContrato({ ...formContrato, ticket_mensal: Math.round(parseFloat(e.target.value) * 100) / 100 || 0 })} className={`${inputStyle} pl-12 font-black text-lg text-main`} />
+                        <DollarSign size={14} className="absolute left-3 top-[11px] text-faint" />
+                        <input type="number" step="0.01" required value={formContrato.ticket_mensal} onChange={e => setFormContrato({ ...formContrato, ticket_mensal: Math.round(parseFloat(e.target.value) * 100) / 100 || 0 })} className={`${inputStyle} pl-9`} />
                       </div>
                     </div>
-                    {showDuracaoInput && (
-                      <div>
-                        <label className={labelStyle}>Duração (Meses)</label>
-                        <div className="relative">
-                          <Clock size={16} className="absolute left-4 top-4 text-faint" />
-                          <input type="number" required value={formContrato.prazo_meses} onChange={e => setFormContrato({ ...formContrato, prazo_meses: parseInt(e.target.value) || 1 })} className={`${inputStyle} pl-12`} />
+                    {/* Duração, repasse e prazo de recebimento vêm do padrão (somente leitura) */}
+                    {formContrato.padrao_id && (
+                      <>
+                        <div>
+                          <label className={labelStyle}>Duração <span className="text-faint font-normal">(do padrão)</span></label>
+                          <div className="relative">
+                            <Clock size={14} className="absolute left-3 top-[11px] text-faint" />
+                            <input type="text" readOnly value={`${formContrato.prazo_meses} meses`} className={`${inputStyle} pl-9 bg-surface-2 text-muted cursor-not-allowed`} />
+                          </div>
                         </div>
-                      </div>
+                        <div>
+                          <label className={labelStyle}>Repasse líquido <span className="text-faint font-normal">(do padrão)</span></label>
+                          <input type="text" readOnly value={`${formContrato.repasse_percentual}%`} className={`${inputStyle} bg-surface-2 text-muted cursor-not-allowed`} />
+                        </div>
+                        <div>
+                          <label className={labelStyle}>Prazo de recebimento <span className="text-faint font-normal">(do padrão)</span></label>
+                          <input type="text" readOnly value={`D+${formContrato.prazo_recebimento_dias} dias`} className={`${inputStyle} bg-surface-2 text-muted cursor-not-allowed`} />
+                        </div>
+                      </>
                     )}
                   </div>
-                  <div className="p-6 bg-surface-3 rounded-3xl text-white flex justify-between items-center shadow-xl border-b-4 border-emerald-500 transition-all">
-                    <div className="space-y-1">
-                      <span className="text-[8px] font-black text-muted uppercase tracking-widest">Expectativa Líquida Total</span>
-                      <p className="text-2xl font-black text-emerald-400">{formatarMoeda(receitaLiquidaTotal)}</p>
+                  <div className="bg-surface-2 border border-subtle rounded-xl p-4 flex justify-between items-center">
+                    <div>
+                      <span className="text-[11px] text-faint">Expectativa líquida total</span>
+                      <p className="text-[18px] font-bold text-[color:var(--primary)] leading-tight mt-0.5">{formatarMoeda(receitaLiquidaTotal)}</p>
                     </div>
-                    <div className="text-right space-y-1">
-                      <span className="text-[8px] font-black text-faint uppercase tracking-widest">Duração do Fluxo</span>
-                      <p className="text-xl font-black">{formContrato.forma_pagamento === 'vista' ? 'Único' : `${formContrato.prazo_meses} Meses`}</p>
+                    <div className="text-right">
+                      <span className="text-[11px] text-faint">Duração do fluxo</span>
+                      <p className="text-[14px] font-semibold text-main leading-tight mt-0.5">{formContrato.forma_pagamento === 'vista' ? 'Único' : `${formContrato.prazo_meses} meses`}</p>
                     </div>
                   </div>
-                  <div className="flex gap-4">
+                  <div className="flex gap-2">
                     {!formContrato.id && (
-                      <button type="button" onClick={() => setStep(1)} className="flex-1 py-5 font-black text-faint uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:text-muted transition-all">
-                        <ArrowLeft size={16} /> Voltar
+                      <button type="button" onClick={() => setStep(1)} className="h-9 px-4 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center gap-1.5">
+                        <ArrowLeft size={14} /> Voltar
                       </button>
                     )}
-                    <button onClick={() => setStep(3)} className="flex-[2] py-5 bg-surface-3 text-white font-black rounded-2xl uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-3 group">
-                      Validar Sequenciamento de Fases
-                      <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                    <button
+                      onClick={() => setStep(3)}
+                      disabled={!formContrato.padrao_id || formContrato.ticket_mensal <= 0}
+                      className="flex-1 h-9 rounded-lg text-[#0b0e14] font-semibold text-[12px] transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: 'var(--primary)' }}
+                    >
+                      Validar sequenciamento
+                      <ArrowRight size={14} />
                     </button>
                   </div>
                 </div>
               )}
               {step === 3 && (
-                <div className="space-y-10 animate-slide-up">
-                  <div className="bg-surface-2 p-8 rounded-[2.5rem] border border-subtle grid grid-cols-2 md:grid-cols-4 gap-8">
-                    <div><p className={labelStyle}>Categoria</p><p className="text-sm font-black text-main uppercase tracking-tighter">{formContrato.categoria}</p></div>
-                    <div><p className={labelStyle}>Vigência</p><p className="text-sm font-black text-main uppercase tracking-tighter">{formContrato.prazo_meses} Meses</p></div>
-                    <div><p className={labelStyle}>Net Repasse %</p><Badge variant="success" size="sm">{formContrato.repasse_percentual}%</Badge></div>
-                    <div><p className={labelStyle}>Ticket Bruto</p><p className="text-sm font-black text-main uppercase tracking-tighter">{formatarMoeda(formContrato.ticket_mensal)}</p></div>
+                <div className="space-y-6 animate-slide-up">
+                  <div className="bg-surface-2 p-4 rounded-xl border border-subtle grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div><p className="text-[11px] text-faint mb-1">Categoria</p><p className="text-[13px] font-semibold text-main capitalize">{formContrato.categoria}</p></div>
+                    <div><p className="text-[11px] text-faint mb-1">Vigência</p><p className="text-[13px] font-semibold text-main">{formContrato.prazo_meses} meses</p></div>
+                    <div><p className="text-[11px] text-faint mb-1">Repasse líquido</p><Badge variant="success" size="sm">{formContrato.repasse_percentual}%</Badge></div>
+                    <div><p className="text-[11px] text-faint mb-1">Ticket bruto</p><p className="text-[13px] font-semibold text-main">{formatarMoeda(formContrato.ticket_mensal)}</p></div>
                   </div>
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-3 px-2">
-                      <Clock size={18} className="text-emerald-500" />
-                      <h4 className="text-[10px] font-black text-faint uppercase tracking-[0.2em]">Escalonamento de Recebíveis (D+{formContrato.prazo_recebimento_dias})</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Clock size={14} className="text-[color:var(--primary)]" />
+                      <h4 className="text-[11px] font-semibold text-faint uppercase tracking-wider">Escalonamento de recebíveis (D+{formContrato.prazo_recebimento_dias})</h4>
                     </div>
-                    <div className="bg-surface border border-subtle rounded-3xl overflow-hidden shadow-inner max-h-72 overflow-y-auto custom-scrollbar">
+                    <div className="bg-surface border border-subtle rounded-xl overflow-hidden max-h-72 overflow-y-auto custom-scrollbar">
                       <table className="w-full text-left">
                         <thead className="sticky top-0 bg-surface-2 border-b border-subtle z-10">
                           <tr>
-                            <th className="px-8 py-4 text-[9px] font-black text-faint uppercase">Referência</th>
-                            <th className="px-8 py-4 text-[9px] font-black text-faint uppercase text-center">Data Est.</th>
-                            <th className="px-8 py-4 text-[9px] font-black text-faint uppercase text-right">Valor Bruto</th>
-                            <th className="px-8 py-4 text-[9px] font-black text-emerald-600 uppercase text-right">Repasse Líquido</th>
+                            <th className="px-4 py-2.5 text-[11px] font-semibold text-faint uppercase tracking-wider">Referência</th>
+                            <th className="px-4 py-2.5 text-[11px] font-semibold text-faint uppercase tracking-wider text-center">Data est.</th>
+                            <th className="px-4 py-2.5 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Valor bruto</th>
+                            <th className="px-4 py-2.5 text-[11px] font-semibold text-[color:var(--primary)] uppercase tracking-wider text-right">Repasse líquido</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-subtle">
                           {fluxoProjetado.map((parc, idx) => (
-                            <tr key={idx} className={`hover:bg-surface-2/50 transition-colors ${parc.tipo === 'BÔNUS' ? 'bg-indigo-50/20' : ''}`}>
-                              <td className="px-8 py-4">
-                                <div className="flex items-center gap-3">
-                                  {parc.tipo === 'BÔNUS' ? <Zap size={14} className="text-indigo-500" /> : <Clock size={14} className="text-faint" />}
+                            <tr key={idx} className={`hover:bg-surface-2 transition-colors ${parc.tipo === 'BÔNUS' ? 'bg-surface-2/50' : ''}`}>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2.5">
+                                  {parc.tipo === 'BÔNUS' ? <Zap size={13} className="text-indigo-500" /> : <Clock size={13} className="text-faint" />}
                                   <div>
-                                    <p className={`text-[10px] font-black ${parc.tipo === 'BÔNUS' ? 'text-indigo-600' : 'text-faint'} uppercase`}>{parc.tipo === 'BÔNUS' ? 'BÔNUS ATIVAÇÃO' : `MÊS ${String(parc.num).padStart(2, '0')}`}</p>
-                                    <span className="text-[7px] font-bold text-faint uppercase block mt-0.5">{parc.repasseLabel}</span>
+                                    <p className={`text-[12px] font-semibold ${parc.tipo === 'BÔNUS' ? 'text-indigo-500' : 'text-main'}`}>{parc.tipo === 'BÔNUS' ? 'Bônus ativação' : `Mês ${String(parc.num).padStart(2, '0')}`}</p>
+                                    <span className="text-[10px] text-faint block mt-0.5">{parc.repasseLabel}</span>
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-8 py-4 text-xs font-black text-main text-center">{formatarData(parc.vencimento)}</td>
-                              <td className="px-8 py-4 text-xs font-bold text-main text-right">{formatarMoeda(parc.valorBruto)}</td>
-                              <td className="px-8 py-4 text-xs font-black text-emerald-600 text-right">{formatarMoeda(parc.valorLiquido)}</td>
+                              <td className="px-4 py-3 text-[12px] text-main text-center">{formatarData(parc.vencimento)}</td>
+                              <td className="px-4 py-3 text-[12px] text-main text-right">{formatarMoeda(parc.valorBruto)}</td>
+                              <td className="px-4 py-3 text-[12px] font-semibold text-[color:var(--primary)] text-right">{formatarMoeda(parc.valorLiquido)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   </div>
-                  <div className="flex gap-4">
-                    <button type="button" onClick={() => setStep(2)} className="flex-1 py-5 font-black text-faint uppercase text-[10px] tracking-widest hover:text-muted transition-all">Ajustar Dados</button>
-                    <button onClick={handleFinalizarAcordo} disabled={isSubmitting} className="flex-[2] py-5 bg-emerald-600 text-white font-black rounded-2xl uppercase text-[10px] tracking-[0.2em] shadow-2xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 group">
-                      {isSubmitting ? 'Sincronizando...' : 'Confirmar Ativação'}
-                      <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setStep(2)} className="h-9 px-4 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">Ajustar dados</button>
+                    <button onClick={handleFinalizarAcordo} disabled={isSubmitting} className="flex-1 h-9 rounded-lg text-[#0b0e14] font-semibold text-[12px] transition-all flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: 'var(--primary)' }}>
+                      {isSubmitting ? 'Sincronizando...' : 'Confirmar ativação'}
+                      <ArrowRight size={14} />
                     </button>
                   </div>
                 </div>
@@ -804,72 +826,71 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
             </>
           )}
         </div>
-      </Modal>
+      </SidePanel>
 
-      <Modal
-        isOpen={modalExtrato}
+      <SidePanel
+        open={modalExtrato}
         onClose={() => setModalExtrato(false)}
         title="Extrato do Acordo"
-        subtitle={
-          contratoSelecionado && (
-            <div className="flex items-center gap-3 mt-2">
-              <span className="text-[9px] font-black text-faint uppercase">Situação Atual:</span>
-              <Badge variant={contratoSelecionado.status === 'ativo' ? 'success' : contratoSelecionado.status === 'concluido' ? 'success' : 'danger'} size="sm">
-                {contratoSelecionado.status.toUpperCase()}
-              </Badge>
-            </div>
-          )
-        }
-        headerActions={
+        subtitle={contratoSelecionado?.descricao}
+        widthClass="max-w-2xl"
+        footer={
           contratoSelecionado && (
             <div className="flex gap-2">
-              <button onClick={() => handleEditContrato(contratoSelecionado)} className="flex items-center gap-2 px-4 py-2 bg-surface border border-subtle rounded-xl font-black text-[9px] uppercase text-muted hover:border-emerald-500 hover:text-emerald-600 transition-all shadow-sm">
-                <Edit3 size={12} /> Ajustar
+              <button onClick={() => handleEditContrato(contratoSelecionado)} className="flex-1 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center justify-center gap-1.5">
+                <Edit3 size={14} /> Ajustar
               </button>
-              <button onClick={() => setModalExcluirConfirm(true)} className="flex items-center gap-2 px-4 py-2 bg-surface border border-subtle rounded-xl font-black text-[9px] uppercase text-rose-400 hover:border-rose-500 hover:text-rose-600 transition-all shadow-sm">
-                <Trash2 size={12} /> Remover
+              <button onClick={() => setModalExcluirConfirm(true)} className="h-9 px-4 rounded-lg border border-subtle text-[color:var(--danger)] font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center gap-1.5">
+                <Trash2 size={14} /> Remover
               </button>
             </div>
           )
         }
       >
         {contratoSelecionado && (
-          <div className="space-y-8 animate-fade-in">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-surface-2 p-6 rounded-3xl border border-subtle">
-                <span className="text-[8px] font-black text-faint uppercase tracking-widest block mb-1">Total Líquido do Contrato</span>
-                <p className="text-lg font-black text-main">{formatarMoeda(totalLiquidoEsperadoContrato)}</p>
+          <div className="space-y-5 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-faint">Situação atual</span>
+              <Badge variant={contratoSelecionado.status === 'ativo' ? 'success' : contratoSelecionado.status === 'concluido' ? 'success' : 'danger'} size="sm">
+                {contratoSelecionado.status}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-surface-2 p-4 rounded-xl border border-subtle">
+                <span className="text-[11px] text-faint block mb-1">Total líquido do contrato</span>
+                <p className="text-[16px] font-bold text-main">{formatarMoeda(totalLiquidoEsperadoContrato)}</p>
               </div>
-              <div className="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100/50">
-                <span className="text-[8px] font-black text-emerald-600 uppercase tracking-widest block mb-1">Líquido Conciliado</span>
-                <p className="text-lg font-black text-emerald-700">{formatarMoeda(totalLiquidoConciliado)}</p>
+              <div className="bg-surface-2 p-4 rounded-xl border border-subtle">
+                <span className="text-[11px] text-faint block mb-1">Líquido conciliado</span>
+                <p className="text-[16px] font-bold text-[color:var(--primary)]">{formatarMoeda(totalLiquidoConciliado)}</p>
               </div>
             </div>
 
-            <div className="bg-surface border border-[color:var(--border)] rounded-xl overflow-hidden shadow-[var(--shadow-card)]">
+            <div className="bg-surface border border-subtle rounded-xl overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-surface-2 border-b border-[color:var(--border)]">
-                    <th className="px-5 py-3 text-[11px] font-semibold uppercase text-[color:var(--text-muted)] tracking-widest">Vencimento</th>
-                    <th className="px-5 py-3 text-[11px] font-semibold uppercase text-[color:var(--text-muted)] tracking-widest">Valor Bruto</th>
-                    <th className="px-5 py-3 text-[11px] font-semibold uppercase text-[color:var(--text-muted)] tracking-widest">Data Recebimento</th>
-                    <th className="px-5 py-3 text-[11px] font-semibold uppercase text-emerald-600 tracking-widest text-right">Valor Líquido</th>
-                    <th className="px-5 py-3 text-[11px] font-semibold uppercase text-[color:var(--text-muted)] tracking-widest text-center">Status</th>
-                    <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase text-[color:var(--text-muted)] tracking-widest">Ação</th>
+                  <tr className="bg-surface-2 border-b border-subtle">
+                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase text-faint tracking-wider">Vencimento</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase text-faint tracking-wider text-right">Valor bruto</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase text-faint tracking-wider">Recebimento</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase text-[color:var(--primary)] tracking-wider text-right">Valor líquido</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Status</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase text-faint tracking-wider text-right">Ação</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[color:var(--border)]">
+                <tbody className="divide-y divide-subtle">
                   {parcelasContrato.map((p) => {
                     const fator = (contratoSelecionado.repasse_percentual || 100) / 100;
                     const valLiquido = p.status === 'pago' ? p.valor_pago : p.valor_previsto * fator;
 
                     return (
-                      <tr key={p.id} className={`hover:bg-surface-2 transition-colors ${p.status === 'cancelado' ? 'opacity-30' : ''}`}>
-                        <td className="px-5 py-3 font-semibold text-main text-[13px]">{formatarData(p.data_vencimento)}</td>
-                        <td className="px-5 py-3 font-medium text-muted text-[13px]">{formatarMoeda(p.valor_previsto)}</td>
-                        <td className="px-5 py-3 font-medium text-muted text-[13px]">{p.status === 'pago' ? formatarData(p.data_pagamento) : '—'}</td>
-                        <td className="px-5 py-3 font-bold text-emerald-600 text-[13px] text-right">{formatarMoeda(valLiquido || 0)}</td>
-                        <td className="px-5 py-3 text-center">
+                      <tr key={p.id} className={`hover:bg-surface-2 transition-colors ${p.status === 'cancelado' ? 'opacity-40' : ''}`}>
+                        <td className="px-4 py-3 font-semibold text-main text-[13px] whitespace-nowrap">{formatarData(p.data_vencimento)}</td>
+                        <td className="px-4 py-3 font-medium text-muted text-[13px] text-right whitespace-nowrap">{formatarMoeda(p.valor_previsto)}</td>
+                        <td className="px-4 py-3 font-medium text-muted text-[13px] whitespace-nowrap">{p.status === 'pago' ? formatarData(p.data_pagamento) : '—'}</td>
+                        <td className="px-4 py-3 font-semibold text-[color:var(--primary)] text-[13px] text-right whitespace-nowrap">{formatarMoeda(valLiquido || 0)}</td>
+                        <td className="px-4 py-3 text-center">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold uppercase border ${p.status === 'pago' ? 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]' :
                             p.status === 'atrasado' ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' :
                               'bg-surface-2 text-faint border-subtle'
@@ -878,9 +899,9 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                             {p.status}
                           </span>
                         </td>
-                        <td className="px-8 py-4 text-right">
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
                           {(p.status === 'pendente' || p.status === 'atrasado') && contratoSelecionado.status === 'ativo' && (
-                            <button onClick={() => handleBaixarParcela(p)} className="text-emerald-600 font-black text-[9px] uppercase tracking-widest hover:underline">Baixar Líquido</button>
+                            <button onClick={() => handleBaixarParcela(p)} className="text-[color:var(--primary)] font-semibold text-[11px] hover:underline">Baixar líquido</button>
                           )}
                         </td>
                       </tr>
@@ -891,7 +912,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
             </div>
           </div>
         )}
-      </Modal>
+      </SidePanel>
 
       <Confirmacao
         isOpen={modalExcluirConfirm}
