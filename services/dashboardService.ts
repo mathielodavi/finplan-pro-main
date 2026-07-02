@@ -595,27 +595,26 @@ export const dashboardService = {
   },
 
   /**
-   * Contagem de contratos por origem do cliente (total, ativos e inativos).
-   * "Ativos" = contratos com status 'ativo'; "inativos" = demais status
-   * (concluído/cancelado). Usado pelo gráfico de barras da Visão Geral.
+   * Contagem de CLIENTES por origem (total, ativos e inativos). "Ativos" = clientes
+   * com status 'Ativo'; "inativos" = demais status (Inativo/Sem Contrato). Conta cada
+   * cliente uma única vez — reconcilia com a base de clientes (diferente de contar
+   * contratos, em que um cliente com vários contratos era contado várias vezes).
+   * Usado pelo gráfico de barras da Visão Geral.
    */
-  async getContratosPorOrigem() {
-    const [{ data: clientes }, { data: origens }, { data: contratos }] = await Promise.all([
-      supabase.from('clientes').select('id, origem_id'),
+  async getClientesPorOrigem() {
+    const [{ data: clientes }, { data: origens }] = await Promise.all([
+      supabase.from('clientes').select('id, origem_id, status'),
       supabase.from('origens').select('id, nome'),
-      supabase.from('contratos').select('cliente_id, status'),
     ]);
 
     const origemNome = new Map((origens || []).map((o: any) => [o.id, o.nome]));
-    const clienteOrigem = new Map((clientes || []).map((c: any) => [c.id, c.origem_id]));
 
     const porOrigem = new Map<string, { total: number; ativos: number; inativos: number }>();
-    (contratos || []).forEach((ct: any) => {
-      const origemId = clienteOrigem.get(ct.cliente_id);
-      const nome = (origemId && origemNome.get(origemId)) || 'Sem origem';
+    (clientes || []).forEach((c: any) => {
+      const nome = (c.origem_id && origemNome.get(c.origem_id)) || 'Sem origem';
       const entry = porOrigem.get(nome) || { total: 0, ativos: 0, inativos: 0 };
       entry.total += 1;
-      if (ct.status === 'ativo') entry.ativos += 1;
+      if (c.status === 'Ativo') entry.ativos += 1;
       else entry.inativos += 1;
       porOrigem.set(nome, entry);
     });
