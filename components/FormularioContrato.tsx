@@ -4,6 +4,8 @@ import { Contrato, ContratoTipo, ContratoStatus } from '../types/contrato';
 import { validarContrato } from '../utils/validadores';
 import { configService } from '../services/configuracoesService';
 import Button from './UI/Button';
+import CampoMoeda from './UI/CampoMoeda';
+import CampoPercentual from './UI/CampoPercentual';
 
 interface FormularioContratoProps {
   clienteId: string;
@@ -93,16 +95,6 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
       setValorTotal((ticket * prazo).toString());
     }
   }, [ticketMensal, prazoMeses, tipo, formaPagamento]);
-
-  // ─── Input de moeda ──────────────────────────────────────────
-  const handleMoedaInput = (e: React.ChangeEvent<HTMLInputElement>, setter: (v: string) => void) => {
-    let value = e.target.value.replace(/\D/g, '');
-    if (!value) value = '0';
-    setter((parseInt(value) / 100).toString());
-  };
-
-  const formatMoeda = (v: string) =>
-    new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(parseFloat(v) || 0);
 
   // ─── Submit ──────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -232,16 +224,7 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={labelStyle}>Ticket Mensal</label>
-            <div className="relative">
-              <span className="absolute left-3 top-3 text-[10px] font-black text-faint">R$</span>
-              <input
-                type="text"
-                value={formatMoeda(ticketMensal)}
-                onChange={e => handleMoedaInput(e, setTicketMensal)}
-                className={`${inputStyle} pl-9`}
-                placeholder="0,00"
-              />
-            </div>
+            <CampoMoeda value={parseFloat(ticketMensal) || 0} onChange={n => setTicketMensal(String(n))} className={inputStyle} />
           </div>
           <div>
             <label className={labelStyle}>Prazo (meses)</label>
@@ -265,16 +248,12 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
             <span className="text-faint normal-case font-medium ml-1">(calculado automaticamente)</span>
           )}
         </label>
-        <div className="relative">
-          <span className="absolute left-3 top-3 text-[10px] font-black text-faint">R$</span>
-          <input
-            type="text"
-            value={formatMoeda(valorTotal)}
-            onChange={e => handleMoedaInput(e, setValorTotal)}
-            className={`${inputStyle} pl-9 ${tipo === 'planejamento' ? 'bg-surface-2 text-faint' : ''}`}
-            readOnly={tipo === 'planejamento'}
-          />
-        </div>
+        <CampoMoeda
+          value={parseFloat(valorTotal) || 0}
+          onChange={n => setValorTotal(String(n))}
+          disabled={tipo === 'planejamento'}
+          className={`${inputStyle} ${tipo === 'planejamento' ? 'bg-surface-2 text-faint' : ''}`}
+        />
       </div>
 
       {/* Forma de Pagamento + Data Início */}
@@ -314,15 +293,7 @@ const FormularioContrato: React.FC<FormularioContratoProps> = ({ clienteId, cont
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={labelStyle}>Repasse ao Consultor (%)</label>
-          <input
-            type="number"
-            min="0"
-            max="100"
-            value={repassePercentual}
-            onChange={e => setRepassePercentual(e.target.value)}
-            className={inputStyle}
-            placeholder="100"
-          />
+          <CampoPercentual value={parseFloat(repassePercentual) || 0} onChange={n => setRepassePercentual(String(n))} className={inputStyle} />
         </div>
         <div>
           <label className={labelStyle}>Prazo de Recebimento (dias)</label>

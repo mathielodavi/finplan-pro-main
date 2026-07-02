@@ -3,6 +3,7 @@ import { Cliente, criarCliente, atualizarCliente, obterOrigens, criarOrigem, obt
 import { configService } from '../services/configuracoesService';
 import { mascaraTelefone } from '../utils/calculosFinanceiros';
 import Button from './UI/Button';
+import CampoMoeda from './UI/CampoMoeda';
 import { Plus, X, Check } from 'lucide-react';
 
 interface FormularioClienteProps {
@@ -95,13 +96,6 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
     }
   }, [origemId]);
 
-  const handleMoedaInput = (e: React.ChangeEvent<HTMLInputElement>, setter: (v: string) => void) => {
-    let value = e.target.value.replace(/\D/g, "");
-    if (!value) value = "0";
-    const numericValue = parseInt(value) / 100;
-    setter(numericValue.toString());
-  };
-
   const handleCriarOrigem = async () => {
     if (!novaOrigemNome.trim()) return;
     try {
@@ -180,18 +174,6 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
   const inputStyle = "w-full px-4 py-2.5 bg-surface-2 border border-subtle rounded-xl font-medium text-main outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-600 transition-all text-[13px]";
   const labelStyle = "block text-[11px] font-semibold text-muted mb-1.5 ml-0.5";
   const sectionTitle = "text-[11px] font-bold text-faint uppercase tracking-wider";
-
-  const MoedaInput = ({ value, onChange }: { value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => (
-    <div className="relative">
-      <span className="absolute left-4 top-3 text-[11px] font-semibold text-faint">R$</span>
-      <input
-        type="text"
-        value={new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(parseFloat(value || '0'))}
-        onChange={onChange}
-        className={`${inputStyle} pl-10`}
-      />
-    </div>
-  );
 
   return (
     <form onSubmit={handleSubmit} className="space-y-7">
@@ -364,19 +346,19 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={labelStyle}>Patrimônio Financeiro Inicial</label>
-            <MoedaInput value={patrimonio} onChange={(e) => handleMoedaInput(e, setPatrimonio)} />
+            <CampoMoeda value={parseFloat(patrimonio) || 0} onChange={(n) => setPatrimonio(String(n))} className={inputStyle} />
           </div>
           <div>
             <label className={labelStyle}>Aporte Mensal</label>
-            <MoedaInput value={aporte} onChange={(e) => handleMoedaInput(e, setAporte)} />
+            <CampoMoeda value={parseFloat(aporte) || 0} onChange={(n) => setAporte(String(n))} className={inputStyle} />
           </div>
           <div>
             <label className={labelStyle}>Dívidas Iniciais</label>
-            <MoedaInput value={dividasIniciais} onChange={(e) => handleMoedaInput(e, setDividasIniciais)} />
+            <CampoMoeda value={parseFloat(dividasIniciais) || 0} onChange={(n) => setDividasIniciais(String(n))} className={inputStyle} />
           </div>
           <div>
             <label className={labelStyle}>Reserva de Emergência Inicial</label>
-            <MoedaInput value={reservaInicial} onChange={(e) => handleMoedaInput(e, setReservaInicial)} />
+            <CampoMoeda value={parseFloat(reservaInicial) || 0} onChange={(n) => setReservaInicial(String(n))} className={inputStyle} />
           </div>
         </div>
       </section>

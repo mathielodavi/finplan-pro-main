@@ -14,10 +14,11 @@ import { calcularTermometro } from '../../utils/termometroUtils';
 import { categorizarAgendaCliente } from '../../utils/agendaUtils';
 import { useProntuarioNav } from '../../context/ProntuarioNavContext';
 import SidePanel from '../UI/SidePanel';
+import CampoMoeda from '../UI/CampoMoeda';
 import Badge from '../UI/Badge';
 import Button from '../UI/Button';
 import Confirmacao from '../Confirmacao';
-import { Activity, Plus, FileText, ChevronRight, DollarSign, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, ArrowRight, ArrowLeft, Wallet, Zap, CreditCard, HeartPulse, ListChecks, AlertCircle } from 'lucide-react';
+import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, ArrowRight, ArrowLeft, Wallet, Zap, CreditCard, HeartPulse, ListChecks, AlertCircle } from 'lucide-react';
 
 interface AbaResumoProps {
   cliente: Cliente;
@@ -716,10 +717,12 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
                     </div>
                     <div>
                       <label className={labelStyle}>{formContrato.categoria === 'extra' ? 'Mensalidade Bruta' : 'Ticket Mensal'}</label>
-                      <div className="relative">
-                        <DollarSign size={14} className="absolute left-3 top-[11px] text-faint" />
-                        <input type="number" step="0.01" required value={formContrato.ticket_mensal} onChange={e => setFormContrato({ ...formContrato, ticket_mensal: Math.round(parseFloat(e.target.value) * 100) / 100 || 0 })} className={`${inputStyle} pl-9`} />
-                      </div>
+                      <CampoMoeda
+                        value={formContrato.ticket_mensal}
+                        onChange={n => setFormContrato({ ...formContrato, ticket_mensal: Math.round(n * 100) / 100 })}
+                        className={inputStyle}
+                        required
+                      />
                     </div>
                     {/* Duração, repasse e prazo de recebimento vêm do padrão (somente leitura) */}
                     {formContrato.padrao_id && (
