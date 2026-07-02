@@ -177,7 +177,7 @@ export const financeiroService = {
     }
   },
 
-  async cancelarParcelasFuturas(contratoId: string, dataCancelamento: string, prazoRecebimento: number) {
+  async cancelarParcelasFuturas(contratoId: string, dataCancelamento: string, prazoRecebimento: number, dataInadimplencia?: string | null) {
     const { data: parcelasNoBanco } = await supabase
       .from('financeiro_parcelas')
       .select('id, data_vencimento, status')
@@ -194,10 +194,19 @@ export const financeiroService = {
       }
     }
 
-    const [year, month, day] = dataCancelamento.split('-').map(Number);
-    const dLimiteValida = new Date(year, month - 1, day, 12, 0, 0);
-    dLimiteValida.setDate(dLimiteValida.getDate() + (prazoRecebimento || 0));
-    const dataLimiteStr = dLimiteValida.toISOString().split('T')[0];
+    // Data de corte: parcelas vencendo APÓS ela são canceladas; até ela são preservadas.
+    // Regra normal: data do cancelamento + carência (prazo de recebimento).
+    // Exceção: se houver inadimplência ANTERIOR ao cancelamento, o corte passa a ser a
+    // própria data de inadimplência, SEM aplicar a carência.
+    let dataLimiteStr: string;
+    if (dataInadimplencia && dataInadimplencia < dataCancelamento) {
+      dataLimiteStr = dataInadimplencia;
+    } else {
+      const [year, month, day] = dataCancelamento.split('-').map(Number);
+      const dLimiteValida = new Date(year, month - 1, day, 12, 0, 0);
+      dLimiteValida.setDate(dLimiteValida.getDate() + (prazoRecebimento || 0));
+      dataLimiteStr = dLimiteValida.toISOString().split('T')[0];
+    }
 
     const { error: errorCancel } = await supabase
       .from('financeiro_parcelas')

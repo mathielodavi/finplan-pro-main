@@ -18,7 +18,7 @@ import CampoMoeda from '../UI/CampoMoeda';
 import Badge from '../UI/Badge';
 import Button from '../UI/Button';
 import Confirmacao from '../Confirmacao';
-import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, ArrowRight, ArrowLeft, Wallet, Zap, CreditCard, HeartPulse, ListChecks, AlertCircle } from 'lucide-react';
+import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, ArrowRight, ArrowLeft, Wallet, Zap, CreditCard, HeartPulse, ListChecks, AlertCircle, Ban } from 'lucide-react';
 
 interface AbaResumoProps {
   cliente: Cliente;
@@ -48,6 +48,8 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const [contratoSelecionado, setContratoSelecionado] = useState<any>(null);
   const [parcelasContrato, setParcelasContrato] = useState<Parcela[]>([]);
   const [loadingParcelas, setLoadingParcelas] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
+  const [cancelData, setCancelData] = useState({ data_cancelamento: '', data_inadimplencia: '' });
 
   const [step, setStep] = useState(1);
   const [accordionEncerrados, setAccordionEncerrados] = useState(false);
@@ -297,10 +299,33 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
     setContratoSelecionado(contrato);
     setLoadingParcelas(true);
     setModalExtrato(true);
+    setCancelando(false);
     try {
       const data = await financeiroService.obterParcelasPorContrato(contrato.id);
       setParcelasContrato(data || []);
     } finally { setLoadingParcelas(false); }
+  };
+
+  const abrirCancelamento = () => {
+    setCancelData({ data_cancelamento: new Date().toISOString().split('T')[0], data_inadimplencia: '' });
+    setCancelando(true);
+  };
+
+  const handleCancelarContrato = async () => {
+    if (!contratoSelecionado || !cancelData.data_cancelamento) return;
+    setIsSubmitting(true);
+    try {
+      await atualizarContrato(contratoSelecionado.id, {
+        status: 'cancelado',
+        data_fim: cancelData.data_cancelamento,
+        data_inadimplencia: cancelData.data_inadimplencia || null,
+      });
+      setCancelando(false);
+      setModalExtrato(false);
+      fetchData();
+    } catch (err: any) {
+      alert(`Erro ao cancelar contrato: ${err.message}`);
+    } finally { setIsSubmitting(false); }
   };
 
   const handleBaixarParcela = async (parcela: Parcela) => {
@@ -838,11 +863,16 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         subtitle={contratoSelecionado?.descricao}
         widthClass="max-w-2xl"
         footer={
-          contratoSelecionado && (
+          contratoSelecionado && !cancelando && (
             <div className="flex gap-2">
               <button onClick={() => handleEditContrato(contratoSelecionado)} className="flex-1 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center justify-center gap-1.5">
                 <Edit3 size={14} /> Ajustar
               </button>
+              {contratoSelecionado.status !== 'cancelado' && (
+                <button onClick={abrirCancelamento} className="h-9 px-4 rounded-lg border border-subtle text-[color:var(--warning)] font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center gap-1.5">
+                  <Ban size={14} /> Cancelar
+                </button>
+              )}
               <button onClick={() => setModalExcluirConfirm(true)} className="h-9 px-4 rounded-lg border border-subtle text-[color:var(--danger)] font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center gap-1.5">
                 <Trash2 size={14} /> Remover
               </button>
@@ -850,7 +880,50 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
           )
         }
       >
-        {contratoSelecionado && (
+        {contratoSelecionado && cancelando && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={15} className="text-[color:var(--danger)]" />
+              <h3 className="text-[14px] font-semibold text-main">Cancelar contrato</h3>
+            </div>
+            <div>
+              <label className={labelStyle}>Data do cancelamento</label>
+              <div className="relative">
+                <Calendar size={14} className="absolute left-3 top-[11px] text-faint" />
+                <input type="date" required value={cancelData.data_cancelamento}
+                  onChange={e => setCancelData({ ...cancelData, data_cancelamento: e.target.value })}
+                  className={`${inputStyle} pl-9`} />
+              </div>
+            </div>
+            <div>
+              <label className={labelStyle}>Data de inadimplência <span className="text-faint font-normal">(opcional)</span></label>
+              <div className="relative">
+                <Calendar size={14} className="absolute left-3 top-[11px] text-faint" />
+                <input type="date" value={cancelData.data_inadimplencia}
+                  onChange={e => setCancelData({ ...cancelData, data_inadimplencia: e.target.value })}
+                  className={`${inputStyle} pl-9`} />
+              </div>
+              <p className="text-[11px] text-faint mt-1.5">
+                Se anterior ao cancelamento, as parcelas são cortadas a partir dela, sem a carência (D+{contratoSelecionado.prazo_recebimento_dias || 0} dias).
+              </p>
+            </div>
+            <div className="bg-surface-2 border border-subtle rounded-lg p-3">
+              <p className="text-[11px] text-faint">
+                Parcelas já pagas são preservadas. As demais com vencimento após a data de corte serão canceladas. O cliente ficará inativo se este for o último planejamento ativo.
+              </p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setCancelando(false)} className="h-9 px-4 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">Voltar</button>
+              <button type="button" onClick={handleCancelarContrato} disabled={isSubmitting || !cancelData.data_cancelamento}
+                className="flex-1 h-9 rounded-lg text-white font-semibold text-[12px] transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--danger)' }}>
+                <Ban size={14} /> {isSubmitting ? 'Cancelando...' : 'Confirmar cancelamento'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {contratoSelecionado && !cancelando && (
           <div className="space-y-5 animate-fade-in">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-faint">Situação atual</span>

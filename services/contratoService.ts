@@ -166,7 +166,12 @@ export const atualizarContrato = async (id: string, dados: Partial<Contrato>) =>
 
   if (contratoAtualizado.status === 'cancelado') {
     const dataRefCancelamento = contratoAtualizado.data_fim || new Date().toISOString().split('T')[0];
-    await financeiroService.cancelarParcelasFuturas(contratoAtualizado.id, dataRefCancelamento, contratoAtualizado.prazo_recebimento_dias || 30);
+    await financeiroService.cancelarParcelasFuturas(
+      contratoAtualizado.id,
+      dataRefCancelamento,
+      contratoAtualizado.prazo_recebimento_dias || 30,
+      contratoAtualizado.data_inadimplencia
+    );
   } else if (mudouFinanceiro) {
     const { data: parcelasPagas } = await supabase.from('financeiro_parcelas').select('valor_pago').eq('contrato_id', id).eq('status', 'pago');
     const jaPagoTotal = parcelasPagas?.reduce((acc, p) => acc + (p.valor_pago || 0), 0) || 0;
