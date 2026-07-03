@@ -62,7 +62,7 @@ const MigrationPage: React.FC = () => {
            <h1 className="text-3xl font-bold text-main tracking-tight leading-none uppercase">Motor de Migração</h1>
            <p className="text-faint font-bold uppercase text-[10px] tracking-widest mt-2">Importe dados do Lovable para o Vibe Financeiro Pro</p>
         </div>
-        <div className="h-14 w-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
+        <div className="h-14 w-14 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shadow-inner">
            <Database size={28} />
         </div>
       </header>
@@ -71,7 +71,7 @@ const MigrationPage: React.FC = () => {
       <div className="flex items-center justify-center gap-4">
         {[1, 2, 3].map(i => (
           <React.Fragment key={i}>
-            <div className={`h-10 w-10 rounded-2xl flex items-center justify-center font-black text-xs transition-all ${step >= i ? 'bg-indigo-600 text-white shadow-lg' : 'bg-surface-2 text-faint'}`}>
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-semibold text-xs transition-all ${step >= i ? 'bg-indigo-600 text-white shadow-lg' : 'bg-surface-2 text-faint'}`}>
                {step > i ? <CheckCircle2 size={16} /> : i}
             </div>
             {i < 3 && <div className={`h-1 w-12 rounded-full ${step > i ? 'bg-indigo-600' : 'bg-surface-2'}`} />}
@@ -85,7 +85,7 @@ const MigrationPage: React.FC = () => {
               <div className="space-y-6">
                  <div className="h-12 w-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Download size={24} /></div>
                  <div>
-                    <h3 className="font-black text-main uppercase text-sm mb-2">1. Preparar Arquivo</h3>
+                    <h3 className="font-semibold text-main uppercase text-sm mb-2">1. Preparar Arquivo</h3>
                     <p className="text-muted text-xs font-medium leading-relaxed">Baixe o modelo JSON e use como base para pedir ao Lovable exportar seu banco de dados atual.</p>
                  </div>
                  <button onClick={handleDownloadTemplate} className="w-full h-9 bg-surface-2 hover:bg-surface-3 border border-subtle rounded-lg font-semibold text-[12px] text-muted transition-all">Baixar Modelo JSON</button>
@@ -96,7 +96,7 @@ const MigrationPage: React.FC = () => {
               <div className="space-y-6">
                  <div className="h-12 w-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><Upload size={24} /></div>
                  <div>
-                    <h3 className="font-black text-main uppercase text-sm mb-2">2. Enviar Dados</h3>
+                    <h3 className="font-semibold text-main uppercase text-sm mb-2">2. Enviar Dados</h3>
                     <p className="text-muted text-xs font-medium leading-relaxed">Selecione o arquivo gerado pelo sistema anterior para iniciar a validação de estrutura.</p>
                  </div>
                  <label className="cursor-pointer block">
@@ -118,16 +118,16 @@ const MigrationPage: React.FC = () => {
                    { label: 'Contratos', count: payload.contratos.length, color: 'amber' },
                    { label: 'Parcelas', count: payload.financeiro_parcelas.length, color: 'purple' }
                  ].map(item => (
-                   <div key={item.label} className="p-4 bg-surface-2 rounded-2xl border border-subtle">
-                      <p className="text-[9px] font-black text-faint uppercase tracking-widest mb-1">{item.label}</p>
-                      <p className="text-2xl font-black text-main">{item.count}</p>
+                   <div key={item.label} className="p-4 bg-surface-2 rounded-xl border border-subtle">
+                      <p className="text-[9px] font-semibold text-faint uppercase tracking-widest mb-1">{item.label}</p>
+                      <p className="text-2xl font-semibold text-main">{item.count}</p>
                    </div>
                  ))}
               </div>
               <div className="mt-8 p-6 bg-blue-50 border border-blue-100 rounded-3xl flex items-start gap-4">
                  <AlertTriangle className="text-blue-600 shrink-0" size={20} />
                  <div className="space-y-1">
-                    <p className="text-[10px] font-black text-blue-800 uppercase">Regra de Batimento</p>
+                    <p className="text-[10px] font-semibold text-blue-800 uppercase">Regra de Batimento</p>
                     <p className="text-xs text-blue-700 leading-relaxed font-medium">
                       O sistema vinculará todos os dados importados ao seu usuário atual. 
                       Os IDs originais serão preservados em um campo de auditoria para garantir que as relações (Contrato → Cliente) continuem coerentes.
@@ -152,22 +152,22 @@ const MigrationPage: React.FC = () => {
 
       {step === 3 && result && (
         <div className="text-center py-20 space-y-10 animate-slide-up">
-           <div className="inline-flex h-24 w-24 bg-emerald-50 text-emerald-600 rounded-[2.5rem] items-center justify-center shadow-xl">
+           <div className="inline-flex h-24 w-24 bg-emerald-50 text-emerald-600 rounded-xl items-center justify-center shadow-xl">
               <CheckCircle2 size={48} strokeWidth={2.5} />
            </div>
            <div className="space-y-4">
-              <h2 className="text-3xl font-black text-main uppercase">Sucesso Absoluto!</h2>
+              <h2 className="text-3xl font-semibold text-main uppercase">Sucesso Absoluto!</h2>
               <p className="text-muted font-medium max-w-sm mx-auto italic">O banco de dados do Lovable foi portado para a nova infraestrutura Tulipa Vibe.</p>
            </div>
            
            <div className="max-w-md mx-auto grid grid-cols-2 gap-4">
               <div className="p-5 bg-surface border border-subtle rounded-3xl">
-                 <p className="text-[9px] font-black text-faint uppercase">Clientes</p>
-                 <p className="text-xl font-black text-main">+{result.clientes}</p>
+                 <p className="text-[9px] font-semibold text-faint uppercase">Clientes</p>
+                 <p className="text-xl font-semibold text-main">+{result.clientes}</p>
               </div>
               <div className="p-5 bg-surface border border-subtle rounded-3xl">
-                 <p className="text-[9px] font-black text-faint uppercase">Contratos</p>
-                 <p className="text-xl font-black text-main">+{result.contratos}</p>
+                 <p className="text-[9px] font-semibold text-faint uppercase">Contratos</p>
+                 <p className="text-xl font-semibold text-main">+{result.contratos}</p>
               </div>
            </div>
 
@@ -176,7 +176,7 @@ const MigrationPage: React.FC = () => {
       )}
 
       {error && (
-        <div className="p-4 bg-rose-50 text-rose-700 rounded-2xl border border-rose-100 text-xs font-bold animate-shake">
+        <div className="p-4 bg-rose-50 text-rose-700 rounded-xl border border-rose-100 text-xs font-bold animate-shake">
            ⚠ {error}
         </div>
       )}
