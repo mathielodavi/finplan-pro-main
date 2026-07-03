@@ -153,7 +153,7 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
           <p className="text-2xl font-bold">{percentualGlobal}% <span className="text-[11px] font-medium text-faint uppercase tracking-widest ml-2">Geral Concluído</span></p>
         </div>
         <div className="relative z-10 w-full sm:w-64">
-          <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-muted mb-2">
+          <div className="flex justify-between text-[8px] font-semibold uppercase tracking-widest text-muted mb-2">
             <span>Pendente: {total - concluidos}</span>
             <span>Total: {total}</span>
           </div>
@@ -234,7 +234,7 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
       {/* Confirmação de exclusão inline */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-surface-3/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl p-8 shadow-2xl border border-subtle max-w-sm w-full text-center space-y-6">
+          <div className="bg-surface rounded-xl p-8 shadow-2xl border border-subtle max-w-sm w-full text-center space-y-6">
             <p className="text-[13px] font-semibold text-main">Remover esta tarefa deste cliente?</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 font-semibold text-muted border border-subtle rounded-xl text-[12px]">Cancelar</button>

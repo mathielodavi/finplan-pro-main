@@ -182,14 +182,14 @@ const FormPlanejamento = ({ item, onSave, onCancel }: any) => {
             <div className="p-6 bg-emerald-50/50 rounded-3xl border border-emerald-100">
                <label className="flex items-center gap-4 cursor-pointer group">
                   <input type="checkbox" checked={formData.valor_fixo} onChange={e => setFormData({...formData, valor_fixo: e.target.checked})} className="h-6 w-6 rounded-lg border-subtle text-emerald-600 focus:ring-0" />
-                  <span className="text-[11px] font-black text-emerald-700 uppercase tracking-widest group-hover:text-emerald-800 transition-colors">Contrato com Valor Fixo</span>
+                  <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-widest group-hover:text-emerald-800 transition-colors">Contrato com Valor Fixo</span>
                </label>
                {formData.valor_fixo && (
                  <div className="mt-6 animate-slide-up">
-                    <label className="block text-[8px] font-black text-emerald-600 uppercase mb-2 ml-1">Valor Bruto Sugerido</label>
+                    <label className="block text-[8px] font-semibold text-emerald-600 uppercase mb-2 ml-1">Valor Bruto Sugerido</label>
                     <div className="relative">
                        <DollarSign size={16} className="absolute left-4 top-4 text-emerald-300" />
-                       <input type="number" step="0.01" value={formData.valor} onChange={e => setFormData({...formData, valor: parseFloat(e.target.value)})} className="w-full p-4 pl-12 bg-surface rounded-2xl border border-emerald-100 font-black text-emerald-700 outline-none" />
+                       <input type="number" step="0.01" value={formData.valor} onChange={e => setFormData({...formData, valor: parseFloat(e.target.value)})} className="w-full p-4 pl-12 bg-surface rounded-xl border border-emerald-100 font-semibold text-emerald-700 outline-none" />
                     </div>
                  </div>
                )}
@@ -198,14 +198,14 @@ const FormPlanejamento = ({ item, onSave, onCancel }: any) => {
 
           <div className="space-y-6">
              <div className="p-6 bg-surface-2/50 border border-subtle rounded-3xl space-y-4">
-                <span className="text-[10px] font-black text-faint uppercase tracking-widest block border-b border-subtle pb-2">Regras de Recebimento (D+x)</span>
+                <span className="text-[10px] font-semibold text-faint uppercase tracking-widest block border-b border-subtle pb-2">Regras de Recebimento (D+x)</span>
                 <div className="grid grid-cols-2 gap-4">
                    <div>
-                      <label className="block text-[8px] font-black text-faint uppercase mb-1 ml-1">À Vista</label>
+                      <label className="block text-[8px] font-semibold text-faint uppercase mb-1 ml-1">À Vista</label>
                       <input type="number" value={formData.prazo_recebimento_vista_dias} onChange={e => setFormData({...formData, prazo_recebimento_vista_dias: parseInt(e.target.value)})} className="w-full p-3 bg-surface border border-subtle rounded-xl font-bold text-xs outline-none" />
                    </div>
                    <div>
-                      <label className="block text-[8px] font-black text-faint uppercase mb-1 ml-1">Parcelado</label>
+                      <label className="block text-[8px] font-semibold text-faint uppercase mb-1 ml-1">Parcelado</label>
                       <input type="number" value={formData.prazo_recebimento_parcelado_dias} onChange={e => setFormData({...formData, prazo_recebimento_parcelado_dias: parseInt(e.target.value)})} className="w-full p-3 bg-surface border border-subtle rounded-xl font-bold text-xs outline-none" />
                    </div>
                 </div>
@@ -304,9 +304,9 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                    <label className={labelStyle}>Periodicidade</label>
-                   <div className="flex bg-surface-2 p-1 rounded-2xl border border-subtle">
-                      <button type="button" onClick={() => setFormData({...formData, recorrente: true})} className={`flex-1 py-3 rounded-xl font-black text-[9px] uppercase transition-all ${formData.recorrente ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint'}`}>Recorrente</button>
-                      <button type="button" onClick={() => setFormData({...formData, recorrente: false})} className={`flex-1 py-3 rounded-xl font-black text-[9px] uppercase transition-all ${!formData.recorrente ? 'bg-surface text-amber-600 shadow-sm' : 'text-faint'}`}>Temporário</button>
+                   <div className="flex bg-surface-2 p-1 rounded-xl border border-subtle">
+                      <button type="button" onClick={() => setFormData({...formData, recorrente: true})} className={`flex-1 py-3 rounded-xl font-semibold text-[9px] uppercase transition-all ${formData.recorrente ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint'}`}>Recorrente</button>
+                      <button type="button" onClick={() => setFormData({...formData, recorrente: false})} className={`flex-1 py-3 rounded-xl font-semibold text-[9px] uppercase transition-all ${!formData.recorrente ? 'bg-surface text-amber-600 shadow-sm' : 'text-faint'}`}>Temporário</button>
                    </div>
                 </div>
                 <div className="space-y-2">
@@ -329,7 +329,7 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                 </div>
                 <div className="relative">
                    <input type="number" required value={formData.prazo_recebimento_medio_dias} onChange={e => setFormData({...formData, prazo_recebimento_medio_dias: parseInt(e.target.value)})} className={inputStyle} placeholder="Ex: 30" />
-                   <span className="absolute right-5 top-4 text-[10px] font-black text-faint uppercase">Dias</span>
+                   <span className="absolute right-5 top-4 text-[10px] font-semibold text-faint uppercase">Dias</span>
                 </div>
              </div>
 
@@ -347,12 +347,12 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
 
           <div className="lg:col-span-7 space-y-8">
              
-             <div className={`p-8 rounded-[2.5rem] border transition-all duration-500 ${formData.tem_bonus ? 'bg-blue-50/30 border-blue-100' : 'bg-surface-2 border-subtle'}`}>
+             <div className={`p-8 rounded-xl border transition-all duration-500 ${formData.tem_bonus ? 'bg-blue-50/30 border-blue-100' : 'bg-surface-2 border-subtle'}`}>
                 <div className="flex items-center justify-between mb-6">
                    <div className="flex items-center gap-4">
                       <Zap className={formData.tem_bonus ? 'text-blue-500' : 'text-faint'} size={24} />
                       <div>
-                         <h4 className="text-sm font-black text-main uppercase tracking-tight">Regras de Bonificação</h4>
+                         <h4 className="text-sm font-semibold text-main uppercase tracking-tight">Regras de Bonificação</h4>
                          <p className="text-[9px] text-faint font-bold uppercase mt-0.5">Taxas de sucesso ou ativação</p>
                       </div>
                    </div>
@@ -374,9 +374,9 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                          </div>
                          <div className="space-y-2">
                             <label className={labelStyle}>Modelo de Recebimento</label>
-                            <div className="flex bg-surface/50 p-1 rounded-2xl border border-blue-100">
-                               <button type="button" onClick={() => setFormData({...formData, recebimento_bonus_tipo: 'normal', prazo_bonus_dias: 0})} className={`flex-1 py-2 rounded-xl font-black text-[8px] uppercase transition-all ${formData.recebimento_bonus_tipo === 'normal' ? 'bg-blue-600 text-white shadow-sm' : 'text-faint'}`}>Normal</button>
-                               <button type="button" onClick={() => setFormData({...formData, recebimento_bonus_tipo: 'personalizado'})} className={`flex-1 py-2 rounded-xl font-black text-[8px] uppercase transition-all ${formData.recebimento_bonus_tipo === 'personalizado' ? 'bg-blue-600 text-white shadow-sm' : 'text-faint'}`}>Customizado</button>
+                            <div className="flex bg-surface/50 p-1 rounded-xl border border-blue-100">
+                               <button type="button" onClick={() => setFormData({...formData, recebimento_bonus_tipo: 'normal', prazo_bonus_dias: 0})} className={`flex-1 py-2 rounded-xl font-semibold text-[8px] uppercase transition-all ${formData.recebimento_bonus_tipo === 'normal' ? 'bg-blue-600 text-white shadow-sm' : 'text-faint'}`}>Normal</button>
+                               <button type="button" onClick={() => setFormData({...formData, recebimento_bonus_tipo: 'personalizado'})} className={`flex-1 py-2 rounded-xl font-semibold text-[8px] uppercase transition-all ${formData.recebimento_bonus_tipo === 'personalizado' ? 'bg-blue-600 text-white shadow-sm' : 'text-faint'}`}>Customizado</button>
                             </div>
                          </div>
                       </div>
@@ -385,8 +385,8 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                         <div className="p-6 bg-surface rounded-3xl border border-blue-100 animate-slide-up shadow-inner">
                            <label className={labelStyle}>Prazo Médio p/ Recebimento de Bônus</label>
                            <div className="relative">
-                              <input type="number" value={formData.prazo_bonus_dias} onChange={e => setFormData({...formData, prazo_bonus_dias: parseInt(e.target.value)})} className="w-full p-4 bg-surface-2 border border-subtle rounded-2xl font-black text-sm outline-none text-blue-700" placeholder="Ex: 15" />
-                              <span className="absolute right-5 top-3.5 text-[10px] font-black text-blue-300 uppercase">Dias</span>
+                              <input type="number" value={formData.prazo_bonus_dias} onChange={e => setFormData({...formData, prazo_bonus_dias: parseInt(e.target.value)})} className="w-full p-4 bg-surface-2 border border-subtle rounded-xl font-semibold text-sm outline-none text-blue-700" placeholder="Ex: 15" />
+                              <span className="absolute right-5 top-3.5 text-[10px] font-semibold text-blue-300 uppercase">Dias</span>
                            </div>
                         </div>
                       )}
@@ -394,12 +394,12 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                 )}
              </div>
 
-             <div className="p-8 bg-indigo-50/20 border border-indigo-100/50 rounded-[2.5rem] space-y-8">
+             <div className="p-8 bg-indigo-50/20 border border-indigo-100/50 rounded-xl space-y-8">
                 <div className="flex items-center justify-between">
                    <div className="flex items-center gap-4">
                       <RotateCcw className="text-indigo-500" size={24} />
                       <div>
-                         <h4 className="text-sm font-black text-main uppercase tracking-tight">Fluxos de Repasse</h4>
+                         <h4 className="text-sm font-semibold text-main uppercase tracking-tight">Fluxos de Repasse</h4>
                          <p className="text-[9px] text-faint font-bold uppercase mt-0.5">Defina as curvas de comissionamento</p>
                       </div>
                    </div>
@@ -407,7 +407,7 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
 
                 <div className="space-y-4 animate-slide-up">
                    {!formData.recorrente && (
-                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-start gap-3 mb-2">
+                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-3 mb-2">
                          <Info size={16} className="text-amber-600 mt-0.5" />
                          <p className="text-[9px] text-amber-700 font-bold uppercase leading-relaxed">
                             Contratos TEMPORÁRIOS usam duração variável. O prazo exato será definido no cadastro do contrato real do cliente.
@@ -416,17 +416,17 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                    )}
                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                       {fluxos.map((f, idx) => (
-                         <div key={idx} className="bg-surface p-6 rounded-[2rem] border border-indigo-100 shadow-sm flex items-center gap-6 relative group animate-slide-up">
-                            <div className="h-8 w-8 bg-indigo-50 text-indigo-400 rounded-lg flex items-center justify-center font-black text-xs shrink-0">#{idx+1}</div>
+                         <div key={idx} className="bg-surface p-6 rounded-xl border border-indigo-100 shadow-sm flex items-center gap-6 relative group animate-slide-up">
+                            <div className="h-8 w-8 bg-indigo-50 text-indigo-400 rounded-lg flex items-center justify-center font-semibold text-xs shrink-0">#{idx+1}</div>
                             
                             <div className="grid grid-cols-2 gap-4 flex-1">
                                <div>
-                                  <label className="text-[8px] font-black text-indigo-400 uppercase block mb-1">Taxa Repasse (%)</label>
-                                  <input type="number" step="0.1" value={f.percentual_repasse} onChange={e => updateFluxo(idx, 'percentual_repasse', parseFloat(e.target.value))} className="w-full p-2.5 bg-surface-2 rounded-xl font-black text-xs text-indigo-600 outline-none border border-transparent focus:border-indigo-300" />
+                                  <label className="text-[8px] font-semibold text-indigo-400 uppercase block mb-1">Taxa Repasse (%)</label>
+                                  <input type="number" step="0.1" value={f.percentual_repasse} onChange={e => updateFluxo(idx, 'percentual_repasse', parseFloat(e.target.value))} className="w-full p-2.5 bg-surface-2 rounded-xl font-semibold text-xs text-indigo-600 outline-none border border-transparent focus:border-indigo-300" />
                                </div>
                                <div>
                                   <div className="flex justify-between items-center mb-1">
-                                     <label className="text-[8px] font-black text-indigo-400 uppercase block">Duração (Meses)</label>
+                                     <label className="text-[8px] font-semibold text-indigo-400 uppercase block">Duração (Meses)</label>
                                      <label className="flex items-center gap-1 cursor-pointer">
                                         <input 
                                            type="checkbox" 
@@ -435,7 +435,7 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                                            onChange={e => updateFluxo(idx, 'sem_prazo', e.target.checked)} 
                                            className="h-2.5 w-2.5 rounded text-indigo-600 disabled:opacity-30" 
                                         />
-                                        <span className={`text-[7px] font-black uppercase ${!formData.recorrente ? 'text-indigo-600' : 'text-faint'}`}>Ilimitado</span>
+                                        <span className={`text-[7px] font-semibold uppercase ${!formData.recorrente ? 'text-indigo-600' : 'text-faint'}`}>Ilimitado</span>
                                      </label>
                                   </div>
                                   <input 
@@ -443,7 +443,7 @@ const FormExtra = ({ item, onSave, onCancel }: any) => {
                                      disabled={f.sem_prazo || !formData.recorrente} 
                                      value={f.mes_fim || ''} 
                                      onChange={e => updateFluxo(idx, 'mes_fim', parseInt(e.target.value))} 
-                                     className={`w-full p-2.5 bg-surface-2 rounded-xl font-black text-xs text-main outline-none border border-transparent focus:border-indigo-300 ${f.sem_prazo ? 'opacity-30' : ''}`} 
+                                     className={`w-full p-2.5 bg-surface-2 rounded-xl font-semibold text-xs text-main outline-none border border-transparent focus:border-indigo-300 ${f.sem_prazo ? 'opacity-30' : ''}`} 
                                      placeholder={f.sem_prazo ? 'Indeterminado' : 'Até mês...'} 
                                   />
                                </div>
