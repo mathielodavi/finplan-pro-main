@@ -28,6 +28,7 @@ interface Props {
 const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar }) => {
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
     const [saldoReserva, setSaldoReserva] = useState(0);
+    const [coberturaContratada, setCoberturaContratada] = useState(0);
     const [planejadorEmail, setPlanejadorEmail] = useState('');
     const [planejadorNome, setPlanejadorNome] = useState('');
 
@@ -54,8 +55,15 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
             if (user?.user_metadata?.full_name) setPlanejadorNome(user.user_metadata.full_name);
         };
 
+        const loadSeguros = async () => {
+            const seguros = await protecaoService.getSegurosVida(dados.cliente_id);
+            const soma = (seguros || []).reduce((acc, s) => acc + (Number(s.cobertura_morte) || 0), 0);
+            setCoberturaContratada(soma);
+        };
+
         loadReserva();
         loadPlanejador();
+        loadSeguros();
     }, [dados.cliente_id]);
 
 
@@ -87,6 +95,14 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
 
     const totalEducacao = dependentes.reduce((acc, d) => acc + (d.total_calculado || 0), 0);
     const totalGeral = totalEducacao + coberturaVida.coberturaFamiliar + sucessao.coberturaSucessao;
+    const lacunaTotal = Math.max(0, totalGeral - coberturaContratada);
+
+    // Pilares da necessidade recomendada (o "contratado" não é etiquetado por pilar).
+    const pilares = [
+        { label: 'Educação e dependentes', valor: totalEducacao },
+        { label: 'Padrão de vida', valor: coberturaVida.coberturaFamiliar },
+        { label: 'Sucessão patrimonial', valor: sucessao.coberturaSucessao },
+    ];
 
     // ─── WhatsApp ─────────────────────────────────────────────────────────────────
     const gerarWhatsApp = () => {
@@ -420,6 +436,44 @@ Planejador: ${planejadorEmail || '—'}`;
                         Editar levantamento
                     </button>
                 </div>
+            </div>
+
+            {/* ── Resumo: necessidade × cobertura atual × lacuna ── */}
+            <div className="bg-surface rounded-xl border border-subtle p-4 space-y-4">
+                <div className="flex items-baseline gap-2">
+                    <h3 className="text-[13px] font-semibold text-main">Necessidade de proteção</h3>
+                    <span className="text-[11px] text-faint">recomendado × contratado</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
+                        <p className="text-[11px] text-faint">Necessidade</p>
+                        <p className="text-[20px] font-bold text-main leading-none mt-1">{fmtMoeda(totalGeral)}</p>
+                    </div>
+                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
+                        <p className="text-[11px] text-faint">Cobertura atual</p>
+                        <p className="text-[20px] font-bold text-[color:var(--primary)] leading-none mt-1">{fmtMoeda(coberturaContratada)}</p>
+                    </div>
+                    <div className="rounded-lg border p-3" style={{ backgroundColor: 'rgba(248,113,113,0.10)', borderColor: 'rgba(248,113,113,0.25)' }}>
+                        <p className="text-[11px] text-[color:var(--danger)]">Lacuna a cobrir</p>
+                        <p className="text-[20px] font-bold text-[color:var(--danger)] leading-none mt-1">{fmtMoeda(lacunaTotal)}</p>
+                    </div>
+                </div>
+
+                <div className="border border-subtle rounded-lg overflow-hidden">
+                    <div className="flex justify-between items-center px-3 py-2 bg-surface-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Pilar da necessidade</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Valor recomendado</span>
+                    </div>
+                    {pilares.map((p, i) => (
+                        <div key={i} className="flex justify-between items-center px-3 py-2.5 text-[13px] border-t border-subtle">
+                            <span className="text-muted">{p.label}</span>
+                            <span className="font-semibold text-main">{fmtMoeda(p.valor)}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <p className="text-[11px] text-faint">A cobertura atual soma os seguros de vida contratados (cobertura por morte). O comparativo é no total — o detalhamento do contratado por pilar depende de etiquetar cada apólice.</p>
             </div>
 
             {/* ── Acordeões ──────────────────────────────────────────── */}
