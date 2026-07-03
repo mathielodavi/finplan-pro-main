@@ -39,10 +39,11 @@ interface Props {
     parametros: ParametrosCalculo;
     onUpdate: (campos: Partial<ClienteSeguro>) => void;
     saldoReserva: number;
+    defaultAberto?: boolean;
 }
 
-const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate, saldoReserva }) => {
-    const [aberto, setAberto] = useState(false);
+const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate, saldoReserva, defaultAberto }) => {
+    const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [modalAberto, setModalAberto] = useState(false);
     const [modo, setModo] = useState<'manual' | 'automatico'>(dados.reserva_modo || 'manual');
     const [reservaManual, setReservaManual] = useState<number>(dados.reserva_ideal || 0);

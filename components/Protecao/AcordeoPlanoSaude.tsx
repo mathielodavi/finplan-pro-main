@@ -38,10 +38,11 @@ const PLANO_VAZIO: Omit<PlanoSaude, 'id' | 'cliente_id'> = {
 interface Props {
     dados: ClienteSeguro;
     dependentes: DependenteSeguro[];
+    defaultAberto?: boolean;
 }
 
-const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes }) => {
-    const [aberto, setAberto] = useState(false);
+const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto }) => {
+    const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [planos, setPlanos] = useState<PlanoSaude[]>([]);
     const [loading, setLoading] = useState(false);
     const [modal, setModal] = useState(false);

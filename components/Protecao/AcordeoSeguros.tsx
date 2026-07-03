@@ -36,10 +36,11 @@ interface Props {
     dados: ClienteSeguro;
     dependentes: DependenteSeguro[];
     parametros: { taxa_juros_aa: number; ipca_projetado_aa: number; perc_custos_inventario: number };
+    defaultAberto?: boolean;
 }
 
-const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => {
-    const [aberto, setAberto] = useState(false);
+const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defaultAberto }) => {
+    const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [seguros, setSeguros] = useState<SeguroVida[]>([]);
     const [loading, setLoading] = useState(false);
     const [modal, setModal] = useState(false);

@@ -19,10 +19,11 @@ const EXTRA_VAZIO: Omit<SeguroExtra, 'id' | 'cliente_id'> = {
 
 interface Props {
     dados: ClienteSeguro;
+    defaultAberto?: boolean;
 }
 
-const AcordeoExtras: React.FC<Props> = ({ dados }) => {
-    const [aberto, setAberto] = useState(false);
+const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
+    const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [extras, setExtras] = useState<SeguroExtra[]>([]);
     const [loading, setLoading] = useState(false);
     const [modal, setModal] = useState(false);

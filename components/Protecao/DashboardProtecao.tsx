@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Shield, Pencil, MessageCircle, Download
+    Shield, Pencil, MessageCircle, Download, Settings
 } from 'lucide-react';
+import SidePanel from '../UI/SidePanel';
 import { ClienteSeguro, DependenteSeguro, ParametrosCalculo, protecaoService } from '../../services/protecaoService';
 import { calcularCoberturaVida, calcularSucessao, calcularTaxaRealMensal } from '../../utils/calculosFinanceiros';
 import AcordeoReservaEmergencia from './AcordeoReservaEmergencia';
@@ -27,6 +28,7 @@ interface Props {
 
 const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar }) => {
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
+    const [drawer, setDrawer] = useState<null | 'seguros' | 'reserva' | 'plano' | 'extras'>(null);
     const [saldoReserva, setSaldoReserva] = useState(0);
     const [coberturaContratada, setCoberturaContratada] = useState(0);
     const [reservaIdeal, setReservaIdeal] = useState(0);
@@ -463,11 +465,16 @@ Planejador: ${planejadorEmail || '—'}`;
                 </div>
             </div>
 
-            {/* ── Resumo: necessidade × cobertura atual × lacuna ── */}
+            {/* ── Pilar: Seguros de vida (necessidade × cobertura × lacuna) ── */}
             <div className="bg-surface rounded-xl border border-subtle p-4 space-y-4">
-                <div className="flex items-baseline gap-2">
-                    <h3 className="text-[13px] font-semibold text-main">Necessidade de proteção</h3>
-                    <span className="text-[11px] text-faint">recomendado × contratado</span>
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-baseline gap-2">
+                        <h3 className="text-[13px] font-semibold text-main">Seguros de vida</h3>
+                        <span className="text-[11px] text-faint">necessidade × contratado</span>
+                    </div>
+                    <button onClick={() => setDrawer('seguros')} className="shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">
+                        <Pencil size={12} /> Gerenciar apólices
+                    </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -501,34 +508,30 @@ Planejador: ${planejadorEmail || '—'}`;
                 <p className="text-[11px] text-faint">A cobertura atual soma os seguros de vida contratados (cobertura por morte). O comparativo é no total — o detalhamento do contratado por pilar depende de etiquetar cada apólice.</p>
             </div>
 
-            {/* ── Panorama dos pilares (leitura) ── */}
-            <div className="bg-surface rounded-xl border border-subtle p-4 space-y-3">
-                <h3 className="text-[13px] font-semibold text-main">Panorama dos pilares</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
-                        <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[11px] text-faint">Reserva de emergência</span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ color: statusMap.cor, backgroundColor: statusMap.bg }}>{statusMap.label}</span>
-                        </div>
-                        <p className="text-[13px] font-semibold text-main">{fmtMoeda(saldoReserva)} <span className="text-faint font-normal">/ {fmtMoeda(reservaIdeal)}</span></p>
+            {/* ── Outros pilares (leitura + editar em drawer) ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[12px] font-semibold text-main">Reserva de emergência</span>
+                        <button onClick={() => setDrawer('reserva')} title="Configurar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Settings size={15} /></button>
                     </div>
-                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
-                        <span className="text-[11px] text-faint block mb-1.5">Plano de saúde</span>
-                        <p className="text-[13px] font-semibold text-main">{planosCount > 0 ? `${planosCount} contratado(s)` : 'Nenhum'}</p>
-                    </div>
-                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
-                        <span className="text-[11px] text-faint block mb-1.5">Proteções extras</span>
-                        <p className="text-[13px] font-semibold text-main">{extrasCount > 0 ? `${extrasCount} apólice(s)` : 'Nenhuma'}</p>
-                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ color: statusMap.cor, backgroundColor: statusMap.bg }}>{statusMap.label}</span>
+                    <p className="text-[13px] font-semibold text-main mt-2">{fmtMoeda(saldoReserva)} <span className="text-faint font-normal">/ {fmtMoeda(reservaIdeal)}</span></p>
                 </div>
-            </div>
-
-            {/* ── Acordeões ──────────────────────────────────────────── */}
-            <div className="space-y-3">
-                <AcordeoReservaEmergencia dados={dados} parametros={parametros} onUpdate={handleUpdate} saldoReserva={saldoReserva} />
-                <AcordeoPlanoSaude dados={dados} dependentes={dependentes} />
-                <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} />
-                <AcordeoExtras dados={dados} />
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[12px] font-semibold text-main">Plano de saúde</span>
+                        <button onClick={() => setDrawer('plano')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
+                    </div>
+                    <p className="text-[13px] font-semibold text-main">{planosCount > 0 ? `${planosCount} contratado(s)` : 'Nenhum'}</p>
+                </div>
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[12px] font-semibold text-main">Proteções extras</span>
+                        <button onClick={() => setDrawer('extras')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
+                    </div>
+                    <p className="text-[13px] font-semibold text-main">{extrasCount > 0 ? `${extrasCount} apólice(s)` : 'Nenhuma'}</p>
+                </div>
             </div>
 
             {/* ── Faixa de exportação ─────────────────────────────────── */}
@@ -555,6 +558,37 @@ Planejador: ${planejadorEmail || '—'}`;
                     </button>
                 </div>
             </div>
+
+            {/* ── Drawers de edição por pilar ── */}
+            <SidePanel open={drawer === 'seguros'} onClose={() => setDrawer(null)} title="Seguros de vida" subtitle="Necessidade e apólices contratadas" widthClass="max-w-2xl">
+                <div className="space-y-4">
+                    <div className="border border-subtle rounded-lg overflow-hidden">
+                        <div className="flex justify-between items-center px-3 py-2 bg-surface-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Necessidade por pilar</span>
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Recomendado</span>
+                        </div>
+                        {pilares.map((p, i) => (
+                            <div key={i} className="flex justify-between items-center px-3 py-2.5 text-[13px] border-t border-subtle">
+                                <span className="text-muted">{p.label}</span>
+                                <span className="font-semibold text-main">{fmtMoeda(p.valor)}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} defaultAberto />
+                </div>
+            </SidePanel>
+
+            <SidePanel open={drawer === 'reserva'} onClose={() => setDrawer(null)} title="Reserva de emergência" widthClass="max-w-2xl">
+                <AcordeoReservaEmergencia dados={dados} parametros={parametros} onUpdate={handleUpdate} saldoReserva={saldoReserva} defaultAberto />
+            </SidePanel>
+
+            <SidePanel open={drawer === 'plano'} onClose={() => setDrawer(null)} title="Plano de saúde" widthClass="max-w-2xl">
+                <AcordeoPlanoSaude dados={dados} dependentes={dependentes} defaultAberto />
+            </SidePanel>
+
+            <SidePanel open={drawer === 'extras'} onClose={() => setDrawer(null)} title="Proteções extras" widthClass="max-w-2xl">
+                <AcordeoExtras dados={dados} defaultAberto />
+            </SidePanel>
         </div>
     );
 };
