@@ -29,6 +29,9 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
     const [saldoReserva, setSaldoReserva] = useState(0);
     const [coberturaContratada, setCoberturaContratada] = useState(0);
+    const [reservaIdeal, setReservaIdeal] = useState(0);
+    const [planosCount, setPlanosCount] = useState(0);
+    const [extrasCount, setExtrasCount] = useState(0);
     const [planejadorEmail, setPlanejadorEmail] = useState('');
     const [planejadorNome, setPlanejadorNome] = useState('');
 
@@ -61,9 +64,21 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
             setCoberturaContratada(soma);
         };
 
+        const loadPilares = async () => {
+            const [{ data: cli }, planos, extras] = await Promise.all([
+                supabase.from('clientes').select('reserva_recomendada').eq('id', dados.cliente_id).maybeSingle(),
+                protecaoService.getPlanosSaude(dados.cliente_id),
+                protecaoService.getSegurosExtras(dados.cliente_id),
+            ]);
+            setReservaIdeal(cli?.reserva_recomendada || 0);
+            setPlanosCount((planos || []).length);
+            setExtrasCount((extras || []).length);
+        };
+
         loadReserva();
         loadPlanejador();
         loadSeguros();
+        loadPilares();
     }, [dados.cliente_id]);
 
 
@@ -103,6 +118,16 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
         { label: 'Padrão de vida', valor: coberturaVida.coberturaFamiliar },
         { label: 'Sucessão patrimonial', valor: sucessao.coberturaSucessao },
     ];
+
+    // Panorama dos demais pilares (leitura) — mesma regra do acordeão de reserva.
+    const pctReserva = reservaIdeal > 0 ? (saldoReserva / reservaIdeal) * 100 : 0;
+    const statusReserva: 'protegido' | 'parcial' | 'desprotegido' =
+        saldoReserva <= 0 ? 'desprotegido' : pctReserva >= 100 ? 'protegido' : pctReserva >= 25 ? 'parcial' : 'desprotegido';
+    const statusMap = {
+        protegido: { label: 'Protegido', cor: 'var(--primary)', bg: 'rgba(16,185,129,0.12)' },
+        parcial: { label: 'Parcial', cor: 'var(--warning)', bg: 'rgba(251,191,36,0.12)' },
+        desprotegido: { label: 'Desprotegido', cor: 'var(--danger)', bg: 'rgba(248,113,113,0.12)' },
+    }[statusReserva];
 
     // ─── WhatsApp ─────────────────────────────────────────────────────────────────
     const gerarWhatsApp = () => {
@@ -474,6 +499,28 @@ Planejador: ${planejadorEmail || '—'}`;
                 </div>
 
                 <p className="text-[11px] text-faint">A cobertura atual soma os seguros de vida contratados (cobertura por morte). O comparativo é no total — o detalhamento do contratado por pilar depende de etiquetar cada apólice.</p>
+            </div>
+
+            {/* ── Panorama dos pilares (leitura) ── */}
+            <div className="bg-surface rounded-xl border border-subtle p-4 space-y-3">
+                <h3 className="text-[13px] font-semibold text-main">Panorama dos pilares</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[11px] text-faint">Reserva de emergência</span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ color: statusMap.cor, backgroundColor: statusMap.bg }}>{statusMap.label}</span>
+                        </div>
+                        <p className="text-[13px] font-semibold text-main">{fmtMoeda(saldoReserva)} <span className="text-faint font-normal">/ {fmtMoeda(reservaIdeal)}</span></p>
+                    </div>
+                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
+                        <span className="text-[11px] text-faint block mb-1.5">Plano de saúde</span>
+                        <p className="text-[13px] font-semibold text-main">{planosCount > 0 ? `${planosCount} contratado(s)` : 'Nenhum'}</p>
+                    </div>
+                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
+                        <span className="text-[11px] text-faint block mb-1.5">Proteções extras</span>
+                        <p className="text-[13px] font-semibold text-main">{extrasCount > 0 ? `${extrasCount} apólice(s)` : 'Nenhuma'}</p>
+                    </div>
+                </div>
             </div>
 
             {/* ── Acordeões ──────────────────────────────────────────── */}
