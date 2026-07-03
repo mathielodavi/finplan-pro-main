@@ -433,7 +433,7 @@ Planejador: ${planejadorEmail || '—'}`;
             {/* ── Faixa de exportação ─────────────────────────────────── */}
             <div className="bg-surface-3 rounded-xl p-5 flex items-center justify-between gap-4 flex-wrap shadow-lg">
                 <div>
-                    <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Pronto para cotação</p>
+                    <p className="text-[10px] font-bold text-[color:var(--primary)] uppercase tracking-wider mb-1">Pronto para cotação</p>
                     <p className="text-[14px] font-bold text-white tracking-tight">Compartilhe o levantamento com seu corretor</p>
                     <p className="text-[10px] text-faint mt-1 font-bold uppercase tracking-wider">Inclui todos os dados do levantamento com visão cliente/cônjuge.</p>
                 </div>
@@ -447,7 +447,7 @@ Planejador: ${planejadorEmail || '—'}`;
                     </button>
                     <button
                         onClick={gerarPDF}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-500 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
                     >
                         <Download size={14} />
                         Baixar PDF

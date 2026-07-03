@@ -16,8 +16,8 @@ const CampoMonetario: React.FC<{ label: string; value: number; onChange: (v: num
         onChange(nums ? parseInt(nums) / 100 : 0);
     };
     const baseInp = `w-full px-3 h-[36px] border rounded-lg font-medium text-[13px] outline-none focus:ring-4 transition-all placeholder:text-faint ${highlighted
-        ? 'bg-emerald-50 border-emerald-200 text-emerald-700 focus:ring-emerald-500/10 focus:border-emerald-500'
-        : 'bg-surface border-subtle text-main focus:ring-emerald-500/10 focus:border-emerald-500'
+        ? 'bg-[color:var(--primary-soft)] border-subtle text-[color:var(--primary)] focus:ring-emerald-500/10 focus:border-[color:var(--primary)]'
+        : 'bg-surface border-subtle text-main focus:ring-emerald-500/10 focus:border-[color:var(--primary)]'
         }`;
     return (
         <div>
@@ -43,7 +43,7 @@ const CampoPercentual: React.FC<{ label: string; value: number; onChange: (v: nu
                 min={0} max={100} step={0.5}
                 value={value || ''}
                 onChange={e => onChange(parseFloat(e.target.value) || 0)}
-                className="w-full px-3 h-[36px] pr-8 bg-surface border border-subtle text-main rounded-lg font-medium text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
+                className="w-full px-3 h-[36px] pr-8 bg-surface border border-subtle text-main rounded-lg font-medium text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all"
                 placeholder="0"
             />
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-faint">%</span>
@@ -108,7 +108,7 @@ const EtapaSucessao: React.FC<Props> = ({ dados, onChange, parametros }) => {
             {/* Configuração de custos do inventário */}
             <div className="rounded-[12px] border border-[color:var(--border)] overflow-hidden shadow-[var(--shadow-card)] bg-surface">
                 <div className="bg-surface-2 px-5 py-3.5 border-b border-[color:var(--border)] flex items-center gap-2">
-                    <Building2 size={16} className="text-emerald-500" />
+                    <Building2 size={16} className="text-[color:var(--primary)]" />
                     <p className="text-[12px] font-semibold text-main uppercase tracking-widest">Custos do Inventário</p>
                 </div>
                 <div className="px-5 py-4">
@@ -127,9 +127,9 @@ const EtapaSucessao: React.FC<Props> = ({ dados, onChange, parametros }) => {
                         />
                         <div className="flex flex-col justify-end">
                             <label className={lbl}>Custo Total do Inventário</label>
-                            <div className="flex items-center gap-2 px-3 h-[36px] bg-amber-50 border border-amber-200 rounded-lg">
-                                <span className="text-[14px] font-bold text-amber-700">{percEfetivoTotal.toFixed(1)}%</span>
-                                <span className="text-[11px] font-semibold text-amber-600">sobre os bens</span>
+                            <div className="flex items-center gap-2 px-3 h-[36px] bg-surface-2 border border-subtle rounded-lg">
+                                <span className="text-[14px] font-bold text-[color:var(--warning)]">{percEfetivoTotal.toFixed(1)}%</span>
+                                <span className="text-[11px] font-semibold text-[color:var(--warning)]">sobre os bens</span>
                             </div>
                         </div>
                     </div>
@@ -143,8 +143,8 @@ const EtapaSucessao: React.FC<Props> = ({ dados, onChange, parametros }) => {
             <div className="rounded-[12px] border border-[color:var(--border)] overflow-hidden shadow-[var(--shadow-card)] bg-surface">
                 <div className="grid grid-cols-[1fr_140px_140px_140px] gap-3 px-5 py-3.5 bg-surface-2 border-b border-[color:var(--border)]">
                     <span className="text-[11px] font-bold text-[color:var(--text-muted)] uppercase tracking-widest">Item</span>
-                    <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest text-center">Cliente</span>
-                    <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest text-center">Cônjuge</span>
+                    <span className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest text-center">Cliente</span>
+                    <span className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest text-center">Cônjuge</span>
                     <span className="text-[11px] font-bold text-[color:var(--text-muted)] uppercase tracking-widest text-center">Família</span>
                 </div>
                 <div className="px-5">
@@ -182,14 +182,14 @@ const EtapaSucessao: React.FC<Props> = ({ dados, onChange, parametros }) => {
                     <p className="text-[22px] font-bold text-main">{fmtMoeda(resultado.totalNecessidades)}</p>
                     <p className="text-[11px] font-medium text-[color:var(--text-muted)] mt-1">Funeral + Inventário + Dívidas</p>
                 </div>
-                <div className="p-5 bg-emerald-50 border border-emerald-200 shadow-sm rounded-[12px]">
-                    <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-2">Ativos Previdenciários Disponíveis</p>
-                    <p className="text-[22px] font-bold text-emerald-700">{fmtMoeda(resultado.ativosPrevidenciarios)}</p>
-                    <p className="text-[11px] font-medium text-emerald-600 mt-1">PGBL + VGBL (isento de inventário)</p>
+                <div className="p-5 bg-[color:var(--primary-soft)] border border-subtle shadow-sm rounded-[12px]">
+                    <p className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest mb-2">Ativos Previdenciários Disponíveis</p>
+                    <p className="text-[22px] font-bold text-[color:var(--primary)]">{fmtMoeda(resultado.ativosPrevidenciarios)}</p>
+                    <p className="text-[11px] font-medium text-[color:var(--primary)] mt-1">PGBL + VGBL (isento de inventário)</p>
                 </div>
-                <div className="p-5 bg-rose-600 rounded-[12px] text-white shadow-sm">
+                <div className="p-5 bg-[color:var(--danger)] rounded-[12px] text-white shadow-sm">
                     <p className="text-[11px] font-bold text-rose-200 uppercase tracking-widest mb-2">Cobertura Necessária — Sucessão</p>
-                    <p className="text-[22px] font-bold tracking-tighter">{fmtMoeda(resultado.coberturaSucessao)}</p>
+                    <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaSucessao)}</p>
                     <p className="text-[11px] font-medium text-rose-200 mt-1">Necessidades − Ativos previdenciários</p>
                 </div>
             </div>

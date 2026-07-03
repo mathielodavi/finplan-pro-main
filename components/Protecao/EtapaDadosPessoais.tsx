@@ -10,10 +10,10 @@ const ESTADOS_BR = [
     'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO',
 ];
 
-const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all placeholder:text-faint";
-const inp2 = "w-full p-3 bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all placeholder:text-faint resize-none h-[80px]";
+const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all placeholder:text-faint";
+const inp2 = "w-full p-3 bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all placeholder:text-faint resize-none h-[80px]";
 const lbl = "block text-[12px] font-semibold text-[color:var(--text-muted)] ml-1 mb-1.5";
-const err = "text-[11px] text-rose-500 font-medium ml-1 mt-1";
+const err = "text-[11px] text-[color:var(--danger)] font-medium ml-1 mt-1";
 
 // ─── Sub-componentes utilitários ──────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ const Toggle: React.FC<{ label: string; value: boolean; onChange: (v: boolean) =
             {label}
             {tooltip && <TooltipAjuda texto={tooltip} />}
         </span>
-        <span className={`ml-auto text-[11px] font-bold uppercase tracking-widest ${value ? 'text-emerald-600' : 'text-[color:var(--text-muted)]'}`}>
+        <span className={`ml-auto text-[11px] font-bold uppercase tracking-widest ${value ? 'text-[color:var(--primary)]' : 'text-[color:var(--text-muted)]'}`}>
             {value ? 'Sim' : 'Não'}
         </span>
     </div>
@@ -77,10 +77,10 @@ const BlocoSaude: React.FC<{
                         className={inp} />
                 </div>
                 {imc !== null && (
-                    <div className="col-span-2 flex items-center gap-3 bg-emerald-50 rounded-lg px-4 py-2.5">
-                        <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-widest">IMC</span>
-                        <span className="text-[14px] font-bold text-emerald-700">{imc}</span>
-                        <span className="text-[13px] text-emerald-600 font-medium">— {classificarIMC(imc)}</span>
+                    <div className="col-span-2 flex items-center gap-3 bg-[color:var(--primary-soft)] rounded-lg px-4 py-2.5">
+                        <span className="text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">IMC</span>
+                        <span className="text-[14px] font-bold text-[color:var(--primary)]">{imc}</span>
+                        <span className="text-[13px] text-[color:var(--primary)] font-medium">— {classificarIMC(imc)}</span>
                     </div>
                 )}
             </div>
@@ -149,14 +149,14 @@ const BlocoIdentificacao: React.FC<{
         >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="lg:col-span-3">
-                    <label className={lbl}>Nome completo <span className="text-rose-400">*</span></label>
+                    <label className={lbl}>Nome completo <span className="text-[color:var(--danger)]">*</span></label>
                     <input type="text"
                         value={dados[`nome_${prefix}` as keyof ClienteSeguro] as string || ''}
                         onChange={e => onChange(`nome_${prefix}` as keyof ClienteSeguro, e.target.value)}
                         className={inp} placeholder={prefix === 'cliente' ? 'Nome do cliente' : 'Nome do cônjuge'} />
                 </div>
                 <div>
-                    <label className={lbl}>E-mail <span className="text-rose-400">*</span></label>
+                    <label className={lbl}>E-mail <span className="text-[color:var(--danger)]">*</span></label>
                     <input type="email"
                         value={dados[`email_${prefix}` as keyof ClienteSeguro] as string || ''}
                         onChange={e => onChange(`email_${prefix}` as keyof ClienteSeguro, e.target.value)}
@@ -182,14 +182,14 @@ const BlocoIdentificacao: React.FC<{
                     </select>
                 </div>
                 <div>
-                    <label className={lbl}>Data de nascimento <span className="text-rose-400">*</span></label>
+                    <label className={lbl}>Data de nascimento <span className="text-[color:var(--danger)]">*</span></label>
                     <input type="date"
                         value={dados[`data_nascimento_${prefix}` as keyof ClienteSeguro] as string || ''}
                         onChange={e => onChange(`data_nascimento_${prefix}` as keyof ClienteSeguro, e.target.value)}
                         disabled={travado}
                         className={`${inp} ${lockCls}`} max={new Date().toISOString().split('T')[0]} />
                     {idade !== null && (
-                        <p className="text-[11px] font-medium text-emerald-600 ml-1 mt-1">{idade} anos</p>
+                        <p className="text-[11px] font-medium text-[color:var(--primary)] ml-1 mt-1">{idade} anos</p>
                     )}
                 </div>
                 <div>
@@ -199,7 +199,7 @@ const BlocoIdentificacao: React.FC<{
                     <input type="text"
                         value={cpfRaw}
                         onChange={e => onChange(`cpf_${prefix}` as keyof ClienteSeguro, mascaraCPF(e.target.value))}
-                        className={`${inp} ${!cpfValido ? 'border-rose-400' : ''}`}
+                        className={`${inp} ${!cpfValido ? 'border-[color:var(--danger)]' : ''}`}
                         placeholder="000.000.000-00" maxLength={14} />
                     {!cpfValido && <p className={err}>CPF inválido</p>}
                 </div>

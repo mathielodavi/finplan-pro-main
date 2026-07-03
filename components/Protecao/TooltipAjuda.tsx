@@ -19,7 +19,7 @@ const TooltipAjuda: React.FC<TooltipAjudaProps> = ({ texto, className = '' }) =>
                 onFocus={() => setAberto(true)}
                 onBlur={() => setAberto(false)}
                 onClick={() => setAberto(v => !v)}
-                className="text-faint hover:text-emerald-500 transition-colors"
+                className="text-faint hover:text-[color:var(--primary)] transition-colors"
                 aria-label="Ajuda"
             >
                 <HelpCircle size={13} />

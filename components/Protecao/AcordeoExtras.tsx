@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Package, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
 import { SeguroExtra, protecaoService, ClienteSeguro } from '../../services/protecaoService';
 
-const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-emerald-500 transition-all shadow-sm";
+const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
 const lbl = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
 const fmtMoeda = (v: number) => `R$ ${(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
@@ -94,13 +94,13 @@ const AcordeoExtras: React.FC<Props> = ({ dados }) => {
                     {extras.length > 0 && (
                         <div className="flex items-center justify-between bg-surface-2 border border-subtle rounded-xl px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                             <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Total de Mensalidades Extras</p>
-                            <p className="text-[16px] font-bold text-main tracking-tighter">{fmtMoeda(totalMensalidade)}</p>
+                            <p className="text-[16px] font-bold text-main tracking-tight">{fmtMoeda(totalMensalidade)}</p>
                         </div>
                     )}
 
                     {/* Lista */}
                     {loading ? (
-                        <div className="py-6 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-emerald-500" /></div>
+                        <div className="py-6 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[color:var(--primary)]" /></div>
                     ) : extras.length > 0 ? (
                         <div className="rounded-xl border border-subtle overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface">
                             <div className="bg-surface px-4 py-3 border-b border-subtle grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 text-[10px] font-bold text-faint uppercase tracking-wider">
@@ -116,10 +116,10 @@ const AcordeoExtras: React.FC<Props> = ({ dados }) => {
                                             <p className="text-[12px] font-bold text-main tracking-tight">{e.tipo_seguro || '—'}</p>
                                             <p className="text-[12px] font-medium text-muted truncate tracking-tight">{e.descricao || '—'}</p>
                                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider whitespace-nowrap">{vigencia}</p>
-                                            <p className="text-[13px] font-bold text-emerald-600 tracking-tighter">{fmtMoeda(e.mensalidade || 0)}</p>
+                                            <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(e.mensalidade || 0)}</p>
                                             <div className="flex gap-1">
-                                                <button onClick={() => openModal(e)} className="p-1.5 text-faint hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"><Edit2 size={13} /></button>
-                                                <button onClick={() => excluir(e.id!)} className="p-1.5 text-faint hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={13} /></button>
+                                                <button onClick={() => openModal(e)} className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Edit2 size={13} /></button>
+                                                <button onClick={() => excluir(e.id!)} className="p-1.5 text-faint hover:text-[color:var(--danger)] hover:bg-surface-2 rounded-lg transition-colors"><Trash2 size={13} /></button>
                                             </div>
                                         </div>
                                     );
@@ -182,7 +182,7 @@ const AcordeoExtras: React.FC<Props> = ({ dados }) => {
 
                         <div className="flex gap-2 pt-4">
                             <button onClick={() => setModal(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-emerald-700 flex items-center justify-center gap-1.5">
+                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
                                 <Check size={13} /> Salvar
                             </button>
                         </div>

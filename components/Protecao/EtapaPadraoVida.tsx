@@ -6,14 +6,14 @@ import { calcularCoberturaVida } from '../../utils/calculosFinanceiros';
 import TooltipAjuda from './TooltipAjuda';
 
 const PERIODOS = [3, 5, 7, 10, 15, 20];
-const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all";
+const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all";
 const lbl = "block text-[12px] font-semibold text-[color:var(--text-muted)] ml-1 mb-1.5";
 const fmtMoeda = (v: number) => `R$ ${Math.round(v || 0).toLocaleString('pt-BR')}`;
 
 const BlocoSecao: React.FC<{ icone?: React.ReactNode; titulo: string; children: React.ReactNode }> = ({ icone, titulo, children }) => (
     <div className="rounded-[12px] border border-[color:var(--border)] overflow-hidden shadow-[var(--shadow-card)] bg-surface">
         <div className="bg-surface-2 px-5 py-3.5 border-b border-[color:var(--border)] flex items-center gap-2">
-            {icone && <span className="text-emerald-500">{icone}</span>}
+            {icone && <span className="text-[color:var(--primary)]">{icone}</span>}
             <p className="text-[12px] font-semibold text-main uppercase tracking-widest">{titulo}</p>
         </div>
         <div className="px-5 py-5">{children}</div>
@@ -137,9 +137,9 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
                 </div>
 
                 {rendaTotal > 0 && (
-                    <div className="mt-4 flex items-center justify-between bg-emerald-50 rounded-lg px-4 py-3">
-                        <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest">Renda Familiar Total</span>
-                        <span className="text-[16px] font-bold text-emerald-700">{fmtMoeda(rendaTotal)}</span>
+                    <div className="mt-4 flex items-center justify-between bg-[color:var(--primary-soft)] rounded-lg px-4 py-3">
+                        <span className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest">Renda Familiar Total</span>
+                        <span className="text-[16px] font-bold text-[color:var(--primary)]">{fmtMoeda(rendaTotal)}</span>
                     </div>
                 )}
             </BlocoSecao>
@@ -150,7 +150,7 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
                 <div className="grid grid-cols-[1fr_120px_64px] gap-x-3 mb-2 pb-2 border-b border-[color:var(--border)] items-center">
                     <span className="text-[11px] font-bold text-[color:var(--text-muted)] uppercase tracking-widest">Categoria</span>
                     <span className="text-[11px] font-bold text-[color:var(--text-muted)] uppercase tracking-widest text-right">Valor</span>
-                    <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest text-center">Seg.</span>
+                    <span className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest text-center">Seg.</span>
                 </div>
                 <div className="space-y-1.5">
                     {[
@@ -181,13 +181,13 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
                     ))}
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="flex items-center justify-between bg-amber-50 rounded-lg px-4 py-3">
-                        <span className="text-[11px] font-bold text-amber-600 uppercase tracking-widest">Total Registrado</span>
-                        <span className="text-[15px] font-bold text-amber-700">{fmtMoeda(totalDespesas)}</span>
+                    <div className="flex items-center justify-between bg-surface-2 rounded-lg px-4 py-3">
+                        <span className="text-[11px] font-bold text-[color:var(--warning)] uppercase tracking-widest">Total Registrado</span>
+                        <span className="text-[15px] font-bold text-[color:var(--warning)]">{fmtMoeda(totalDespesas)}</span>
                     </div>
-                    <div className="flex items-center justify-between bg-emerald-50 rounded-lg px-4 py-3">
-                        <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest">Base da Cobertura</span>
-                        <span className="text-[15px] font-bold text-emerald-700">{fmtMoeda(totalDespesasCobertura)}</span>
+                    <div className="flex items-center justify-between bg-[color:var(--primary-soft)] rounded-lg px-4 py-3">
+                        <span className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest">Base da Cobertura</span>
+                        <span className="text-[15px] font-bold text-[color:var(--primary)]">{fmtMoeda(totalDespesasCobertura)}</span>
                     </div>
                 </div>
             </BlocoSecao>
@@ -212,7 +212,7 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
                                 placeholder="Ex: 20"
                                 className={`${inp} pr-16`}
                             />
-                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-faint uppercase">anos</span>
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-faint uppercase">anos</span>
                         </div>
                         <p className="text-[9px] text-faint ml-0.5 mt-1">Informe por quantos anos a família deve ser coberta financeiramente.</p>
                     </div>
@@ -234,7 +234,7 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
                                 placeholder="4"
                                 className={`${inp} pr-8`}
                             />
-                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-faint">%</span>
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-faint">%</span>
                         </div>
                         <p className="text-[9px] text-faint ml-0.5 mt-1">Taxa real de rentabilidade anual para desconto do capital.</p>
                     </div>
@@ -247,17 +247,17 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div className="p-5 rounded-[12px] bg-emerald-600 text-white shadow-sm">
                         <p className="text-[11px] font-bold text-emerald-200 uppercase tracking-widest mb-2">Cobertura — Cliente</p>
-                        <p className="text-[22px] font-bold tracking-tighter">{fmtMoeda(resultado.coberturaCliente)}</p>
+                        <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaCliente)}</p>
                         <p className="text-[11px] font-medium text-emerald-100 mt-2">Em caso de falecimento</p>
                     </div>
                     <div className="p-5 rounded-[12px] bg-emerald-600 text-white shadow-sm">
                         <p className="text-[11px] font-bold text-emerald-200 uppercase tracking-widest mb-2">Cobertura — Cônjuge</p>
-                        <p className="text-[22px] font-bold tracking-tighter">{fmtMoeda(resultado.coberturaConjuge)}</p>
+                        <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaConjuge)}</p>
                         <p className="text-[11px] font-medium text-emerald-100 mt-2">Em caso de falecimento</p>
                     </div>
                     <div className="p-5 rounded-[12px] bg-violet-600 text-white shadow-sm">
                         <p className="text-[11px] font-bold text-violet-200 uppercase tracking-widest mb-2">Cobertura Familiar Total</p>
-                        <p className="text-[22px] font-bold tracking-tighter">{fmtMoeda(resultado.coberturaFamiliar)}</p>
+                        <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaFamiliar)}</p>
                         <p className="text-[11px] font-medium text-violet-100 mt-2">Soma das coberturas</p>
                     </div>
                 </div>

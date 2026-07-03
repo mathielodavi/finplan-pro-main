@@ -5,7 +5,7 @@ import { DependenteSeguro } from '../../services/protecaoService';
 import { calcularIdade } from '../../utils/calculosFinanceiros';
 import { protecaoService } from '../../services/protecaoService';
 
-const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all placeholder:text-faint";
+const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all placeholder:text-faint";
 const lbl = "block text-[12px] font-semibold text-[color:var(--text-muted)] ml-1 mb-1.5";
 
 const PARENTESCOS = ['Filho(a)', 'Enteado(a)', 'Pai', 'Mãe', 'Irmão/Irmã', 'Outro'];
@@ -68,7 +68,7 @@ const EtapaDependentes: React.FC<Props> = ({ clienteId, dependentes, onChange })
             {/* Instruções */}
             <div className="rounded-[12px] border border-[color:var(--border)] overflow-hidden shadow-[var(--shadow-card)]">
                 <div className="bg-surface-2 px-5 py-3.5 border-b border-[color:var(--border)] flex items-center gap-3">
-                    <Users size={16} className="text-emerald-500" />
+                    <Users size={16} className="text-[color:var(--primary)]" />
                     <p className="text-[12px] font-semibold text-main uppercase tracking-widest">Dependentes</p>
                     <span className="ml-auto text-[11px] font-bold text-faint">{dependentes.length} / 10</span>
                 </div>
@@ -88,14 +88,14 @@ const EtapaDependentes: React.FC<Props> = ({ clienteId, dependentes, onChange })
                             {/* Header do card */}
                             <div className="bg-surface-2 px-5 py-3.5 border-b border-[color:var(--border)] flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <span className="h-5 w-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-bold">
+                                    <span className="h-5 w-5 rounded-full bg-[color:var(--primary-soft)] text-[color:var(--primary)] flex items-center justify-center text-[10px] font-bold">
                                         {i + 1}
                                     </span>
                                     <span className="text-[12px] font-semibold text-main uppercase tracking-widest">
                                         {dep.nome_dependente?.trim() || `Dependente ${i + 1}`}
                                     </span>
                                     {idade !== null && (
-                                        <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                        <span className="text-[11px] font-semibold text-[color:var(--primary)] bg-[color:var(--primary-soft)] px-2 py-0.5 rounded-full">
                                             {idade} anos
                                         </span>
                                     )}
@@ -104,7 +104,7 @@ const EtapaDependentes: React.FC<Props> = ({ clienteId, dependentes, onChange })
                                     <button
                                         type="button"
                                         onClick={() => remove(i)}
-                                        className="p-1.5 rounded-lg text-faint hover:text-rose-500 hover:bg-rose-50 transition-all"
+                                        className="p-1.5 rounded-lg text-faint hover:text-[color:var(--danger)] hover:bg-surface-2 transition-all"
                                         title="Remover dependente"
                                     >
                                         <Trash2 size={13} />
@@ -115,7 +115,7 @@ const EtapaDependentes: React.FC<Props> = ({ clienteId, dependentes, onChange })
                             {/* Campos */}
                             <div className="px-5 py-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="md:col-span-1">
-                                    <label className={lbl}>Nome completo <span className="text-rose-400">*</span></label>
+                                    <label className={lbl}>Nome completo <span className="text-[color:var(--danger)]">*</span></label>
                                     <input
                                         type="text"
                                         value={dep.nome_dependente}
@@ -155,7 +155,7 @@ const EtapaDependentes: React.FC<Props> = ({ clienteId, dependentes, onChange })
                 <button
                     type="button"
                     onClick={add}
-                    className="flex items-center gap-2 px-4 h-[40px] rounded-lg border-2 border-dashed border-emerald-200 text-emerald-600 hover:bg-emerald-50 font-bold text-[11px] uppercase tracking-widest transition-all w-full justify-center"
+                    className="flex items-center gap-2 px-4 h-[40px] rounded-lg border-2 border-dashed border-subtle text-[color:var(--primary)] hover:bg-surface-2 font-bold text-[11px] uppercase tracking-widest transition-all w-full justify-center"
                 >
                     <Plus size={13} />
                     Adicionar Dependente

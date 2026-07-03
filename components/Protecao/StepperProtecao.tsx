@@ -155,7 +155,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
     // ─── Loading ─────────────────────────────────────────────────────────────────
     if (loading) return (
         <div className="flex flex-col items-center justify-center py-32 gap-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600" />
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[color:var(--primary)]" />
             <p className="text-faint text-xs font-bold uppercase tracking-widest">Carregando levantamento...</p>
         </div>
     );
@@ -174,14 +174,14 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                                 <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
                                     <button
                                         onClick={() => irParaEtapa(e.id)}
-                                        className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-[13px] border-2 transition-all ${concl ? 'bg-emerald-600 border-emerald-600 text-white' :
-                                            ativa ? 'bg-surface border-emerald-600 text-emerald-600 shadow-sm' :
+                                        className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-[13px] border-2 transition-all ${concl ? 'bg-emerald-600 border-[color:var(--primary)] text-white' :
+                                            ativa ? 'bg-surface border-[color:var(--primary)] text-[color:var(--primary)] shadow-sm' :
                                                 'bg-surface border-subtle text-faint'
                                             }`}
                                     >
                                         {concl ? <Check size={14} strokeWidth={3} /> : e.id}
                                     </button>
-                                    <span className={`text-center text-[10px] font-semibold uppercase tracking-widest leading-tight truncate max-w-full px-1 mt-1 ${ativa ? 'text-emerald-600' : concl ? 'text-emerald-500' : 'text-[color:var(--text-muted)]'
+                                    <span className={`text-center text-[10px] font-semibold uppercase tracking-widest leading-tight truncate max-w-full px-1 mt-1 ${ativa ? 'text-[color:var(--primary)]' : concl ? 'text-[color:var(--primary)]' : 'text-[color:var(--text-muted)]'
                                         }`}>
                                         {e.label}
                                     </span>
@@ -198,19 +198,19 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
             {/* ── Status de salvamento ────────────────────────────────────────────── */}
             <div className="flex items-center gap-2 h-4">
                 {saving && (
-                    <span className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-600 uppercase tracking-widest">
+                    <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
                         <Clock size={11} className="animate-spin" />
                         Salvando...
                     </span>
                 )}
                 {!saving && savedAtLabel && (
-                    <span className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-600 uppercase tracking-widest">
+                    <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
                         <Save size={11} />
                         {savedAtLabel}
                     </span>
                 )}
                 {saveError && (
-                    <span className="text-[10px] font-semibold text-rose-500 uppercase tracking-widest">{saveError}</span>
+                    <span className="text-[10px] font-semibold text-[color:var(--danger)] uppercase tracking-widest">{saveError}</span>
                 )}
             </div>
 
@@ -273,7 +273,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                         </button>
                         <button
                             onClick={proximo}
-                            className="px-6 h-[40px] flex items-center justify-center rounded-lg bg-emerald-600 text-white font-bold text-[11px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-sm"
+                            className="px-6 h-[40px] flex items-center justify-center rounded-lg bg-emerald-600 text-white font-bold text-[11px] uppercase tracking-widest hover:opacity-90 transition-all shadow-sm"
                         >
                             {etapa === 5 ? 'Ver Resumo →' : 'Próximo →'}
                         </button>

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Heart, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
 import { PlanoSaude, protecaoService, ClienteSeguro, DependenteSeguro } from '../../services/protecaoService';
 
-const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-emerald-500 transition-all shadow-sm";
+const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
 const lbl = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
 const fmtMoeda = (v: number) => `R$ ${(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
@@ -108,8 +108,8 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes }) => {
             <button onClick={() => setAberto(v => !v)}
                 className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors">
                 <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 bg-rose-50 rounded-[8px] flex items-center justify-center shrink-0">
-                        <Heart size={16} className="text-rose-400" />
+                    <div className="h-9 w-9 bg-surface-2 rounded-[8px] flex items-center justify-center shrink-0">
+                        <Heart size={16} className="text-[color:var(--danger)]" />
                     </div>
                     <div className="text-left">
                         <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none mb-1">Pilar 2</p>
@@ -129,9 +129,9 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes }) => {
                         {membros.map(m => {
                             const coberto = membrosComPlano.has(m);
                             return (
-                                <div key={m} className={`p-2.5 rounded-xl border text-center shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${coberto ? 'bg-emerald-50/50 border-emerald-100' : 'bg-surface-2/50 border-subtle'}`}>
+                                <div key={m} className={`p-2.5 rounded-xl border text-center shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${coberto ? 'bg-surface-2 border-subtle' : 'bg-surface-2/50 border-subtle'}`}>
                                     <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1 capitalize">{m}</p>
-                                    <p className={`text-[11px] font-bold ${coberto ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    <p className={`text-[11px] font-bold ${coberto ? 'text-[color:var(--primary)]' : 'text-[color:var(--danger)]'}`}>
                                         {coberto ? '✓ Com plano' : '✗ Sem plano'}
                                     </p>
                                 </div>
@@ -141,7 +141,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes }) => {
 
                     {/* Lista de planos */}
                     {loading ? (
-                        <div className="py-6 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-emerald-500" /></div>
+                        <div className="py-6 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[color:var(--primary)]" /></div>
                     ) : planos.length > 0 ? (
                         <div className="rounded-xl border border-subtle overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface">
                             <div className="bg-surface px-4 py-3 border-b border-subtle grid grid-cols-[1fr_1fr_auto_auto] gap-3 text-[10px] font-bold text-faint uppercase tracking-wider">
@@ -155,10 +155,10 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes }) => {
                                             <p className="text-[12px] font-bold text-main tracking-tight leading-none mb-1">{p.operadora || '—'}</p>
                                             <p className="text-[10px] font-bold text-faint tracking-wider uppercase">{p.cobertura}</p>
                                         </div>
-                                        <p className="text-[13px] font-bold text-emerald-600 tracking-tighter">{fmtMoeda(p.mensalidade || 0)}</p>
+                                        <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(p.mensalidade || 0)}</p>
                                         <div className="flex gap-1">
-                                            <button onClick={() => openEditModal(p)} className="p-1.5 text-faint hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"><Edit2 size={13} /></button>
-                                            <button onClick={() => excluir(p.id!)} className="p-1.5 text-faint hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={13} /></button>
+                                            <button onClick={() => openEditModal(p)} className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Edit2 size={13} /></button>
+                                            <button onClick={() => excluir(p.id!)} className="p-1.5 text-faint hover:text-[color:var(--danger)] hover:bg-surface-2 rounded-lg transition-colors"><Trash2 size={13} /></button>
                                         </div>
                                     </div>
                                 ))}
@@ -169,7 +169,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes }) => {
                     )}
 
                     <button onClick={openNovoModal}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-dashed border-emerald-200 text-emerald-600 hover:bg-emerald-50 font-bold text-[10px] uppercase tracking-wider transition-all w-max shadow-sm">
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-dashed border-subtle text-[color:var(--primary)] hover:bg-surface-2 font-bold text-[10px] uppercase tracking-wider transition-all w-max shadow-sm">
                         <Plus size={13} /> Adicionar Plano de Saúde
                     </button>
                 </div>
@@ -234,7 +234,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes }) => {
 
                         <div className="flex gap-2 pt-4">
                             <button onClick={() => setModal(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-emerald-700 flex items-center justify-center gap-1.5">
+                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
                                 <Check size={13} /> Salvar
                             </button>
                         </div>

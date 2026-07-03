@@ -113,7 +113,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
     };
 
     const barW = Math.min(pct, 100);
-    const barColor = status === 'protegido' ? 'bg-emerald-500' : status === 'parcial' ? 'bg-amber-400' : 'bg-rose-400';
+    const barColor = status === 'protegido' ? 'bg-[color:var(--primary)]' : status === 'parcial' ? 'bg-amber-400' : 'bg-rose-400';
 
     return (
         <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden">
@@ -123,8 +123,8 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                 className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors"
             >
                 <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 bg-emerald-50 rounded-[8px] flex items-center justify-center shrink-0">
-                        <Shield size={16} className="text-emerald-500" />
+                    <div className="h-9 w-9 bg-[color:var(--primary-soft)] rounded-[8px] flex items-center justify-center shrink-0">
+                        <Shield size={16} className="text-[color:var(--primary)]" />
                     </div>
                     <div className="text-left">
                         <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1 leading-none">Pilar 1</p>
@@ -144,17 +144,17 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="bg-surface-2 border border-subtle rounded-xl p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Reserva Ideal</p>
-                            <p className="text-[18px] font-bold text-main tracking-tighter">{fmtMoeda(reservaIdeal)}</p>
+                            <p className="text-[18px] font-bold text-main tracking-tight">{fmtMoeda(reservaIdeal)}</p>
                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider mt-1 capitalize">{modo}</p>
                         </div>
                         <div className="bg-surface-2 border border-subtle rounded-xl p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Saldo Acumulado</p>
-                            <p className={`text-[18px] font-bold tracking-tighter ${saldoReserva > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{fmtMoeda(saldoReserva)}</p>
+                            <p className={`text-[18px] font-bold tracking-tight ${saldoReserva > 0 ? 'text-[color:var(--primary)]' : 'text-[color:var(--danger)]'}`}>{fmtMoeda(saldoReserva)}</p>
                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider mt-1">Ativos na carteira</p>
                         </div>
                         <div className="bg-surface-2 border border-subtle rounded-xl p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Preenchimento</p>
-                            <p className={`text-[18px] font-bold tracking-tighter ${status === 'protegido' ? 'text-emerald-600' : status === 'parcial' ? 'text-amber-600' : 'text-rose-500'}`}>{fmtPct(pct)}</p>
+                            <p className={`text-[18px] font-bold tracking-tight ${status === 'protegido' ? 'text-[color:var(--primary)]' : status === 'parcial' ? 'text-[color:var(--warning)]' : 'text-[color:var(--danger)]'}`}>{fmtPct(pct)}</p>
                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider mt-1">{status === 'protegido' ? 'Meta atingida' : status === 'parcial' ? 'Em construção' : 'Sem reserva'}</p>
                         </div>
                     </div>
@@ -173,15 +173,15 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                         </div>
                         <div className="flex justify-between text-[11px] font-medium text-[color:var(--text-muted)]">
                             <span>0%</span>
-                            <span className="text-amber-500 font-bold">25% — Parcial</span>
-                            <span className="text-emerald-500 font-bold">100% — Protegido</span>
+                            <span className="text-[color:var(--warning)] font-bold">25% — Parcial</span>
+                            <span className="text-[color:var(--primary)] font-bold">100% — Protegido</span>
                         </div>
                     </div>
 
                     {/* Botão definir reserva */}
                     <button
                         onClick={() => setModalAberto(true)}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:border-emerald-500 hover:text-emerald-600 transition-all w-max shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface"
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:border-[color:var(--primary)] hover:text-[color:var(--primary)] transition-all w-max shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface"
                     >
                         <Settings size={13} />
                         Definir Reserva Ideal
@@ -218,18 +218,18 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                         <div className="grid grid-cols-2 gap-3">
                             <button
                                 onClick={() => setModo('manual')}
-                                className={`p-4 rounded-xl border text-left transition-all ${modo === 'manual' ? 'border-emerald-500 bg-emerald-50/50 shadow-sm' : 'border-subtle hover:border-emerald-300'}`}
+                                className={`p-4 rounded-xl border text-left transition-all ${modo === 'manual' ? 'border-[color:var(--primary)] bg-surface-2 shadow-sm' : 'border-subtle hover:border-[color:var(--primary)]'}`}
                             >
-                                <Edit3 size={16} className={modo === 'manual' ? 'text-emerald-600' : 'text-faint'} />
-                                <p className={`text-[12px] font-bold tracking-tight mt-2 ${modo === 'manual' ? 'text-emerald-800' : 'text-main'}`}>Manual</p>
+                                <Edit3 size={16} className={modo === 'manual' ? 'text-[color:var(--primary)]' : 'text-faint'} />
+                                <p className={`text-[12px] font-bold tracking-tight mt-2 ${modo === 'manual' ? 'text-[color:var(--primary)]' : 'text-main'}`}>Manual</p>
                                 <p className="text-[10px] font-bold text-faint uppercase tracking-wider mt-0.5">Defino o valor</p>
                             </button>
                             <button
                                 onClick={() => setModo('automatico')}
-                                className={`p-4 rounded-xl border text-left transition-all ${modo === 'automatico' ? 'border-emerald-500 bg-emerald-50/50 shadow-sm' : 'border-subtle hover:border-emerald-300'}`}
+                                className={`p-4 rounded-xl border text-left transition-all ${modo === 'automatico' ? 'border-[color:var(--primary)] bg-surface-2 shadow-sm' : 'border-subtle hover:border-[color:var(--primary)]'}`}
                             >
-                                <Zap size={16} className={modo === 'automatico' ? 'text-emerald-600' : 'text-faint'} />
-                                <p className={`text-[12px] font-bold tracking-tight mt-2 ${modo === 'automatico' ? 'text-emerald-800' : 'text-main'}`}>Automatizado</p>
+                                <Zap size={16} className={modo === 'automatico' ? 'text-[color:var(--primary)]' : 'text-faint'} />
+                                <p className={`text-[12px] font-bold tracking-tight mt-2 ${modo === 'automatico' ? 'text-[color:var(--primary)]' : 'text-main'}`}>Automatizado</p>
                                 <p className="text-[10px] font-bold text-faint uppercase tracking-wider mt-0.5">Cálculo pelo sistema</p>
                             </button>
                         </div>
@@ -248,7 +248,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                                             setReservaManual(nums ? parseInt(nums) / 100 : 0);
                                         }}
                                         placeholder="0,00"
-                                        className="w-full pl-8 pr-4 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-[12px] text-main outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-emerald-500 transition-all shadow-sm"
+                                        className="w-full pl-8 pr-4 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-[12px] text-main outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm"
                                     />
                                 </div>
                             </div>
@@ -267,7 +267,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                                     <div key={i} className="flex items-center justify-between py-2 border-b border-subtle last:border-0">
                                         <span className="text-[13px] text-main font-medium">{item.label}</span>
                                         {item.readOnly ? (
-                                            <span className="text-[10px] font-bold text-emerald-600 uppercase">Sempre incluído</span>
+                                            <span className="text-[10px] font-bold text-[color:var(--primary)] uppercase">Sempre incluído</span>
                                         ) : (
                                             <button
                                                 onClick={() => item.setter!(!item.state)}
@@ -278,10 +278,10 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                                         )}
                                     </div>
                                 ))}
-                                <div className="bg-emerald-50 rounded-[12px] border border-emerald-100 p-4 mt-2">
-                                    <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Reserva calculada</p>
-                                    <p className="text-[20px] font-bold text-emerald-700">{fmtMoeda(calcularReservaAutomatica())}</p>
-                                    <p className="text-[11px] font-medium text-emerald-600 mt-1">
+                                <div className="bg-[color:var(--primary-soft)] rounded-[12px] border border-subtle p-4 mt-2">
+                                    <p className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest mb-1">Reserva calculada</p>
+                                    <p className="text-[20px] font-bold text-[color:var(--primary)]">{fmtMoeda(calcularReservaAutomatica())}</p>
+                                    <p className="text-[11px] font-medium text-[color:var(--primary)] mt-1">
                                         Fator: ×{dados.casado_cliente
                                             ? ((getFator(dados.regime_contratacao_cliente) + getFator(dados.regime_contratacao_conjuge)) / 2).toFixed(1)
                                             : getFator(dados.regime_contratacao_cliente)} meses
@@ -292,7 +292,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
 
                         <div className="flex gap-2 pt-4">
                             <button onClick={() => setModalAberto(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-emerald-700 flex items-center justify-center gap-1.5">
+                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
                                 <Check size={13} /> Salvar
                             </button>
                         </div>
