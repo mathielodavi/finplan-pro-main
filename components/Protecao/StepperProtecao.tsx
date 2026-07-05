@@ -152,6 +152,18 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
         if (etapa > 1) irParaEtapa(etapa - 1);
     };
 
+    // Completude por etapa (baseada em dados preenchidos, não na posição atual)
+    const temDados = (id: number): boolean => {
+        switch (id) {
+            case 1: return !!dados.data_nascimento_cliente || !!dados.cpf_cliente || !!dados.profissao_cliente;
+            case 2: return dependentes.some(d => d.nome_dependente?.trim());
+            case 3: return dependentes.some(d => (d.auxilio_mensal || 0) > 0 || (d.total_calculado || 0) > 0);
+            case 4: return (dados.renda_cliente || 0) > 0 || (dados.despesas_obrigatorias || 0) > 0;
+            case 5: return (dados.bens_cliente || 0) > 0 || (dados.funeral_cliente || 0) > 0 || (dados.investimentos_cliente || 0) > 0;
+            default: return false;
+        }
+    };
+
     // ─── Loading ─────────────────────────────────────────────────────────────────
     if (loading) return (
         <div className="flex flex-col items-center justify-center py-32 gap-4">
@@ -168,26 +180,27 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                 <div className="flex items-center gap-0">
                     {ETAPAS.map((e, i) => {
                         const ativa = e.id === etapa;
-                        const concl = e.id < etapa;
+                        const preenchida = temDados(e.id);
                         return (
                             <React.Fragment key={e.id}>
                                 <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
                                     <button
                                         onClick={() => irParaEtapa(e.id)}
-                                        className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-[13px] border-2 transition-all ${concl ? 'bg-emerald-600 border-[color:var(--primary)] text-white' :
+                                        title={preenchida ? 'Preenchida' : 'Pendente'}
+                                        className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-[13px] border-2 transition-all ${ativa ? 'ring-2 ring-[color:var(--primary-soft)]' : ''} ${preenchida ? 'bg-emerald-600 border-[color:var(--primary)] text-white' :
                                             ativa ? 'bg-surface border-[color:var(--primary)] text-[color:var(--primary)] shadow-sm' :
                                                 'bg-surface border-subtle text-faint'
                                             }`}
                                     >
-                                        {concl ? <Check size={14} strokeWidth={3} /> : e.id}
+                                        {preenchida ? <Check size={14} strokeWidth={3} /> : e.id}
                                     </button>
-                                    <span className={`text-center text-[10px] font-semibold uppercase tracking-widest leading-tight truncate max-w-full px-1 mt-1 ${ativa ? 'text-[color:var(--primary)]' : concl ? 'text-[color:var(--primary)]' : 'text-[color:var(--text-muted)]'
+                                    <span className={`text-center text-[10px] font-semibold uppercase tracking-widest leading-tight truncate max-w-full px-1 mt-1 ${ativa ? 'text-[color:var(--primary)]' : preenchida ? 'text-[color:var(--primary)]' : 'text-[color:var(--text-muted)]'
                                         }`}>
                                         {e.label}
                                     </span>
                                 </div>
                                 {i < ETAPAS.length - 1 && (
-                                    <div className={`flex-1 h-0.5 mb-6 max-w-[60px] transition-colors ${concl ? 'bg-emerald-400' : 'bg-surface-3'}`} />
+                                    <div className={`flex-1 h-0.5 mb-6 max-w-[60px] transition-colors ${preenchida ? 'bg-emerald-400' : 'bg-surface-3'}`} />
                                 )}
                             </React.Fragment>
                         );

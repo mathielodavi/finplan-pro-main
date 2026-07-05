@@ -28,7 +28,7 @@ const CampoRenda: React.FC<{ label: string; value: number; onChange: (v: number)
     };
     return (
         <div>
-            <label className={lbl}>{label}</label>
+            {label && <label className={lbl}>{label}</label>}
             <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-faint">R$</span>
                 <input type="text" value={formatted} onChange={handleChange} className={`${inp} pl-9`} placeholder="0,00" />
@@ -86,53 +86,58 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
         });
     };
 
+    // Colunas cliente/cônjuge padronizadas (mesmo padrão da etapa de Sucessão)
+    const colsRenda = dados.casado_cliente ? 'grid-cols-[minmax(110px,1fr)_1fr_1fr]' : 'grid-cols-[minmax(110px,1fr)_1fr]';
+
     return (
         <div className="space-y-4">
             {/* Renda */}
             <BlocoSecao icone={<DollarSign size={14} />} titulo="Renda Familiar">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <CampoRenda label="Renda bruta mensal — Cliente" value={rendaCliente} onChange={v => persist('renda_cliente', v)} />
-                    <div>
-                        <label className={lbl}>Declaração de IR — Cliente</label>
-                        <select value={dados.declaracao_ir_cliente || ''} onChange={e => persist('declaracao_ir_cliente', e.target.value)} className={inp}>
+                <div className={`grid ${colsRenda} gap-3 items-center pb-2 mb-1 border-b border-[color:var(--border)]`}>
+                    <span className="text-[11px] font-bold text-[color:var(--text-muted)] uppercase tracking-widest">Item</span>
+                    <span className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest text-center">Cliente</span>
+                    {dados.casado_cliente && <span className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest text-center">Cônjuge</span>}
+                </div>
+
+                <div className={`grid ${colsRenda} gap-3 items-center py-2 border-b border-[color:var(--border)]`}>
+                    <span className="text-[13px] font-semibold text-main">Renda bruta mensal</span>
+                    <CampoRenda label="" value={rendaCliente} onChange={v => persist('renda_cliente', v)} />
+                    {dados.casado_cliente && <CampoRenda label="" value={rendaConjuge} onChange={v => persist('renda_conjuge', v)} />}
+                </div>
+
+                <div className={`grid ${colsRenda} gap-3 items-center py-2 border-b border-[color:var(--border)]`}>
+                    <span className="text-[13px] font-semibold text-main">Declaração de IR</span>
+                    <select value={dados.declaracao_ir_cliente || ''} onChange={e => persist('declaracao_ir_cliente', e.target.value)} className={inp}>
+                        <option value="">Selecione...</option>
+                        <option value="Completa">Completa</option>
+                        <option value="Simplificada">Simplificada</option>
+                    </select>
+                    {dados.casado_cliente && (
+                        <select value={dados.declaracao_ir_conjuge || ''} onChange={e => persist('declaracao_ir_conjuge', e.target.value)} className={inp}>
                             <option value="">Selecione...</option>
                             <option value="Completa">Completa</option>
                             <option value="Simplificada">Simplificada</option>
                         </select>
-                    </div>
-                    <div>
-                        <label className={lbl}>Regime — Cliente</label>
-                        <select value={dados.regime_contratacao_cliente || ''} onChange={e => persist('regime_contratacao_cliente', e.target.value)} className={inp}>
+                    )}
+                </div>
+
+                <div className={`grid ${colsRenda} gap-3 items-center py-2`}>
+                    <span className="text-[13px] font-semibold text-main">Regime de contratação</span>
+                    <select value={dados.regime_contratacao_cliente || ''} onChange={e => persist('regime_contratacao_cliente', e.target.value)} className={inp}>
+                        <option value="">Selecione...</option>
+                        <option value="Servidor Público">Servidor Público</option>
+                        <option value="CLT">CLT</option>
+                        <option value="Autônomo/Liberal">Autônomo / Liberal</option>
+                        <option value="Empresário">Empresário</option>
+                    </select>
+                    {dados.casado_cliente && (
+                        <select value={dados.regime_contratacao_conjuge || ''} onChange={e => persist('regime_contratacao_conjuge', e.target.value)} className={inp}>
                             <option value="">Selecione...</option>
                             <option value="Servidor Público">Servidor Público</option>
                             <option value="CLT">CLT</option>
                             <option value="Autônomo/Liberal">Autônomo / Liberal</option>
                             <option value="Empresário">Empresário</option>
                         </select>
-                    </div>
-
-                    {dados.casado_cliente && (
-                        <>
-                            <CampoRenda label="Renda bruta mensal — Cônjuge" value={rendaConjuge} onChange={v => persist('renda_conjuge', v)} />
-                            <div>
-                                <label className={lbl}>Declaração de IR — Cônjuge</label>
-                                <select value={dados.declaracao_ir_conjuge || ''} onChange={e => persist('declaracao_ir_conjuge', e.target.value)} className={inp}>
-                                    <option value="">Selecione...</option>
-                                    <option value="Completa">Completa</option>
-                                    <option value="Simplificada">Simplificada</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className={lbl}>Regime — Cônjuge</label>
-                                <select value={dados.regime_contratacao_conjuge || ''} onChange={e => persist('regime_contratacao_conjuge', e.target.value)} className={inp}>
-                                    <option value="">Selecione...</option>
-                                    <option value="Servidor Público">Servidor Público</option>
-                                    <option value="CLT">CLT</option>
-                                    <option value="Autônomo/Liberal">Autônomo / Liberal</option>
-                                    <option value="Empresário">Empresário</option>
-                                </select>
-                            </div>
-                        </>
                     )}
                 </div>
 
@@ -245,20 +250,20 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
             {/* Resultado */}
             {rendaTotal > 0 && totalDespesas > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="p-5 rounded-[12px] bg-emerald-600 text-white shadow-sm">
-                        <p className="text-[11px] font-bold text-emerald-200 uppercase tracking-widest mb-2">Cobertura — Cliente</p>
-                        <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaCliente)}</p>
-                        <p className="text-[11px] font-medium text-emerald-100 mt-2">Em caso de falecimento</p>
+                    <div className="p-5 rounded-[12px] bg-[color:var(--primary-soft)] border border-subtle shadow-sm">
+                        <p className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest mb-2">Cobertura — Cliente</p>
+                        <p className="text-[22px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(resultado.coberturaCliente)}</p>
+                        <p className="text-[11px] font-medium text-[color:var(--primary)] mt-2">Em caso de falecimento</p>
                     </div>
-                    <div className="p-5 rounded-[12px] bg-emerald-600 text-white shadow-sm">
-                        <p className="text-[11px] font-bold text-emerald-200 uppercase tracking-widest mb-2">Cobertura — Cônjuge</p>
-                        <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaConjuge)}</p>
-                        <p className="text-[11px] font-medium text-emerald-100 mt-2">Em caso de falecimento</p>
+                    <div className="p-5 rounded-[12px] bg-[color:var(--primary-soft)] border border-subtle shadow-sm">
+                        <p className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest mb-2">Cobertura — Cônjuge</p>
+                        <p className="text-[22px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(resultado.coberturaConjuge)}</p>
+                        <p className="text-[11px] font-medium text-[color:var(--primary)] mt-2">Em caso de falecimento</p>
                     </div>
-                    <div className="p-5 rounded-[12px] bg-violet-600 text-white shadow-sm">
-                        <p className="text-[11px] font-bold text-violet-200 uppercase tracking-widest mb-2">Cobertura Familiar Total</p>
-                        <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaFamiliar)}</p>
-                        <p className="text-[11px] font-medium text-violet-100 mt-2">Soma das coberturas</p>
+                    <div className="p-5 rounded-[12px] bg-surface border border-subtle shadow-sm">
+                        <p className="text-[11px] font-bold text-[color:var(--text-muted)] uppercase tracking-widest mb-2">Cobertura Familiar Total</p>
+                        <p className="text-[22px] font-bold text-main tracking-tight">{fmtMoeda(resultado.coberturaFamiliar)}</p>
+                        <p className="text-[11px] font-medium text-[color:var(--text-muted)] mt-2">Soma das coberturas</p>
                     </div>
                 </div>
             )}

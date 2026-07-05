@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Shield, Pencil, MessageCircle, Download, Settings
+    Shield, Pencil, MessageCircle, Download, Settings, Activity
 } from 'lucide-react';
 import SidePanel from '../UI/SidePanel';
 import { ClienteSeguro, DependenteSeguro, ParametrosCalculo, protecaoService } from '../../services/protecaoService';
@@ -29,6 +29,7 @@ interface Props {
 const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar }) => {
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
     const [drawer, setDrawer] = useState<null | 'seguros' | 'reserva' | 'plano' | 'extras'>(null);
+    const [score, setScore] = useState(0);
     const [saldoReserva, setSaldoReserva] = useState(0);
     const [coberturaContratada, setCoberturaContratada] = useState(0);
     const [reservaIdeal, setReservaIdeal] = useState(0);
@@ -77,10 +78,15 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
             setExtrasCount((extras || []).length);
         };
 
+        const loadScore = async () => {
+            try { setScore(await protecaoService.getScoreCliente(dados.cliente_id)); } catch { /* noop */ }
+        };
+
         loadReserva();
         loadPlanejador();
         loadSeguros();
         loadPilares();
+        loadScore();
     }, [dados.cliente_id]);
 
 
@@ -130,6 +136,8 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
         parcial: { label: 'Parcial', cor: 'var(--warning)', bg: 'rgba(251,191,36,0.12)' },
         desprotegido: { label: 'Desprotegido', cor: 'var(--danger)', bg: 'rgba(248,113,113,0.12)' },
     }[statusReserva];
+
+    const corScore = score >= 70 ? 'var(--primary)' : score >= 40 ? 'var(--warning)' : 'var(--danger)';
 
     // ─── WhatsApp ─────────────────────────────────────────────────────────────────
     const gerarWhatsApp = () => {
@@ -455,13 +463,20 @@ Planejador: ${planejadorEmail || '—'}`;
                             <p className="text-[12px] text-faint mt-1">Avaliação do tripé de proteção financeira</p>
                         </div>
                     </div>
-                    <button
-                        onClick={onEditar}
-                        className="shrink-0 flex items-center gap-2 px-3 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-all"
-                    >
-                        <Pencil size={12} />
-                        Editar levantamento
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-2 border border-subtle" title="Score de proteção (0–100)">
+                            <Activity size={14} style={{ color: corScore }} />
+                            <span className="text-[12px] text-muted hidden sm:inline">Score</span>
+                            <span className="text-[14px] font-bold" style={{ color: corScore }}>{Math.round(score)}%</span>
+                        </div>
+                        <button
+                            onClick={onEditar}
+                            className="flex items-center gap-2 px-3 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-all"
+                        >
+                            <Pencil size={12} />
+                            Editar levantamento
+                        </button>
+                    </div>
                 </div>
             </div>
 
