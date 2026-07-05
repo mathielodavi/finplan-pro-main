@@ -123,9 +123,9 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defau
     );
 
     return (
-        <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden">
+        <div className={defaultAberto ? '' : 'bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden'}>
             <button onClick={() => setAberto(v => !v)}
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors">
+                className={`w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors ${defaultAberto ? 'hidden' : ''}`}>
                 <div className="flex items-center gap-3">
                     <div className="h-9 w-9 bg-violet-50 rounded-[8px] flex items-center justify-center shrink-0">
                         <Umbrella size={16} className="text-violet-500" />
@@ -142,7 +142,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defau
             </button>
 
             {aberto && (
-                <div className="border-t border-subtle px-5 py-5 space-y-6">
+                <div className={`space-y-6 ${defaultAberto ? '' : 'border-t border-subtle px-5 py-5'}`}>
                     {/* ── Quadro Ideal vs Real ──────────────────────────────────── */}
                     <div className="rounded-xl border border-subtle overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface">
                         <div className="bg-surface px-4 py-3 border-b border-subtle">

@@ -117,11 +117,11 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
     const barColor = status === 'protegido' ? 'bg-[color:var(--primary)]' : status === 'parcial' ? 'bg-amber-400' : 'bg-rose-400';
 
     return (
-        <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden">
-            {/* Header do acordeão */}
+        <div className={defaultAberto ? '' : 'bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden'}>
+            {/* Header do acordeão (oculto quando embutido em drawer) */}
             <button
                 onClick={() => setAberto(v => !v)}
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors"
+                className={`w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors ${defaultAberto ? 'hidden' : ''}`}
             >
                 <div className="flex items-center gap-3">
                     <div className="h-9 w-9 bg-[color:var(--primary-soft)] rounded-[8px] flex items-center justify-center shrink-0">
@@ -140,7 +140,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
 
             {/* Conteúdo */}
             {aberto && (
-                <div className="border-t border-subtle px-5 py-5 space-y-6">
+                <div className={`space-y-6 ${defaultAberto ? '' : 'border-t border-subtle px-5 py-5'}`}>
                     {/* KPIs */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="bg-surface-2 border border-subtle rounded-xl p-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">

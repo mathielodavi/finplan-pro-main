@@ -63,9 +63,9 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
     const totalMensalidade = extras.reduce((a, e) => a + (e.mensalidade || 0), 0);
 
     return (
-        <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden">
+        <div className={defaultAberto ? '' : 'bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden'}>
             <button onClick={() => setAberto(v => !v)}
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors">
+                className={`w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors ${defaultAberto ? 'hidden' : ''}`}>
                 <div className="flex items-center gap-3">
                     <div className="h-9 w-9 bg-surface-2 rounded-[8px] flex items-center justify-center shrink-0">
                         <Package size={16} className="text-muted" />
@@ -90,7 +90,7 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
             </button>
 
             {aberto && (
-                <div className="border-t border-subtle px-5 py-5 space-y-5">
+                <div className={`space-y-5 ${defaultAberto ? '' : 'border-t border-subtle px-5 py-5'}`}>
                     {/* Total de mensalidades */}
                     {extras.length > 0 && (
                         <div className="flex items-center justify-between bg-surface-2 border border-subtle rounded-xl px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
