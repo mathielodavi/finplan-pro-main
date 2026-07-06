@@ -4,7 +4,7 @@ import { Umbrella, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check, Trendi
 import { SeguroVida, protecaoService, ClienteSeguro, DependenteSeguro } from '../../services/protecaoService';
 import { calcularCoberturaVida, calcularTaxaRealMensal } from '../../utils/calculosFinanceiros';
 
-const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-emerald-500 transition-all shadow-sm";
+const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
 const lbl = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
 const fmtMoeda = (v: number) => `R$ ${Math.round(v || 0).toLocaleString('pt-BR')}`;
 
@@ -36,10 +36,11 @@ interface Props {
     dados: ClienteSeguro;
     dependentes: DependenteSeguro[];
     parametros: { taxa_juros_aa: number; ipca_projetado_aa: number; perc_custos_inventario: number };
+    defaultAberto?: boolean;
 }
 
-const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => {
-    const [aberto, setAberto] = useState(false);
+const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defaultAberto }) => {
+    const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [seguros, setSeguros] = useState<SeguroVida[]>([]);
     const [loading, setLoading] = useState(false);
     const [modal, setModal] = useState(false);
@@ -122,12 +123,12 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
     );
 
     return (
-        <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden">
+        <div className={defaultAberto ? '' : 'bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden'}>
             <button onClick={() => setAberto(v => !v)}
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors">
+                className={`w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors ${defaultAberto ? 'hidden' : ''}`}>
                 <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 bg-violet-50 rounded-[8px] flex items-center justify-center shrink-0">
-                        <Umbrella size={16} className="text-violet-500" />
+                    <div className="h-9 w-9 bg-surface-2 rounded-[8px] flex items-center justify-center shrink-0">
+                        <Umbrella size={16} className="text-[color:var(--primary)]" />
                     </div>
                     <div className="text-left">
                         <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none mb-1">Pilar 3</p>
@@ -141,7 +142,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
             </button>
 
             {aberto && (
-                <div className="border-t border-subtle px-5 py-5 space-y-6">
+                <div className={`space-y-6 ${defaultAberto ? '' : 'border-t border-subtle px-5 py-5'}`}>
                     {/* ── Quadro Ideal vs Real ──────────────────────────────────── */}
                     <div className="rounded-xl border border-subtle overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface">
                         <div className="bg-surface px-4 py-3 border-b border-subtle">
@@ -160,11 +161,11 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
                                         <div className="flex items-center justify-between">
                                             <p className="text-[14px] font-bold text-main tracking-tight">{nome}</p>
                                             {ok ? (
-                                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                                                <span className="flex items-center gap-1 text-[10px] font-bold text-[color:var(--primary)] uppercase tracking-wider">
                                                     <Check size={11} /> Cobertura suficiente
                                                 </span>
                                             ) : (
-                                                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 uppercase tracking-wider">
+                                                <span className="flex items-center gap-1 text-[10px] font-bold text-[color:var(--warning)] uppercase tracking-wider">
                                                     <AlertTriangle size={11} /> Gap de cobertura
                                                 </span>
                                             )}
@@ -172,20 +173,20 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
                                         <div className="grid grid-cols-3 gap-3 text-center">
                                             <div className="bg-surface-2 border border-subtle rounded-xl p-3">
                                                 <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Ideal</p>
-                                                <p className="text-[14px] font-bold text-main tracking-tighter">{fmtMoeda(ideal)}</p>
+                                                <p className="text-[14px] font-bold text-main tracking-tight">{fmtMoeda(ideal)}</p>
                                             </div>
-                                            <div className={`rounded-xl p-3 ${real > 0 ? (ok ? 'bg-emerald-50/50 border border-emerald-100' : 'bg-amber-50/50 border border-amber-100') : 'bg-rose-50/50 border border-rose-100'}`}>
+                                            <div className={`rounded-xl p-3 ${real > 0 ? (ok ? 'bg-surface-2 border border-subtle' : 'bg-surface-2 border border-subtle') : 'bg-surface-2 border border-subtle'}`}>
                                                 <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Real</p>
-                                                <p className={`text-[14px] font-bold tracking-tighter ${real > 0 ? (ok ? 'text-emerald-700' : 'text-amber-700') : 'text-rose-500'}`}>{fmtMoeda(real)}</p>
+                                                <p className={`text-[14px] font-bold tracking-tight ${real > 0 ? (ok ? 'text-[color:var(--primary)]' : 'text-[color:var(--warning)]') : 'text-[color:var(--danger)]'}`}>{fmtMoeda(real)}</p>
                                             </div>
-                                            <div className={`rounded-xl p-3 ${gap <= 0 ? 'bg-emerald-50/50 border border-emerald-100' : 'bg-rose-50/50 border border-rose-100'}`}>
+                                            <div className={`rounded-xl p-3 ${gap <= 0 ? 'bg-surface-2 border border-subtle' : 'bg-surface-2 border border-subtle'}`}>
                                                 <p className="text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Gap</p>
-                                                <p className={`text-[14px] font-bold tracking-tighter ${gap <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{gap <= 0 ? '—' : fmtMoeda(gap)}</p>
+                                                <p className={`text-[14px] font-bold tracking-tight ${gap <= 0 ? 'text-[color:var(--primary)]' : 'text-[color:var(--danger)]'}`}>{gap <= 0 ? '—' : fmtMoeda(gap)}</p>
                                             </div>
                                         </div>
                                         <div className="space-y-1">
                                             <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
-                                                <div className={`h-full rounded-full transition-all ${ok ? 'bg-emerald-500' : real > 0 ? 'bg-amber-400' : 'bg-rose-400'}`}
+                                                <div className={`h-full rounded-full transition-all ${ok ? 'bg-[color:var(--primary)]' : real > 0 ? 'bg-[color:var(--warning)]' : 'bg-[color:var(--danger)]'}`}
                                                     style={{ width: `${pct}%` }} />
                                             </div>
                                             <p className="text-[11px] font-medium text-[color:var(--text-muted)] text-right">{pct.toFixed(0)}% coberto</p>
@@ -198,7 +199,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
 
                     {/* ── Lista de contratos ──────────────────────────────────── */}
                     {loading ? (
-                        <div className="py-6 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-emerald-500" /></div>
+                        <div className="py-6 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[color:var(--primary)]" /></div>
                     ) : seguros.length > 0 ? (
                         <div className="rounded-xl border border-subtle overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface">
                             <div className="bg-surface px-4 py-3 border-b border-subtle grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 text-[10px] font-bold text-faint uppercase tracking-wider">
@@ -209,11 +210,11 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
                                     <div key={s.id} className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-center px-4 py-2.5 hover:bg-surface-2 transition-colors">
                                         <p className="text-[12px] font-bold text-main capitalize tracking-tight">{s.membro}</p>
                                         <p className="text-[12px] font-bold text-main tracking-tight">{s.seguradora || '—'}</p>
-                                        <p className="text-[13px] font-bold text-violet-600 tracking-tighter">{fmtMoeda(s.cobertura_morte || 0)}</p>
-                                        <p className="text-[13px] font-bold text-emerald-600 tracking-tighter">{fmtMoeda(s.mensalidade || 0)}</p>
+                                        <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(s.cobertura_morte || 0)}</p>
+                                        <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(s.mensalidade || 0)}</p>
                                         <div className="flex gap-1">
-                                            <button onClick={() => openModal(s)} className="p-1.5 text-faint hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"><Edit2 size={13} /></button>
-                                            <button onClick={() => excluir(s.id!)} className="p-1.5 text-faint hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={13} /></button>
+                                            <button onClick={() => openModal(s)} className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Edit2 size={13} /></button>
+                                            <button onClick={() => excluir(s.id!)} className="p-1.5 text-faint hover:text-[color:var(--danger)] hover:bg-surface-2 rounded-lg transition-colors"><Trash2 size={13} /></button>
                                         </div>
                                     </div>
                                 ))}
@@ -224,7 +225,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
                     )}
 
                     <button onClick={() => openModal()}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-dashed border-violet-200 text-violet-600 hover:bg-violet-50 font-bold text-[10px] uppercase tracking-wider transition-all w-max shadow-sm">
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-dashed border-subtle text-[color:var(--primary)] hover:bg-surface-2 font-bold text-[10px] uppercase tracking-wider transition-all w-max shadow-sm">
                         <Plus size={13} /> Adicionar Seguro de Vida
                     </button>
                 </div>
@@ -269,7 +270,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros }) => 
 
                         <div className="flex gap-2 pt-4">
                             <button onClick={() => setModal(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-emerald-700 flex items-center justify-center gap-1.5">
+                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
                                 <Check size={13} /> Salvar
                             </button>
                         </div>

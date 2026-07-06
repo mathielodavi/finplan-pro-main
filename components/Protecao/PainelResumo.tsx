@@ -48,10 +48,10 @@ const PainelResumo: React.FC<Props> = ({ dados, dependentes, parametros, nomeCli
 
     // ── Linha do resumo ──────────────────────────────────────────────────────────
     const linhas = [
-        { label: 'Educação e Dependentes', valor: totalEducacao, cor: 'text-emerald-600' },
-        { label: 'Padrão de Vida — Cliente', valor: coberturaVida.coberturaCliente, cor: 'text-emerald-600' },
-        { label: 'Padrão de Vida — Cônjuge', valor: coberturaVida.coberturaConjuge, cor: 'text-emerald-600' },
-        { label: 'Sucessão Patrimonial', valor: sucessao.coberturaSucessao, cor: 'text-rose-600' },
+        { label: 'Educação e Dependentes', valor: totalEducacao, cor: 'text-[color:var(--primary)]' },
+        { label: 'Padrão de Vida — Cliente', valor: coberturaVida.coberturaCliente, cor: 'text-[color:var(--primary)]' },
+        { label: 'Padrão de Vida — Cônjuge', valor: coberturaVida.coberturaConjuge, cor: 'text-[color:var(--primary)]' },
+        { label: 'Sucessão Patrimonial', valor: sucessao.coberturaSucessao, cor: 'text-[color:var(--danger)]' },
     ];
 
     // ── WhatsApp template ────────────────────────────────────────────────────────
@@ -273,12 +273,12 @@ _Levantamento realizado via FinPlan Pro_`;
             {/* ── Header ─────────────────────────────────────────────────────────── */}
             <div className="flex items-center justify-between bg-surface p-4 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.05)] border border-subtle">
                 <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 bg-emerald-50 rounded-lg flex items-center justify-center">
-                        <CheckCircle2 className="text-emerald-500" size={20} />
+                    <div className="h-10 w-10 bg-[color:var(--primary-soft)] rounded-lg flex items-center justify-center">
+                        <CheckCircle2 className="text-[color:var(--primary)]" size={20} />
                     </div>
                     <div>
-                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-0.5">Levantamento Concluído</p>
-                        <h2 className="text-[20px] font-bold text-main tracking-tighter leading-none">
+                        <p className="text-[10px] font-bold text-[color:var(--primary)] uppercase tracking-wider mb-0.5">Levantamento Concluído</p>
+                        <h2 className="text-[20px] font-bold text-main tracking-tight leading-none">
                             {dados.nome_cliente || nomeCliente}
                         </h2>
                     </div>
@@ -296,42 +296,42 @@ _Levantamento realizado via FinPlan Pro_`;
                     {linhas.map((l, i) => (
                         <div key={i} className="flex justify-between items-center px-4 py-2.5 hover:bg-surface-2/50 transition-colors">
                             <span className="text-[13px] font-bold text-main tracking-tight">{l.label}</span>
-                            <span className={`text-[14px] font-bold tracking-tighter ${l.cor}`}>{fmtMoeda(l.valor)}</span>
+                            <span className={`text-[14px] font-bold tracking-tight ${l.cor}`}>{fmtMoeda(l.valor)}</span>
                         </div>
                     ))}
                     <div className="flex justify-between items-center px-4 py-3 bg-surface-3">
                         <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Total Geral</span>
-                        <span className="text-[20px] font-bold text-white leading-none tracking-tighter">{fmtMoeda(totalGeral)}</span>
+                        <span className="text-[20px] font-bold text-white leading-none tracking-tight">{fmtMoeda(totalGeral)}</span>
                     </div>
                 </div>
             </div>
 
             {/* ── Detalhes extras ────────────────────────────────────────────────── */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="p-4 bg-surface border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-xl h-[90px] flex flex-col justify-between hover:border-emerald-300 transition-all">
+                <div className="p-4 bg-surface border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-xl h-[90px] flex flex-col justify-between hover:border-[color:var(--primary)] transition-all">
                     <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none">Dependentes</p>
-                    <p className="text-[24px] font-bold text-main leading-none tracking-tighter">{dependentes.filter(d => d.nome_dependente?.trim()).length}</p>
+                    <p className="text-[24px] font-bold text-main leading-none tracking-tight">{dependentes.filter(d => d.nome_dependente?.trim()).length}</p>
                 </div>
-                <div className="p-4 bg-surface border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-xl h-[90px] flex flex-col justify-between hover:border-emerald-300 transition-all">
+                <div className="p-4 bg-surface border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-xl h-[90px] flex flex-col justify-between hover:border-[color:var(--primary)] transition-all">
                     <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none">Período de Cobertura</p>
-                    <p className="text-[24px] font-bold text-main leading-none tracking-tighter">{dados.periodo_cobertura_anos || 10} anos</p>
+                    <p className="text-[24px] font-bold text-main leading-none tracking-tight">{dados.periodo_cobertura_anos || 10} anos</p>
                 </div>
-                <div className="p-4 bg-surface border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-xl h-[90px] flex flex-col justify-between hover:border-emerald-300 transition-all">
+                <div className="p-4 bg-surface border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-xl h-[90px] flex flex-col justify-between hover:border-[color:var(--primary)] transition-all">
                     <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none">Estado do Levantamento</p>
-                    <p className="text-[14px] font-bold text-emerald-600 flex items-center gap-1.5 tracking-tight"><CheckCircle2 size={16}/> Completo</p>
+                    <p className="text-[14px] font-bold text-[color:var(--primary)] flex items-center gap-1.5 tracking-tight"><CheckCircle2 size={16}/> Completo</p>
                 </div>
             </div>
 
             {/* ── Botão de exportação em destaque ───────────────────────────────── */}
             <div className="bg-surface-3 rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg">
                 <div>
-                    <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1.5">Pronto para cotação</p>
+                    <p className="text-[10px] font-bold text-[color:var(--primary)] uppercase tracking-wider mb-1.5">Pronto para cotação</p>
                     <p className="text-[14px] font-bold text-white tracking-tight mb-0.5">Gere o relatório completo para enviar ao corretor de seguros</p>
                     <p className="text-[10px] text-faint font-bold uppercase tracking-wider">Inclui dados pessoais, dependentes, renda, despesas e coberturas calculadas.</p>
                 </div>
                 <button
                     onClick={gerarPDF}
-                    className="shrink-0 flex items-center gap-2 h-9 px-4 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-500 transition-all shadow-sm whitespace-nowrap"
+                    className="shrink-0 flex items-center gap-2 h-9 px-4 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-sm whitespace-nowrap"
                 >
                     <Download size={14} />
                     Baixar PDF para Corretor
@@ -349,14 +349,14 @@ _Levantamento realizado via FinPlan Pro_`;
                 </button>
                 <button
                     onClick={gerarWhatsApp}
-                    className="flex items-center gap-1.5 h-9 px-4 rounded-[8px] bg-surface border border-emerald-200 text-emerald-700 font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-50 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                    className="flex items-center gap-1.5 h-9 px-4 rounded-[8px] bg-surface border border-subtle text-[color:var(--primary)] font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
                 >
                     <MessageCircle size={14} />
                     Gerar Template WhatsApp
                 </button>
                 <button
                     onClick={concluir}
-                    className="flex items-center gap-1.5 h-9 px-4 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-700 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                    className="flex items-center gap-1.5 h-9 px-4 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
                 >
                     <CheckCircle2 size={14} />
                     Salvar e Concluir

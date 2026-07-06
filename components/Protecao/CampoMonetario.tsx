@@ -30,11 +30,11 @@ const CampoMonetario: React.FC<CampoMonetarioProps> = ({
 
     return (
         <div className={className}>
-            <label className="block text-[9px] font-black text-faint uppercase tracking-widest ml-1 mb-1.5">
-                {label}{required && <span className="text-rose-400 ml-0.5">*</span>}
+            <label className="block text-[9px] font-semibold text-faint uppercase tracking-widest ml-1 mb-1.5">
+                {label}{required && <span className="text-[color:var(--danger)] ml-0.5">*</span>}
             </label>
             <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-faint pointer-events-none">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-faint pointer-events-none">
                     R$
                 </span>
                 <input
@@ -43,7 +43,7 @@ const CampoMonetario: React.FC<CampoMonetarioProps> = ({
                     onChange={handleChange}
                     disabled={disabled}
                     placeholder={placeholder}
-                    className={`w-full pl-9 pr-4 py-2.5 bg-surface border border-subtle rounded-xl font-bold text-main text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-600 transition-all ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    className={`w-full pl-9 pr-4 py-2.5 bg-surface border border-subtle rounded-xl font-bold text-main text-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
                 />
             </div>
         </div>

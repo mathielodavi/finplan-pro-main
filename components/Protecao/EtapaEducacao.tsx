@@ -6,7 +6,7 @@ import { calcularIdade, calcularVP, calcularTaxaRealMensal } from '../../utils/c
 import { protecaoService } from '../../services/protecaoService';
 import TooltipAjuda from './TooltipAjuda';
 
-const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all";
+const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all";
 const lbl = "block text-[12px] font-semibold text-[color:var(--text-muted)] ml-1 mb-1.5";
 const ANOS_OPCOES = [1, 2, 3, 5, 8, 10, 12, 15, 18, 20];
 const fmtMoeda = (v: number) => `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
@@ -53,7 +53,7 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
             {/* Header informativo */}
             <div className="rounded-[12px] border border-[color:var(--border)] overflow-hidden shadow-[var(--shadow-card)]">
                 <div className="bg-surface-2 px-5 py-3.5 border-b border-[color:var(--border)] flex items-center gap-3">
-                    <GraduationCap size={16} className="text-emerald-500" />
+                    <GraduationCap size={16} className="text-[color:var(--primary)]" />
                     <p className="text-[12px] font-semibold text-main uppercase tracking-widest">Cobertura Educacional</p>
                     <TooltipAjuda
                         className="ml-1"
@@ -86,17 +86,17 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
                             <div key={i} className="rounded-[12px] border border-[color:var(--border)] overflow-hidden bg-surface shadow-sm">
                                 <div className="bg-surface-2 px-5 py-3.5 border-b border-[color:var(--border)] flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <span className="h-5 w-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-bold">
+                                        <span className="h-5 w-5 rounded-full bg-[color:var(--primary-soft)] text-[color:var(--primary)] flex items-center justify-center text-[10px] font-bold">
                                             {i + 1}
                                         </span>
                                         <span className="font-bold text-[14px] text-main">{dep.nome_dependente}</span>
                                         <span className="text-[11px] font-semibold text-[color:var(--text-muted)]">{dep.parentesco}</span>
                                         {idade !== null && (
-                                            <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{idade} anos</span>
+                                            <span className="text-[11px] font-semibold text-[color:var(--primary)] bg-[color:var(--primary-soft)] px-2 py-0.5 rounded-full">{idade} anos</span>
                                         )}
                                     </div>
                                     {total > 0 && (
-                                        <span className="text-[14px] font-bold text-emerald-600">{fmtMoeda(total)}</span>
+                                        <span className="text-[14px] font-bold text-[color:var(--primary)]">{fmtMoeda(total)}</span>
                                     )}
                                 </div>
 
@@ -109,8 +109,8 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
                                                     <button key={a} type="button"
                                                         onClick={() => update(i, 'cobertura_anos', a)}
                                                         className={`px-3 h-[32px] rounded-md text-[12px] font-bold border transition-all ${(dep.cobertura_anos || 10) === a
-                                                            ? 'bg-emerald-600 border-emerald-600 text-white'
-                                                            : 'bg-surface border-[color:var(--border)] text-[color:var(--text-muted)] hover:border-emerald-500'
+                                                            ? 'bg-[color:var(--primary)] border-[color:var(--primary)] text-white'
+                                                            : 'bg-surface border-[color:var(--border)] text-[color:var(--text-muted)] hover:border-[color:var(--primary)]'
                                                             }`}
                                                     >
                                                         {a}a
@@ -121,7 +121,7 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
                                         <div>
                                             <label className={lbl}>Auxílio mensal</label>
                                             <div className="relative">
-                                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-faint">R$</span>
+                                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-faint">R$</span>
                                                 <input
                                                     type="text"
                                                     value={auxFormatted}
@@ -134,12 +134,12 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
                                     </div>
 
                                     {total > 0 && (
-                                        <div className="bg-emerald-50 rounded-[12px] px-4 py-3 flex justify-between items-center">
+                                        <div className="bg-[color:var(--primary-soft)] rounded-[12px] px-4 py-3 flex justify-between items-center">
                                             <div>
-                                                <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest">Cobertura necessária (VP)</p>
-                                                <p className="text-[11px] font-medium text-emerald-600/80 mt-0.5">{dep.cobertura_anos} anos · R$ {(dep.auxilio_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</p>
+                                                <p className="text-[11px] font-bold text-[color:var(--primary)] uppercase tracking-widest">Cobertura necessária (VP)</p>
+                                                <p className="text-[11px] font-medium text-[color:var(--primary)]/80 mt-0.5">{dep.cobertura_anos} anos · R$ {(dep.auxilio_mensal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</p>
                                             </div>
-                                            <p className="text-[18px] font-bold text-emerald-700">{fmtMoeda(total)}</p>
+                                            <p className="text-[18px] font-bold text-[color:var(--primary)]">{fmtMoeda(total)}</p>
                                         </div>
                                     )}
                                 </div>

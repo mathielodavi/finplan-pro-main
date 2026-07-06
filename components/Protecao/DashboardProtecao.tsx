@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Shield, Pencil, MessageCircle, Download
+    Shield, Pencil, MessageCircle, Download, Settings, Activity
 } from 'lucide-react';
+import SidePanel from '../UI/SidePanel';
 import { ClienteSeguro, DependenteSeguro, ParametrosCalculo, protecaoService } from '../../services/protecaoService';
 import { calcularCoberturaVida, calcularSucessao, calcularTaxaRealMensal } from '../../utils/calculosFinanceiros';
 import AcordeoReservaEmergencia from './AcordeoReservaEmergencia';
@@ -27,7 +28,13 @@ interface Props {
 
 const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar }) => {
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
+    const [drawer, setDrawer] = useState<null | 'seguros' | 'reserva' | 'plano' | 'extras'>(null);
+    const [score, setScore] = useState(0);
     const [saldoReserva, setSaldoReserva] = useState(0);
+    const [coberturaContratada, setCoberturaContratada] = useState(0);
+    const [reservaIdeal, setReservaIdeal] = useState(0);
+    const [planosCount, setPlanosCount] = useState(0);
+    const [extrasCount, setExtrasCount] = useState(0);
     const [planejadorEmail, setPlanejadorEmail] = useState('');
     const [planejadorNome, setPlanejadorNome] = useState('');
 
@@ -54,8 +61,32 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
             if (user?.user_metadata?.full_name) setPlanejadorNome(user.user_metadata.full_name);
         };
 
+        const loadSeguros = async () => {
+            const seguros = await protecaoService.getSegurosVida(dados.cliente_id);
+            const soma = (seguros || []).reduce((acc, s) => acc + (Number(s.cobertura_morte) || 0), 0);
+            setCoberturaContratada(soma);
+        };
+
+        const loadPilares = async () => {
+            const [{ data: cli }, planos, extras] = await Promise.all([
+                supabase.from('clientes').select('reserva_recomendada').eq('id', dados.cliente_id).maybeSingle(),
+                protecaoService.getPlanosSaude(dados.cliente_id),
+                protecaoService.getSegurosExtras(dados.cliente_id),
+            ]);
+            setReservaIdeal(cli?.reserva_recomendada || 0);
+            setPlanosCount((planos || []).length);
+            setExtrasCount((extras || []).length);
+        };
+
+        const loadScore = async () => {
+            try { setScore(await protecaoService.getScoreCliente(dados.cliente_id)); } catch { /* noop */ }
+        };
+
         loadReserva();
         loadPlanejador();
+        loadSeguros();
+        loadPilares();
+        loadScore();
     }, [dados.cliente_id]);
 
 
@@ -87,6 +118,26 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
 
     const totalEducacao = dependentes.reduce((acc, d) => acc + (d.total_calculado || 0), 0);
     const totalGeral = totalEducacao + coberturaVida.coberturaFamiliar + sucessao.coberturaSucessao;
+    const lacunaTotal = Math.max(0, totalGeral - coberturaContratada);
+
+    // Pilares da necessidade recomendada (o "contratado" não é etiquetado por pilar).
+    const pilares = [
+        { label: 'Educação e dependentes', valor: totalEducacao },
+        { label: 'Padrão de vida', valor: coberturaVida.coberturaFamiliar },
+        { label: 'Sucessão patrimonial', valor: sucessao.coberturaSucessao },
+    ];
+
+    // Panorama dos demais pilares (leitura) — mesma regra do acordeão de reserva.
+    const pctReserva = reservaIdeal > 0 ? (saldoReserva / reservaIdeal) * 100 : 0;
+    const statusReserva: 'protegido' | 'parcial' | 'desprotegido' =
+        saldoReserva <= 0 ? 'desprotegido' : pctReserva >= 100 ? 'protegido' : pctReserva >= 25 ? 'parcial' : 'desprotegido';
+    const statusMap = {
+        protegido: { label: 'Protegido', cor: 'var(--primary)', bg: 'rgba(16,185,129,0.12)' },
+        parcial: { label: 'Parcial', cor: 'var(--warning)', bg: 'rgba(251,191,36,0.12)' },
+        desprotegido: { label: 'Desprotegido', cor: 'var(--danger)', bg: 'rgba(248,113,113,0.12)' },
+    }[statusReserva];
+
+    const corScore = score >= 70 ? 'var(--primary)' : score >= 40 ? 'var(--warning)' : 'var(--danger)';
 
     // ─── WhatsApp ─────────────────────────────────────────────────────────────────
     const gerarWhatsApp = () => {
@@ -412,28 +463,96 @@ Planejador: ${planejadorEmail || '—'}`;
                             <p className="text-[12px] text-faint mt-1">Avaliação do tripé de proteção financeira</p>
                         </div>
                     </div>
-                    <button
-                        onClick={onEditar}
-                        className="shrink-0 flex items-center gap-2 px-3 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-all"
-                    >
-                        <Pencil size={12} />
-                        Editar levantamento
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-2 border border-subtle" title="Score de proteção (0–100)">
+                            <Activity size={14} style={{ color: corScore }} />
+                            <span className="text-[12px] text-muted hidden sm:inline">Score</span>
+                            <span className="text-[14px] font-bold" style={{ color: corScore }}>{Math.round(score)}%</span>
+                        </div>
+                        <button
+                            onClick={onEditar}
+                            className="flex items-center gap-2 px-3 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-all"
+                        >
+                            <Pencil size={12} />
+                            Editar levantamento
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* ── Acordeões ──────────────────────────────────────────── */}
-            <div className="space-y-3">
-                <AcordeoReservaEmergencia dados={dados} parametros={parametros} onUpdate={handleUpdate} saldoReserva={saldoReserva} />
-                <AcordeoPlanoSaude dados={dados} dependentes={dependentes} />
-                <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} />
-                <AcordeoExtras dados={dados} />
+            {/* ── Pilar: Seguros de vida (necessidade × cobertura × lacuna) ── */}
+            <div className="bg-surface rounded-xl border border-subtle p-4 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-baseline gap-2">
+                        <h3 className="text-[13px] font-semibold text-main">Seguros de vida</h3>
+                        <span className="text-[11px] text-faint">necessidade × contratado</span>
+                    </div>
+                    <button onClick={() => setDrawer('seguros')} className="shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">
+                        <Pencil size={12} /> Gerenciar apólices
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
+                        <p className="text-[11px] text-faint">Necessidade</p>
+                        <p className="text-[20px] font-bold text-main leading-none mt-1">{fmtMoeda(totalGeral)}</p>
+                    </div>
+                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
+                        <p className="text-[11px] text-faint">Cobertura atual</p>
+                        <p className="text-[20px] font-bold text-[color:var(--primary)] leading-none mt-1">{fmtMoeda(coberturaContratada)}</p>
+                    </div>
+                    <div className="rounded-lg border p-3" style={{ backgroundColor: 'rgba(248,113,113,0.10)', borderColor: 'rgba(248,113,113,0.25)' }}>
+                        <p className="text-[11px] text-[color:var(--danger)]">Lacuna a cobrir</p>
+                        <p className="text-[20px] font-bold text-[color:var(--danger)] leading-none mt-1">{fmtMoeda(lacunaTotal)}</p>
+                    </div>
+                </div>
+
+                <div className="border border-subtle rounded-lg overflow-hidden">
+                    <div className="flex justify-between items-center px-3 py-2 bg-surface-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Pilar da necessidade</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Valor recomendado</span>
+                    </div>
+                    {pilares.map((p, i) => (
+                        <div key={i} className="flex justify-between items-center px-3 py-2.5 text-[13px] border-t border-subtle">
+                            <span className="text-muted">{p.label}</span>
+                            <span className="font-semibold text-main">{fmtMoeda(p.valor)}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <p className="text-[11px] text-faint">A cobertura atual soma os seguros de vida contratados (cobertura por morte). O comparativo é no total — o detalhamento do contratado por pilar depende de etiquetar cada apólice.</p>
+            </div>
+
+            {/* ── Outros pilares (leitura + editar em drawer) ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[12px] font-semibold text-main">Reserva de emergência</span>
+                        <button onClick={() => setDrawer('reserva')} title="Configurar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Settings size={15} /></button>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ color: statusMap.cor, backgroundColor: statusMap.bg }}>{statusMap.label}</span>
+                    <p className="text-[13px] font-semibold text-main mt-2">{fmtMoeda(saldoReserva)} <span className="text-faint font-normal">/ {fmtMoeda(reservaIdeal)}</span></p>
+                </div>
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[12px] font-semibold text-main">Plano de saúde</span>
+                        <button onClick={() => setDrawer('plano')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
+                    </div>
+                    <p className="text-[13px] font-semibold text-main">{planosCount > 0 ? `${planosCount} contratado(s)` : 'Nenhum'}</p>
+                </div>
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[12px] font-semibold text-main">Proteções extras</span>
+                        <button onClick={() => setDrawer('extras')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
+                    </div>
+                    <p className="text-[13px] font-semibold text-main">{extrasCount > 0 ? `${extrasCount} apólice(s)` : 'Nenhuma'}</p>
+                </div>
             </div>
 
             {/* ── Faixa de exportação ─────────────────────────────────── */}
             <div className="bg-surface-3 rounded-xl p-5 flex items-center justify-between gap-4 flex-wrap shadow-lg">
                 <div>
-                    <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Pronto para cotação</p>
+                    <p className="text-[10px] font-bold text-[color:var(--primary)] uppercase tracking-wider mb-1">Pronto para cotação</p>
                     <p className="text-[14px] font-bold text-white tracking-tight">Compartilhe o levantamento com seu corretor</p>
                     <p className="text-[10px] text-faint mt-1 font-bold uppercase tracking-wider">Inclui todos os dados do levantamento com visão cliente/cônjuge.</p>
                 </div>
@@ -447,13 +566,44 @@ Planejador: ${planejadorEmail || '—'}`;
                     </button>
                     <button
                         onClick={gerarPDF}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-500 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
                     >
                         <Download size={14} />
                         Baixar PDF
                     </button>
                 </div>
             </div>
+
+            {/* ── Drawers de edição por pilar ── */}
+            <SidePanel open={drawer === 'seguros'} onClose={() => setDrawer(null)} title="Seguros de vida" subtitle="Necessidade e apólices contratadas" widthClass="max-w-2xl">
+                <div className="space-y-4">
+                    <div className="border border-subtle rounded-lg overflow-hidden">
+                        <div className="flex justify-between items-center px-3 py-2 bg-surface-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Necessidade por pilar</span>
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Recomendado</span>
+                        </div>
+                        {pilares.map((p, i) => (
+                            <div key={i} className="flex justify-between items-center px-3 py-2.5 text-[13px] border-t border-subtle">
+                                <span className="text-muted">{p.label}</span>
+                                <span className="font-semibold text-main">{fmtMoeda(p.valor)}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} defaultAberto />
+                </div>
+            </SidePanel>
+
+            <SidePanel open={drawer === 'reserva'} onClose={() => setDrawer(null)} title="Reserva de emergência" widthClass="max-w-2xl">
+                <AcordeoReservaEmergencia dados={dados} parametros={parametros} onUpdate={handleUpdate} saldoReserva={saldoReserva} defaultAberto />
+            </SidePanel>
+
+            <SidePanel open={drawer === 'plano'} onClose={() => setDrawer(null)} title="Plano de saúde" widthClass="max-w-2xl">
+                <AcordeoPlanoSaude dados={dados} dependentes={dependentes} defaultAberto />
+            </SidePanel>
+
+            <SidePanel open={drawer === 'extras'} onClose={() => setDrawer(null)} title="Proteções extras" widthClass="max-w-2xl">
+                <AcordeoExtras dados={dados} defaultAberto />
+            </SidePanel>
         </div>
     );
 };
