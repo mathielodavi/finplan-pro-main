@@ -114,7 +114,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
     };
 
     const barW = Math.min(pct, 100);
-    const barColor = status === 'protegido' ? 'bg-[color:var(--primary)]' : status === 'parcial' ? 'bg-amber-400' : 'bg-rose-400';
+    const barColor = status === 'protegido' ? 'bg-[color:var(--primary)]' : status === 'parcial' ? 'bg-[color:var(--warning)]' : 'bg-[color:var(--danger)]';
 
     return (
         <div className={defaultAberto ? '' : 'bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden'}>
@@ -272,7 +272,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                                         ) : (
                                             <button
                                                 onClick={() => item.setter!(!item.state)}
-                                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${item.state ? 'bg-emerald-600' : 'bg-surface-3'}`}
+                                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${item.state ? 'bg-[color:var(--primary)]' : 'bg-surface-3'}`}
                                             >
                                                 <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${item.state ? 'translate-x-5' : 'translate-x-0.5'}`} />
                                             </button>
@@ -293,7 +293,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
 
                         <div className="flex gap-2 pt-4">
                             <button onClick={() => setModalAberto(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
+                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
                                 <Check size={13} /> Salvar
                             </button>
                         </div>

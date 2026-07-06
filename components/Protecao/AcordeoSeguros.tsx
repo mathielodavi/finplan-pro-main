@@ -127,8 +127,8 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defau
             <button onClick={() => setAberto(v => !v)}
                 className={`w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors ${defaultAberto ? 'hidden' : ''}`}>
                 <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 bg-violet-50 rounded-[8px] flex items-center justify-center shrink-0">
-                        <Umbrella size={16} className="text-violet-500" />
+                    <div className="h-9 w-9 bg-surface-2 rounded-[8px] flex items-center justify-center shrink-0">
+                        <Umbrella size={16} className="text-[color:var(--primary)]" />
                     </div>
                     <div className="text-left">
                         <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none mb-1">Pilar 3</p>
@@ -186,7 +186,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defau
                                         </div>
                                         <div className="space-y-1">
                                             <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
-                                                <div className={`h-full rounded-full transition-all ${ok ? 'bg-[color:var(--primary)]' : real > 0 ? 'bg-amber-400' : 'bg-rose-400'}`}
+                                                <div className={`h-full rounded-full transition-all ${ok ? 'bg-[color:var(--primary)]' : real > 0 ? 'bg-[color:var(--warning)]' : 'bg-[color:var(--danger)]'}`}
                                                     style={{ width: `${pct}%` }} />
                                             </div>
                                             <p className="text-[11px] font-medium text-[color:var(--text-muted)] text-right">{pct.toFixed(0)}% coberto</p>
@@ -210,7 +210,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defau
                                     <div key={s.id} className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-center px-4 py-2.5 hover:bg-surface-2 transition-colors">
                                         <p className="text-[12px] font-bold text-main capitalize tracking-tight">{s.membro}</p>
                                         <p className="text-[12px] font-bold text-main tracking-tight">{s.seguradora || '—'}</p>
-                                        <p className="text-[13px] font-bold text-violet-600 tracking-tight">{fmtMoeda(s.cobertura_morte || 0)}</p>
+                                        <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(s.cobertura_morte || 0)}</p>
                                         <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(s.mensalidade || 0)}</p>
                                         <div className="flex gap-1">
                                             <button onClick={() => openModal(s)} className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Edit2 size={13} /></button>
@@ -225,7 +225,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defau
                     )}
 
                     <button onClick={() => openModal()}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-dashed border-violet-200 text-violet-600 hover:bg-violet-50 font-bold text-[10px] uppercase tracking-wider transition-all w-max shadow-sm">
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-dashed border-subtle text-[color:var(--primary)] hover:bg-surface-2 font-bold text-[10px] uppercase tracking-wider transition-all w-max shadow-sm">
                         <Plus size={13} /> Adicionar Seguro de Vida
                     </button>
                 </div>
@@ -270,7 +270,7 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, defau
 
                         <div className="flex gap-2 pt-4">
                             <button onClick={() => setModal(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
+                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
                                 <Check size={13} /> Salvar
                             </button>
                         </div>

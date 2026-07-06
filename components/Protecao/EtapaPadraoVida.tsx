@@ -177,7 +177,7 @@ const EtapaPadraoVida: React.FC<Props> = ({ dados, onChange, onChangeMultiple, p
                                     type="button"
                                     onClick={() => persist(item.inclCampo, !item.incl)}
                                     title={item.incl ? 'Incluído na cobertura de seguro' : 'Excluído da cobertura de seguro'}
-                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${item.incl ? 'bg-emerald-600' : 'bg-surface-3'}`}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${item.incl ? 'bg-[color:var(--primary)]' : 'bg-surface-3'}`}
                                 >
                                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${item.incl ? 'translate-x-5' : 'translate-x-0.5'}`} />
                                 </button>

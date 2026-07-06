@@ -99,7 +99,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
 
     const Toggle = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
         <button type="button" onClick={() => onChange(!value)}
-            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${value ? 'bg-emerald-600' : 'bg-surface-3'}`}>
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${value ? 'bg-[color:var(--primary)]' : 'bg-surface-3'}`}>
             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
         </button>
     );
@@ -226,7 +226,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
                                     </div>
                                     <button type="button"
                                         onClick={() => setForm(f => ({ ...f, [key]: !(f as any)[key] }))}
-                                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${(form as any)[key] ? 'bg-emerald-600' : 'bg-surface-3'}`}>
+                                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${(form as any)[key] ? 'bg-[color:var(--primary)]' : 'bg-surface-3'}`}>
                                         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${(form as any)[key] ? 'translate-x-5' : 'translate-x-0.5'}`} />
                                     </button>
                                 </div>
@@ -235,7 +235,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
 
                         <div className="flex gap-2 pt-4">
                             <button onClick={() => setModal(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
+                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
                                 <Check size={13} /> Salvar
                             </button>
                         </div>

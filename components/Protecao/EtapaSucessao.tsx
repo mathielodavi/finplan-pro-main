@@ -188,9 +188,9 @@ const EtapaSucessao: React.FC<Props> = ({ dados, onChange, parametros }) => {
                     <p className="text-[11px] font-medium text-[color:var(--primary)] mt-1">PGBL + VGBL (isento de inventário)</p>
                 </div>
                 <div className="p-5 bg-[color:var(--danger)] rounded-[12px] text-white shadow-sm">
-                    <p className="text-[11px] font-bold text-rose-200 uppercase tracking-widest mb-2">Cobertura Necessária — Sucessão</p>
+                    <p className="text-[11px] font-bold text-white/70 uppercase tracking-widest mb-2">Cobertura Necessária — Sucessão</p>
                     <p className="text-[22px] font-bold tracking-tight">{fmtMoeda(resultado.coberturaSucessao)}</p>
-                    <p className="text-[11px] font-medium text-rose-200 mt-1">Necessidades − Ativos previdenciários</p>
+                    <p className="text-[11px] font-medium text-white/70 mt-1">Necessidades − Ativos previdenciários</p>
                 </div>
             </div>
         </div>

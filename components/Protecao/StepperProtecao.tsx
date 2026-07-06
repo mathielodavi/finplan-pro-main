@@ -187,7 +187,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                                     <button
                                         onClick={() => irParaEtapa(e.id)}
                                         title={preenchida ? 'Preenchida' : 'Pendente'}
-                                        className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-[13px] border-2 transition-all ${ativa ? 'ring-2 ring-[color:var(--primary-soft)]' : ''} ${preenchida ? 'bg-emerald-600 border-[color:var(--primary)] text-white' :
+                                        className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-[13px] border-2 transition-all ${ativa ? 'ring-2 ring-[color:var(--primary-soft)]' : ''} ${preenchida ? 'bg-[color:var(--primary)] border-[color:var(--primary)] text-white' :
                                             ativa ? 'bg-surface border-[color:var(--primary)] text-[color:var(--primary)] shadow-sm' :
                                                 'bg-surface border-subtle text-faint'
                                             }`}
@@ -200,7 +200,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                                     </span>
                                 </div>
                                 {i < ETAPAS.length - 1 && (
-                                    <div className={`flex-1 h-0.5 mb-6 max-w-[60px] transition-colors ${preenchida ? 'bg-emerald-400' : 'bg-surface-3'}`} />
+                                    <div className={`flex-1 h-0.5 mb-6 max-w-[60px] transition-colors ${preenchida ? 'bg-[color:var(--primary)]' : 'bg-surface-3'}`} />
                                 )}
                             </React.Fragment>
                         );
@@ -286,7 +286,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                         </button>
                         <button
                             onClick={proximo}
-                            className="px-6 h-[40px] flex items-center justify-center rounded-lg bg-emerald-600 text-white font-bold text-[11px] uppercase tracking-widest hover:opacity-90 transition-all shadow-sm"
+                            className="px-6 h-[40px] flex items-center justify-center rounded-lg bg-[color:var(--primary)] text-white font-bold text-[11px] uppercase tracking-widest hover:opacity-90 transition-all shadow-sm"
                         >
                             {etapa === 5 ? 'Ver Resumo →' : 'Próximo →'}
                         </button>

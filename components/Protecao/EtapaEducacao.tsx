@@ -109,7 +109,7 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
                                                     <button key={a} type="button"
                                                         onClick={() => update(i, 'cobertura_anos', a)}
                                                         className={`px-3 h-[32px] rounded-md text-[12px] font-bold border transition-all ${(dep.cobertura_anos || 10) === a
-                                                            ? 'bg-emerald-600 border-[color:var(--primary)] text-white'
+                                                            ? 'bg-[color:var(--primary)] border-[color:var(--primary)] text-white'
                                                             : 'bg-surface border-[color:var(--border)] text-[color:var(--text-muted)] hover:border-[color:var(--primary)]'
                                                             }`}
                                                     >

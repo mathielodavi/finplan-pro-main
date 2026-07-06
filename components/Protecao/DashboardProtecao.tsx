@@ -566,7 +566,7 @@ Planejador: ${planejadorEmail || '—'}`;
                     </button>
                     <button
                         onClick={gerarPDF}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
                     >
                         <Download size={14} />
                         Baixar PDF

@@ -331,7 +331,7 @@ _Levantamento realizado via FinPlan Pro_`;
                 </div>
                 <button
                     onClick={gerarPDF}
-                    className="shrink-0 flex items-center gap-2 h-9 px-4 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-sm whitespace-nowrap"
+                    className="shrink-0 flex items-center gap-2 h-9 px-4 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-sm whitespace-nowrap"
                 >
                     <Download size={14} />
                     Baixar PDF para Corretor
@@ -356,7 +356,7 @@ _Levantamento realizado via FinPlan Pro_`;
                 </button>
                 <button
                     onClick={concluir}
-                    className="flex items-center gap-1.5 h-9 px-4 rounded-[8px] bg-emerald-600 text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                    className="flex items-center gap-1.5 h-9 px-4 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
                 >
                     <CheckCircle2 size={14} />
                     Salvar e Concluir
