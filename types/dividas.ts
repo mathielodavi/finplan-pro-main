@@ -5,6 +5,7 @@ export type MonetaryIndex = 'IPCA' | 'INCC' | 'IGP-M' | 'fixed' | 'none';
 export type ContemplationStatus = 'not_contemplated' | 'contemplated_by_draw' | 'contemplated_by_bid' | 'awaiting_confirmation';
 export type BidStrategy = 'none' | 'own_resources' | 'fgts' | 'credit_bid' | 'mixed';
 export type PrioritizationMethod = 'avalanche' | 'snowball';
+export type AmortizationSystem = 'price' | 'sac';
 
 export interface DividaCredito {
     debt_id?: string;
@@ -24,6 +25,10 @@ export interface DividaCredito {
     payoff_balance: number;
     total_paid: number; // calculated
     income_commitment: number; // calculated
+    /** Sistema de amortização: price (parcela fixa) ou sac (amortização constante, parcela decrescente). */
+    amortization_system: AmortizationSystem;
+    /** Correção monetária anual (%), relevante principalmente para financiamentos indexados (TR/IPCA). */
+    monetary_correction_annual?: number;
     collateral?: string;
     notes?: string;
     created_at?: string;
@@ -42,7 +47,6 @@ export interface DividaConsorcio {
     current_installment_value: number;
     contract_type: ContractType;
     admin_fee_total: number;
-    admin_fee_monthly: number;
     reserve_fund_rate: number;
     insurance_monthly?: number;
     monetary_index: MonetaryIndex;
@@ -50,7 +54,6 @@ export interface DividaConsorcio {
     contemplation_status: ContemplationStatus;
     contemplation_date?: string;
     asset_released: boolean;
-    asset_description?: string;
     fgts_eligible: boolean;
     last_assembly_number: number;
     group_size: number;

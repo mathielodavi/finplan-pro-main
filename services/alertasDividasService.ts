@@ -54,6 +54,18 @@ export const alertasDividaService = {
             });
         }
 
+        // ALERT CL-05: parcela cadastrada não cobre os juros do período (amortização negativa) —
+        // pelos números cadastrados, esta dívida nunca se paga sozinha, mesmo pagando em dia.
+        const jurosMensais = credito.outstanding_balance * ((credito.cet_monthly || 0) / 100);
+        if (credito.outstanding_balance > 0 && credito.installment_value > 0 && credito.installment_value < jurosMensais) {
+            alertas.push({
+                id: 'CL-05',
+                recordId: credito.debt_id as string,
+                severity: 'CRITICAL',
+                message: 'Parcela cadastrada não cobre os juros do saldo devedor — pelos números atuais, o saldo cresce mesmo em dia. Revisar taxa/parcela cadastrada ou negociar renegociação.'
+            });
+        }
+
         return alertas;
     },
 

@@ -4,6 +4,7 @@ import { investimentoService } from '../../services/investimentoService';
 import { obterClientePorId, atualizarCliente } from '../../services/clienteService';
 import { configService } from '../../services/configuracoesService';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
+import { cotacaoService } from '../../services/cotacaoService';
 import { formatarMoeda, formatarData } from '../../utils/formatadores';
 import {
   CheckCircle2, ShieldCheck, Target,
@@ -213,6 +214,28 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   const updateManual = (id: string, up: Partial<ManualOverride>) => {
     setManualSettings(prev => ({ ...prev, [id]: { ...prev[id], ...up } }));
   };
+
+  // Cotação automática (edge function cotacao-ativos, via brapi.dev) para ativos de bolsa com
+  // ticker — só preenche o preço de mercado quando o usuário ainda não editou manualmente
+  // aquele ativo, e tenta cada ticker uma única vez por sessão (falha/ticker não encontrado
+  // nunca bloqueia: o campo simplesmente continua disponível para preenchimento manual).
+  const tickersTentadosRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const candidatos = distribuicaoAtivos.flatMap((c: any) => c.ativos || [])
+      .filter((a: any) => a.acao === 'COMPRAR' && a.ticker && manualSettings[a.id]?.preco_mercado === undefined && !tickersTentadosRef.current.has(a.ticker));
+    const tickers = Array.from(new Set(candidatos.map((a: any) => a.ticker)));
+    if (tickers.length === 0) return;
+    tickers.forEach(t => tickersTentadosRef.current.add(t));
+
+    cotacaoService.getCotacoes(tickers).then(cotacoes => {
+      candidatos.forEach((a: any) => {
+        if (cotacoes[a.ticker] && manualSettings[a.id]?.preco_mercado === undefined) {
+          updateManual(a.id, { preco_mercado: cotacoes[a.ticker] });
+        }
+      });
+    }).catch(() => {});
+  }, [distribuicaoAtivos]);
+
 
   // Recálculo reativo das classes (resumo/rebate) — substitui o antigo botão "Confirmar Aporte e Avançar".
   useEffect(() => {
@@ -883,7 +906,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                       <col className="w-[16%]" />
                       <col className="w-[15%]" />
                     </colgroup>
-                    <thead><tr className="bg-surface-2 border-b border-subtle"><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider">Ativo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Atual</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Sugerida</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-right">Sugerido</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Preço Mercado</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Cotas</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-center">Aporte Efetivo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-right">Ação</th></tr></thead>
+                    <thead><tr className="bg-surface-2 border-b border-subtle"><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider">Ativo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Atual</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Sugerida</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-right">Sugerido</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Preço Mercado<span className="block normal-case font-medium text-[9px] text-faint/70">auto quando disponível</span></th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Cotas</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-center">Aporte Efetivo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-right">Ação</th></tr></thead>
                     <tbody className="divide-y divide-subtle">
                       {classe.ativos.map((at: any, aIdx: number) => {
                         const isComprando = at.acao === 'COMPRAR';
