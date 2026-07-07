@@ -4,14 +4,20 @@ import { useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ComposedChart, Bar, Line, Legend } from 'recharts';
 import { dashboardService } from '../services/dashboardService';
 import { reuniaoService } from '../services/reuniaoService';
-import { formatarMoeda, formatarData } from '../utils/formatadores';
+import { formatarMoeda, formatarData, paraDatetimeLocal, deDatetimeLocalParaISO } from '../utils/formatadores';
 import { CHART_COLORS, CHART_TERMOMETRO, CHART_GRID, axisTick, tooltipStyle, tooltipCursor } from '../utils/chartTheme';
 import { categorizarAgendaCliente } from '../utils/agendaUtils';
+import { montarLinkWhatsApp, montarMensagemAgenda } from '../utils/whatsappUtils';
+import { encerrarContratoPlanejamento } from '../services/contratoService';
+import { calendarioService } from '../services/calendarioService';
 import { useProntuarioNav } from '../context/ProntuarioNavContext';
 
 import Badge from '../components/UI/Badge';
+import SidePanel from '../components/UI/SidePanel';
+import Confirmacao from '../components/Confirmacao';
+import ContratoFormDrawer from '../components/Contratos/ContratoFormDrawer';
 import MapaBrasil from '../components/Dashboard/MapaBrasil';
-import { Users, ShieldCheck, TrendingDown, DollarSign, BarChart3, ChevronLeft, ChevronRight, AlertCircle, Clock, CalendarX, Crown, X, Wallet, CreditCard, HeartPulse } from 'lucide-react';
+import { Users, ShieldCheck, TrendingDown, DollarSign, BarChart3, ChevronLeft, ChevronRight, AlertCircle, Clock, CalendarX, CalendarCheck, Crown, X, Wallet, CreditCard, HeartPulse, MessageCircle, RefreshCw, CheckCircle2, Phone, Mail, Video } from 'lucide-react';
 
 // ── Helpers visuais ────────────────────────────────────────────────────────
 const SectionTitle: React.FC<{ children: React.ReactNode; hint?: string }> = ({ children, hint }) => (
@@ -29,6 +35,22 @@ const PanelLabel: React.FC<{ title: string; hint?: string }> = ({ title, hint })
     {hint && <span className="text-[11px] text-faint">{hint}</span>}
   </div>
 );
+
+// Badge único das Pautas (substitui os antigos badges de categoria + "Em agenda"):
+// Atraso (vermelho) > Hoje (amarelo, reunião de hoje ainda dentro da janela de
+// tolerância de 1h) > Agendada (neutro, outro dia futuro) > Check-in (aviso).
+const estadoPauta = (r: any): { variant: 'danger' | 'warning' | 'neutral'; label: string; Icon: React.ComponentType<any> } => {
+  if (r.categoria === 'late') return { variant: 'danger', label: r.qtd_atrasadas > 1 ? `ATRASO ×${r.qtd_atrasadas}` : 'ATRASO', Icon: AlertCircle };
+  if (r.categoria === 'pending') return { variant: 'warning', label: 'CHECK-IN', Icon: CalendarX };
+  if (r.atencaoHoje) return { variant: 'warning', label: 'HOJE', Icon: Clock };
+  return { variant: 'neutral', label: 'AGENDADA', Icon: Clock };
+};
+
+const CORES_ESTADO_PAUTA: Record<string, { bg: string; fg: string }> = {
+  danger: { bg: 'rgba(248,113,113,0.14)', fg: 'var(--danger)' },
+  warning: { bg: 'rgba(251,191,36,0.14)', fg: 'var(--warning)' },
+  neutral: { bg: 'rgba(155,161,176,0.14)', fg: 'var(--text-muted)' },
+};
 
 const legendContent = (props: any) => (
   <div className="flex justify-center gap-4 flex-wrap mt-2">
@@ -62,19 +84,28 @@ const Dashboard: React.FC = () => {
   const [coberturaProtecao, setCoberturaProtecao] = useState(0);
   const [geoData, setGeoData] = useState<any[]>([]);
   const [clientesPorOrigem, setClientesPorOrigem] = useState<any[]>([]);
+  const [vencidos, setVencidos] = useState<any[]>([]);
+  const [temCalendarioAtivo, setTemCalendarioAtivo] = useState(false);
 
   const [filterAgenda, setFilterAgenda] = useState<'all' | 'late' | 'upcoming' | 'pending'>('all');
-  const [filterRenovacao, setFilterRenovacao] = useState<'all' | 'critical' | 'attention' | 'safe'>('all');
+  const [filterRenovacao, setFilterRenovacao] = useState<'all' | 'critical' | 'attention' | 'safe' | 'expired'>('all');
+  const [filterGeo, setFilterGeo] = useState<'all' | 'ativos' | 'inativos'>('all');
   const [pageAgenda, setPageAgenda] = useState(1);
   const [pageVencimentos, setPageVencimentos] = useState(1);
   const [editingAgendaModal, setEditingAgendaModal] = useState<any | null>(null);
   const [savingAgenda, setSavingAgenda] = useState(false);
 
+  // Renovação: ações sobre contratos vencidos
+  const [renovarContrato, setRenovarContrato] = useState<any | null>(null);
+  const [confirmNaoRenovar, setConfirmNaoRenovar] = useState<any | null>(null);
+  const [processandoRenovacao, setProcessandoRenovacao] = useState(false);
+  const [avisoRenovacao, setAvisoRenovacao] = useState<string | null>(null);
+
   const [modalClientes, setModalClientes] = useState<{
     isOpen: boolean;
     type: string;
     mes: string;
-    list: { id: string; nome: string }[];
+    list: { id: string; nome: string; status?: string; tipo_encerramento?: string }[];
   }>({ isOpen: false, type: '', mes: '', list: [] });
 
   const ITEMS_PER_PAGE = 5;
@@ -82,7 +113,8 @@ const Dashboard: React.FC = () => {
   const handleSaveAgendaModal = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const novaData = formData.get('data') as string;
+    const valorDatetimeLocal = formData.get('data') as string;
+    const novaData = deDatetimeLocalParaISO(valorDatetimeLocal);
 
     if (!novaData || !editingAgendaModal) return;
 
@@ -111,7 +143,7 @@ const Dashboard: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [summary, term, proj, exp, churn, ltv, endividamento, protecao, geo, origemContratos] = await Promise.all([
+      const [summary, term, proj, exp, churn, ltv, endividamento, protecao, geo, origemContratos, vencidosData] = await Promise.all([
         dashboardService.getSummaryKPIs(),
         dashboardService.getTermometroStats(),
         dashboardService.getIncomeProjection(),
@@ -121,7 +153,8 @@ const Dashboard: React.FC = () => {
         dashboardService.getEndividamentoTotal(),
         dashboardService.getCoberturaProtecao(),
         dashboardService.getDistribuicaoGeografica(),
-        dashboardService.getClientesPorOrigem()
+        dashboardService.getClientesPorOrigem(),
+        dashboardService.getContratosVencidos()
       ]);
       setKpis(summary);
       setTermometroData(term);
@@ -133,6 +166,7 @@ const Dashboard: React.FC = () => {
       setCoberturaProtecao(protecao);
       setGeoData(geo);
       setClientesPorOrigem(origemContratos);
+      setVencidos(vencidosData);
     } catch (err) {
       console.error(err);
     } finally {
@@ -141,6 +175,14 @@ const Dashboard: React.FC = () => {
   };
 
   useEffect(() => { loadData(); }, []);
+
+  // Tag "Em agenda"/"Fora da agenda" nas Pautas só aparece se o consultor tiver
+  // uma conexão de calendário externo ativa (ver docs/integracao-calendarios.md).
+  useEffect(() => {
+    calendarioService.getConexao()
+      .then(c => setTemCalendarioAtivo(!!c?.ativo))
+      .catch(() => setTemCalendarioAtivo(false));
+  }, []);
 
   // Publica as abas da Visão Geral no header (Navbar), como no prontuário
   useEffect(() => {
@@ -158,13 +200,18 @@ const Dashboard: React.FC = () => {
 
     const porCliente = clientesAtivos.map((cli: any) => {
       const reunioesDoCli = todasReunioes.filter((r: any) => r.cliente_id === cli.id);
-      const { categoria, reuniao: reuniaoExibida, qtdAtrasadas } = categorizarAgendaCliente(reunioesDoCli, agora);
+      const { categoria, reuniao: reuniaoExibida, qtdAtrasadas, atencaoHoje } = categorizarAgendaCliente(reunioesDoCli, agora);
 
       return {
         id: `cli-${cli.id}`,
         cliente_id: cli.id,
         cliente_nome: cli.nome,
+        cliente_tel: cli.telefone || null,
+        cliente_email: cli.email || null,
+        em_agenda_externa: !!cli.em_agenda_externa,
+        link_reuniao: reuniaoExibida?.link_reuniao || null,
         categoria,
+        atencaoHoje,
         reuniao_id: reuniaoExibida?.id || null,
         data_reuniao: reuniaoExibida?.data_reuniao || null,
         data_sort: reuniaoExibida ? new Date(reuniaoExibida.data_reuniao) : new Date(0),
@@ -186,6 +233,60 @@ const Dashboard: React.FC = () => {
   }, [kpis, filterAgenda]);
 
   const paginatedAgenda = agendaHibrida.slice((pageAgenda - 1) * ITEMS_PER_PAGE, pageAgenda * ITEMS_PER_PAGE);
+
+  // Contagens para o aviso de revisão de agenda (independente do filtro das Pautas).
+  const avisosAgenda = useMemo(() => {
+    if (!kpis) return { atraso: 0, proximos7: 0 };
+    const agora = new Date();
+    const limite = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const clientesAtivos: any[] = kpis.clientes?.filter((c: any) => c.status === 'Ativo') || [];
+    const reunioesAll: any[] = kpis.reunioes || [];
+    let atraso = 0;
+    let proximos7 = 0;
+    clientesAtivos.forEach((cli: any) => {
+      const rs = reunioesAll.filter((r: any) => r.cliente_id === cli.id);
+      const { categoria, reuniao } = categorizarAgendaCliente(rs, agora);
+      if (categoria === 'late') atraso++;
+      else if (categoria === 'upcoming' && reuniao && new Date(reuniao.data_reuniao) <= limite) proximos7++;
+    });
+    return { atraso, proximos7 };
+  }, [kpis]);
+
+  const handleConfirmarNaoRenovacao = async () => {
+    if (!confirmNaoRenovar) return;
+    setProcessandoRenovacao(true);
+    try {
+      // Não toca em financeiro_parcelas: eventuais parcelas pendentes/atrasadas
+      // permanecem intactas para conciliação posterior.
+      await encerrarContratoPlanejamento(confirmNaoRenovar.id, 'nao_renovacao');
+      const nome = confirmNaoRenovar.clientes?.nome || 'Cliente';
+      setConfirmNaoRenovar(null);
+      setAvisoRenovacao(`Não renovação confirmada para ${nome}. Cliente marcado como inativo.`);
+      await loadData();
+    } catch (e: any) {
+      alert(`Erro ao confirmar não renovação: ${e.message}`);
+    } finally {
+      setProcessandoRenovacao(false);
+    }
+  };
+
+  const handleRenovacaoSalva = async () => {
+    const alvo = renovarContrato;
+    setRenovarContrato(null);
+    try {
+      if (alvo?.id) {
+        // O novo contrato (ativo) já foi criado neste ponto pelo ContratoFormDrawer.
+        // Aqui só marcamos o contrato vencido como encerrado (concluído, sem distrato)
+        // para que ele saia da listagem de Vencidos — sem tocar em financeiro_parcelas,
+        // preservando parcelas pagas/pendentes/atrasadas para conciliação.
+        await encerrarContratoPlanejamento(alvo.id, null);
+      }
+    } catch (e) {
+      console.error('Erro ao encerrar contrato anterior na renovação:', e);
+    }
+    setAvisoRenovacao(alvo?.clientes?.nome ? `Renovação registrada para ${alvo.clientes.nome}.` : 'Renovação registrada.');
+    loadData();
+  };
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-40 gap-6">
@@ -217,7 +318,8 @@ const Dashboard: React.FC = () => {
     return { variant: 'success' as const, status: 'Seguro' };
   };
 
-  const vencimentosFiltrados = vencimentos.filter(c => {
+  const isVencidosView = filterRenovacao === 'expired';
+  const vencimentosFiltrados = isVencidosView ? vencidos : vencimentos.filter(c => {
     if (filterRenovacao === 'all') return true;
     if (filterRenovacao === 'critical') return c.diffDays <= 15;
     if (filterRenovacao === 'attention') return c.diffDays > 15 && c.diffDays <= 45;
@@ -229,6 +331,36 @@ const Dashboard: React.FC = () => {
   const segBtn = (active: boolean) =>
     `px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted'}`;
 
+  // ── Drawer de clientes (drill-down): linha e segmentos ──
+  const renderCliente = (c: any, i: number) => (
+    <button
+      key={c.id || i}
+      onClick={() => { setModalClientes(m => ({ ...m, isOpen: false })); navigate(`/clientes/${c.id}`); }}
+      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-surface-2 transition-colors border border-transparent hover:border-subtle text-left group"
+    >
+      <div className="flex items-center gap-3">
+        <div className="h-8 w-8 rounded-full bg-surface-3 text-muted font-bold flex items-center justify-center text-xs">{c.nome.charAt(0).toUpperCase()}</div>
+        <span className="font-medium text-main">{c.nome}</span>
+      </div>
+      <ChevronRight size={16} className="text-faint group-hover:text-muted" />
+    </button>
+  );
+
+  const renderSegmento = (titulo: string, desc: string | null, itens: any[]) => (
+    <div className="mb-5 last:mb-0">
+      <div className="flex items-baseline justify-between mb-1 px-1">
+        <h4 className="text-[11px] font-bold uppercase tracking-wider text-faint">{titulo}</h4>
+        <span className="text-[11px] text-faint">{itens.length}</span>
+      </div>
+      {desc && <p className="text-[11px] text-muted px-1 mb-2 leading-relaxed">{desc}</p>}
+      {itens.length > 0 ? <div className="space-y-1">{itens.map(renderCliente)}</div> : <p className="text-[12px] text-faint px-1 py-2">Nenhum cliente.</p>}
+    </div>
+  );
+
+  const drawerTitulo = modalClientes.type === 'Engajamento' ? `Status: ${modalClientes.mes}`
+    : modalClientes.type === 'Clientes' ? `Clientes em ${modalClientes.mes}`
+    : `${modalClientes.type} · ${modalClientes.mes}`;
+
   return (
     <div className="space-y-5 animate-fade-in pb-20">
 
@@ -236,6 +368,23 @@ const Dashboard: React.FC = () => {
       {activeTab === 'atendimento' && (
       <section>
         <SectionTitle hint="Engajamento, pautas, check-ins e saúde financeira da carteira">Atendimento</SectionTitle>
+
+        {(avisosAgenda.atraso > 0 || avisosAgenda.proximos7 > 0) && (
+          <button
+            onClick={() => { setFilterAgenda(avisosAgenda.atraso > 0 ? 'late' : 'upcoming'); setPageAgenda(1); }}
+            className="w-full mb-4 flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors hover:bg-surface-2"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(251,191,36,0.10)' }}
+          >
+            <AlertCircle size={16} style={{ color: 'var(--warning)' }} className="flex-shrink-0" />
+            <span className="text-[12px] font-medium text-main flex-1">
+              {avisosAgenda.atraso > 0 && <><b className="font-bold">{avisosAgenda.atraso}</b> cliente(s) com agendamento em atraso</>}
+              {avisosAgenda.atraso > 0 && avisosAgenda.proximos7 > 0 && ' e '}
+              {avisosAgenda.proximos7 > 0 && <><b className="font-bold">{avisosAgenda.proximos7}</b> com reunião nos próximos 7 dias</>}
+              . Revise a agenda.
+            </span>
+            <ChevronRight size={14} className="text-faint flex-shrink-0" />
+          </button>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Coluna 1 — KPIs empilhados + Engajamento */}
@@ -319,25 +468,34 @@ const Dashboard: React.FC = () => {
             <div className="min-h-[260px] flex-1">
               {paginatedAgenda.length === 0 ? (
                 <div className="py-16 text-center text-faint font-medium text-[12px]">Nenhum registro encontrado</div>
-              ) : paginatedAgenda.map((r: any, i: number) => (
+              ) : paginatedAgenda.map((r: any, i: number) => {
+                const estado = estadoPauta(r);
+                const cores = CORES_ESTADO_PAUTA[estado.variant];
+                return (
                 <div key={i} className="px-4 py-3 hover:bg-surface-2 flex items-center justify-between border-b border-subtle transition-colors last:border-0">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{
-                      backgroundColor: r.categoria === 'late' ? 'rgba(248,113,113,0.14)' : r.categoria === 'pending' ? 'rgba(251,191,36,0.14)' : 'rgba(16,185,129,0.14)',
-                      color: r.categoria === 'late' ? 'var(--danger)' : r.categoria === 'pending' ? 'var(--warning)' : 'var(--primary)',
-                    }}>
-                      {r.categoria === 'late' ? <AlertCircle size={14} /> : r.categoria === 'pending' ? <CalendarX size={14} /> : <Clock size={14} />}
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cores.bg, color: cores.fg }}>
+                      <estado.Icon size={14} />
                     </div>
                     <div>
                       <p className="text-[13px] font-semibold text-main leading-none cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => setEditingAgendaModal(r)} title={r.categoria === 'pending' ? 'Agendar Check-in' : 'Editar data'}>
+                        onClick={() => setEditingAgendaModal(r)} title={r.categoria === 'pending' ? 'Agendar Check-in' : 'Ver detalhes e editar'}>
                         {r.cliente_nome}
                       </p>
                       <div className="flex items-center gap-1.5 mt-1">
                         {r.categoria === 'pending' ? (
-                          <span className="text-[11px] text-faint">Sem reunião</span>
+                          <span className="text-[11px] text-faint">
+                            Sem reunião{temCalendarioAtivo && !r.em_agenda_externa ? ' · não encontrada no calendário' : ''}
+                          </span>
                         ) : (
-                          <span className="text-[11px] text-muted">{r.data_reuniao ? formatarData(r.data_reuniao, true) : '—'}</span>
+                          <>
+                            <span className="text-[11px] text-muted">{r.data_reuniao ? formatarData(r.data_reuniao, true) : '—'}</span>
+                            {temCalendarioAtivo && r.em_agenda_externa && (
+                              <span title="Confirmado no calendário externo" className="text-faint inline-flex">
+                                <CalendarCheck size={11} />
+                              </span>
+                            )}
+                          </>
                         )}
                         {r.categoria === 'late' && r.qtd_atrasadas > 1 && (
                           <span className="text-[11px] text-faint">· {r.qtd_atrasadas} em atraso</span>
@@ -345,11 +503,28 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <Badge variant={r.categoria === 'late' ? 'danger' : r.categoria === 'pending' ? 'warning' : 'neutral'} size="sm">
-                    {r.categoria === 'late' ? (r.qtd_atrasadas > 1 ? `ATRASO ×${r.qtd_atrasadas}` : 'ATRASO') : r.categoria === 'pending' ? 'CHECK-IN' : 'AGENDADA'}
-                  </Badge>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {(() => {
+                      const link = montarLinkWhatsApp(r.cliente_tel, montarMensagemAgenda(r.categoria, r.cliente_nome, r.data_reuniao, r.link_reuniao));
+                      return (
+                        <a
+                          href={link || undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => { if (!link) e.preventDefault(); }}
+                          title={link ? 'Enviar mensagem no WhatsApp' : 'Sem telefone cadastrado'}
+                          className={`h-7 w-7 flex items-center justify-center rounded-lg border border-subtle transition-colors ${link ? 'hover:bg-surface-3' : 'opacity-40 cursor-not-allowed'}`}
+                          style={{ color: link ? 'var(--success)' : 'var(--text-faint)' }}
+                        >
+                          <MessageCircle size={14} />
+                        </a>
+                      );
+                    })()}
+                    <Badge variant={estado.variant} size="sm">{estado.label}</Badge>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="px-4 py-2 flex justify-between items-center bg-surface-2 border-t border-subtle">
@@ -363,11 +538,26 @@ const Dashboard: React.FC = () => {
 
           {/* Mapa */}
           <div className={`${panelCls} lg:col-span-4 overflow-hidden`}>
-            <PanelLabel title="Distribuição Geográfica" hint="Clientes por estado" />
+            <div className={panelHeadCls}>
+              <h3 className="text-[13px] font-semibold text-main">Distribuição Geográfica</h3>
+              <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
+                {[{ id: 'all', label: 'Todos' }, { id: 'ativos', label: 'Ativos' }, { id: 'inativos', label: 'Inativos' }].map((f) => (
+                  <button key={f.id} onClick={() => setFilterGeo(f.id as any)} className={segBtn(filterGeo === f.id)}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="p-4 flex-1 min-h-[300px] flex flex-col">
               <MapaBrasil
                 dados={geoData}
-                onSelectEstado={(estado, clientes) => setModalClientes({ isOpen: true, type: 'Clientes', mes: estado, list: clientes })}
+                filtroStatus={filterGeo}
+                onSelectEstado={(estado, clientes) => {
+                  const list = filterGeo === 'ativos' ? clientes.filter((c: any) => c.status === 'Ativo')
+                    : filterGeo === 'inativos' ? clientes.filter((c: any) => c.status === 'Inativo')
+                    : clientes;
+                  setModalClientes({ isOpen: true, type: 'Clientes', mes: estado, list });
+                }}
               />
             </div>
           </div>
@@ -380,6 +570,17 @@ const Dashboard: React.FC = () => {
       {activeTab === 'contratos' && (
       <section>
         <SectionTitle hint="Saúde da base, retenção e renovação de contratos">Contratos</SectionTitle>
+
+        {avisoRenovacao && (
+          <div
+            className="w-full mb-4 flex items-center gap-3 px-4 py-3 rounded-xl border"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16,185,129,0.10)' }}
+          >
+            <CheckCircle2 size={16} style={{ color: 'var(--success)' }} className="flex-shrink-0" />
+            <span className="text-[12px] font-medium text-main flex-1">{avisoRenovacao}</span>
+            <button onClick={() => setAvisoRenovacao(null)} className="text-faint hover:text-main transition-colors flex-shrink-0"><X size={14} /></button>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
           {kpisContratos.map((kpi, i) => (
@@ -411,6 +612,9 @@ const Dashboard: React.FC = () => {
                   }} />
                   <Bar dataKey="renovacoes" name="Renovações" fill={CHART_COLORS.warning} radius={[3, 3, 0, 0]} barSize={12} style={{ cursor: 'pointer' }} onClick={(data: any) => {
                     if (data?.payload?.clientesRenovacoes?.length > 0) setModalClientes({ isOpen: true, type: 'Renovações', mes: data.payload.mes, list: data.payload.clientesRenovacoes });
+                  }} />
+                  <Bar dataKey="resgates" name="Resgate" fill={CHART_COLORS.purple} radius={[3, 3, 0, 0]} barSize={12} style={{ cursor: 'pointer' }} onClick={(data: any) => {
+                    if (data?.payload?.clientesResgates?.length > 0) setModalClientes({ isOpen: true, type: 'Resgate', mes: data.payload.mes, list: data.payload.clientesResgates });
                   }} />
                   <Bar dataKey="distratos" name="Distratos" fill={CHART_COLORS.danger} radius={[3, 3, 0, 0]} barSize={12} style={{ cursor: 'pointer' }} onClick={(data: any) => {
                     if (data?.payload?.clientesDistratos?.length > 0) setModalClientes({ isOpen: true, type: 'Distratos', mes: data.payload.mes, list: data.payload.clientesDistratos });
@@ -469,7 +673,7 @@ const Dashboard: React.FC = () => {
               <span className="text-[11px] text-faint hidden sm:inline">Vigência consultiva</span>
             </div>
             <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
-              {[{ id: 'all', label: 'Tudo' }, { id: 'critical', label: '≤15d' }, { id: 'attention', label: '≤45d' }, { id: 'safe', label: '>45d' }].map((f) => (
+              {[{ id: 'all', label: 'Tudo' }, { id: 'critical', label: '≤15d' }, { id: 'attention', label: '≤45d' }, { id: 'safe', label: '>45d' }, { id: 'expired', label: 'Vencidos' }].map((f) => (
                 <button key={f.id} onClick={() => { setFilterRenovacao(f.id as any); setPageVencimentos(1); }} className={segBtn(filterRenovacao === f.id)}>
                   {f.label}
                 </button>
@@ -479,27 +683,49 @@ const Dashboard: React.FC = () => {
 
           <div className="min-h-[260px] flex-1">
             {paginatedVencimentos.length === 0 ? (
-              <div className="py-16 text-center text-faint font-medium text-[12px]">Nenhum contrato vencendo</div>
+              <div className="py-16 text-center text-faint font-medium text-[12px]">{isVencidosView ? 'Nenhum contrato vencido pendente' : 'Nenhum contrato vencendo'}</div>
             ) : paginatedVencimentos.map((c: any, i: number) => {
               const colors = getTagColorClasses(c.diffDays);
               return (
-                <div key={i} className="px-4 py-3 hover:bg-surface-2 flex items-center justify-between border-b border-subtle transition-colors last:border-0">
-                  <div className="flex items-center gap-3">
+                <div key={i} className="px-4 py-3 hover:bg-surface-2 flex items-center justify-between gap-3 border-b border-subtle transition-colors last:border-0">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="h-8 w-8 rounded-lg flex items-center justify-center font-bold text-[11px] flex-shrink-0" style={{
-                      backgroundColor: c.diffDays <= 15 ? 'rgba(248,113,113,0.14)' : c.diffDays <= 45 ? 'rgba(251,191,36,0.14)' : 'rgba(16,185,129,0.14)',
-                      color: c.diffDays <= 15 ? 'var(--danger)' : c.diffDays <= 45 ? 'var(--warning)' : 'var(--primary)',
+                      backgroundColor: isVencidosView ? 'rgba(248,113,113,0.14)' : c.diffDays <= 15 ? 'rgba(248,113,113,0.14)' : c.diffDays <= 45 ? 'rgba(251,191,36,0.14)' : 'rgba(16,185,129,0.14)',
+                      color: isVencidosView ? 'var(--danger)' : c.diffDays <= 15 ? 'var(--danger)' : c.diffDays <= 45 ? 'var(--warning)' : 'var(--primary)',
                     }}>
-                      {c.diffDays}d
+                      {isVencidosView ? `${Math.abs(c.diffDays)}d` : `${c.diffDays}d`}
                     </div>
-                    <div>
-                      <p className="text-[13px] font-semibold text-main leading-none">{c.clientes?.nome}</p>
-                      <p className="text-[11px] text-muted mt-1 truncate max-w-[180px]">{c.descricao}</p>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-main leading-none truncate">{c.clientes?.nome}</p>
+                      <p className="text-[11px] text-muted mt-1 truncate max-w-[180px]">
+                        {isVencidosView ? `Venceu em ${formatarData(c.dataFimCalculada)}` : c.descricao}
+                      </p>
                     </div>
                   </div>
-                  <div className="text-right flex flex-col items-end gap-1">
-                    <Badge variant={colors.variant} size="sm">{colors.status}</Badge>
-                    <span className="text-[10px] text-faint">Fim: {formatarData(c.dataFimCalculada)}</span>
-                  </div>
+                  {isVencidosView ? (
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => setRenovarContrato(c)}
+                        title="Renovar — vincular novo contrato"
+                        className="h-7 px-2.5 flex items-center gap-1 rounded-lg text-[11px] font-semibold text-[#0b0e14] transition-colors"
+                        style={{ backgroundColor: 'var(--primary)' }}
+                      >
+                        <RefreshCw size={12} /> Renovar
+                      </button>
+                      <button
+                        onClick={() => setConfirmNaoRenovar(c)}
+                        title="Confirmar não renovação — manter inativo"
+                        className="h-7 px-2.5 flex items-center gap-1 rounded-lg border border-subtle text-[11px] font-semibold text-muted hover:bg-surface-3 transition-colors"
+                      >
+                        <X size={12} /> Não renovar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-right flex flex-col items-end gap-1 flex-shrink-0">
+                      <Badge variant={colors.variant} size="sm">{colors.status}</Badge>
+                      <span className="text-[10px] text-faint">Fim: {formatarData(c.dataFimCalculada)}</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -609,67 +835,129 @@ const Dashboard: React.FC = () => {
 
       )}
 
-      {/* Modais */}
-      {modalClientes.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
-          <div className="bg-surface rounded-xl shadow-[var(--shadow-float)] border border-subtle w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-subtle">
-              <div>
-                <h3 className="font-semibold text-main">
-                  {modalClientes.type === 'Engajamento' ? `Status: ${modalClientes.mes}`
-                    : modalClientes.type === 'Clientes' ? `Clientes em ${modalClientes.mes}`
-                    : `${modalClientes.type} em ${modalClientes.mes}`}
-                </h3>
-                <p className="text-[13px] text-muted mt-0.5">{modalClientes.list.length} cliente(s)</p>
-              </div>
-              <button onClick={() => setModalClientes({ ...modalClientes, isOpen: false })} className="p-2 text-faint hover:text-main hover:bg-surface-2 rounded-lg transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="overflow-y-auto p-3 flex-1">
-              {modalClientes.list.length > 0 ? (
-                <div className="space-y-1">
-                  {modalClientes.list.map((c, i) => (
-                    <button key={i} onClick={() => { setModalClientes({ ...modalClientes, isOpen: false }); navigate(`/clientes/${c.id}`); }}
-                      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-surface-2 transition-colors border border-transparent hover:border-subtle text-left group">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-full bg-surface-3 text-muted font-bold flex items-center justify-center text-xs">{c.nome.charAt(0).toUpperCase()}</div>
-                        <span className="font-medium text-main">{c.nome}</span>
-                      </div>
-                      <ChevronRight size={16} className="text-faint group-hover:text-muted" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center text-muted text-sm">Nenhum cliente listado.</div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Drawer de drill-down de clientes */}
+      <SidePanel
+        open={modalClientes.isOpen}
+        onClose={() => setModalClientes(m => ({ ...m, isOpen: false }))}
+        title={drawerTitulo}
+        subtitle={`${modalClientes.list.length} cliente(s)`}
+      >
+        {modalClientes.list.length === 0 ? (
+          <div className="py-8 text-center text-muted text-sm">Nenhum cliente listado.</div>
+        ) : modalClientes.type === 'Distratos' ? (
+          <>
+            {renderSegmento(
+              'Não renovação',
+              'Contrato cumprido na íntegra, mas não renovado.',
+              modalClientes.list.filter(c => c.tipo_encerramento !== 'cancelamento_antecipado')
+            )}
+            {renderSegmento(
+              'Cancelamento antecipado',
+              'Contrato cancelado antes de sua finalização.',
+              modalClientes.list.filter(c => c.tipo_encerramento === 'cancelamento_antecipado')
+            )}
+          </>
+        ) : (modalClientes.type === 'Clientes' && filterGeo === 'all') ? (
+          <>
+            {renderSegmento('Ativos', null, modalClientes.list.filter(c => c.status === 'Ativo'))}
+            {renderSegmento('Inativos', null, modalClientes.list.filter(c => c.status === 'Inativo'))}
+          </>
+        ) : (
+          <div className="space-y-1">{modalClientes.list.map(renderCliente)}</div>
+        )}
+      </SidePanel>
+
+      {/* Renovação: drawer de vinculação de novo contrato */}
+      {renovarContrato && (
+        <ContratoFormDrawer
+          open={!!renovarContrato}
+          onClose={() => setRenovarContrato(null)}
+          cliente={{ id: renovarContrato.cliente_id, nome: renovarContrato.clientes?.nome } as any}
+          contratoParaEditar={null}
+          onSaved={handleRenovacaoSalva}
+        />
       )}
 
-      {editingAgendaModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
-          <div className="bg-surface rounded-xl shadow-[var(--shadow-float)] border border-subtle w-full max-w-sm overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-subtle">
-              <h3 className="font-semibold text-main">{editingAgendaModal.categoria === 'pending' ? 'Agendar Check-in' : 'Editar Agendamento'}</h3>
-              <button onClick={() => setEditingAgendaModal(null)} className="p-2 text-faint hover:text-main hover:bg-surface-2 rounded-lg transition-colors"><X size={20} /></button>
-            </div>
-            <form onSubmit={handleSaveAgendaModal} className="p-5 flex flex-col gap-4">
-              <div>
-                <p className="text-[13px] text-muted mb-4">Cliente: <span className="font-semibold text-main">{editingAgendaModal.cliente_nome}</span></p>
-                <label className="block text-[13px] font-medium text-main mb-1.5">Nova Data</label>
-                <input type="date" name="data" defaultValue={editingAgendaModal.data_reuniao?.split('T')[0] || ''} required autoFocus
-                  className="w-full text-[13px] text-main bg-surface-2 border border-subtle rounded-lg px-3 py-2.5 focus:outline-none focus:border-primary transition-colors" />
+      {/* Renovação: confirmação de não renovação */}
+      <Confirmacao
+        isOpen={!!confirmNaoRenovar}
+        onClose={() => setConfirmNaoRenovar(null)}
+        onConfirm={handleConfirmarNaoRenovacao}
+        loading={processandoRenovacao}
+        danger={false}
+        confirmLabel="Confirmar não renovação"
+        title="Confirmar não renovação"
+        message={confirmNaoRenovar ? `Confirmar que o contrato de ${confirmNaoRenovar.clientes?.nome} não foi renovado? O contrato será encerrado como "não renovação" e o cliente permanecerá inativo.` : ''}
+      />
+
+      <SidePanel
+        open={!!editingAgendaModal}
+        onClose={() => setEditingAgendaModal(null)}
+        title={editingAgendaModal?.cliente_nome || ''}
+        subtitle={editingAgendaModal?.categoria === 'pending' ? 'Agendar check-in' : 'Detalhes e edição de agendamento'}
+        widthClass="max-w-md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditingAgendaModal(null)} className="px-4 py-2 text-[13px] font-medium text-muted hover:bg-surface-2 rounded-lg transition-colors">Cancelar</button>
+            <button type="submit" form="form-agenda-drawer" disabled={savingAgenda} className="px-4 py-2 text-[13px] font-semibold text-[#0b0e14] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--primary)' }}>{savingAgenda ? 'Salvando...' : 'Salvar'}</button>
+          </div>
+        }
+      >
+        {editingAgendaModal && (
+          <div className="flex flex-col gap-6">
+            <section className="space-y-2">
+              <h4 className="text-[11px] font-bold text-faint uppercase tracking-wider">Contato</h4>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2.5 text-[13px]">
+                  <Phone size={14} className="text-faint flex-shrink-0" />
+                  {editingAgendaModal.cliente_tel ? (
+                    <a href={`https://wa.me/${editingAgendaModal.cliente_tel.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-main hover:text-primary transition-colors">
+                      {editingAgendaModal.cliente_tel}
+                    </a>
+                  ) : (
+                    <span className="text-faint">Sem telefone cadastrado</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2.5 text-[13px]">
+                  <Mail size={14} className="text-faint flex-shrink-0" />
+                  {editingAgendaModal.cliente_email ? (
+                    <a href={`mailto:${editingAgendaModal.cliente_email}`} className="text-main hover:text-primary transition-colors truncate">
+                      {editingAgendaModal.cliente_email}
+                    </a>
+                  ) : (
+                    <span className="text-faint">Sem e-mail cadastrado</span>
+                  )}
+                </div>
               </div>
-              <div className="flex justify-end gap-2 mt-2">
-                <button type="button" onClick={() => setEditingAgendaModal(null)} className="px-4 py-2 text-[13px] font-medium text-muted hover:bg-surface-2 rounded-lg transition-colors">Cancelar</button>
-                <button type="submit" disabled={savingAgenda} className="px-4 py-2 text-[13px] font-semibold text-[#0b0e14] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--primary)' }}>{savingAgenda ? 'Salvando...' : 'Salvar'}</button>
-              </div>
+            </section>
+
+            {editingAgendaModal.link_reuniao && (
+              <a
+                href={editingAgendaModal.link_reuniao}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 h-9 rounded-lg text-[13px] font-semibold transition-colors"
+                style={{ backgroundColor: 'var(--primary)', color: '#0b0e14' }}
+              >
+                <Video size={14} /> Entrar na chamada
+              </a>
+            )}
+
+            <form id="form-agenda-drawer" onSubmit={handleSaveAgendaModal} className="space-y-2">
+              <h4 className="text-[11px] font-bold text-faint uppercase tracking-wider">Agendamento manual</h4>
+              <label className="block text-[13px] font-medium text-main mb-1.5">Data e horário</label>
+              <input
+                type="datetime-local"
+                name="data"
+                defaultValue={paraDatetimeLocal(editingAgendaModal.data_reuniao)}
+                required
+                autoFocus
+                className="w-full text-[13px] text-main bg-surface-2 border border-subtle rounded-lg px-3 py-2.5 focus:outline-none focus:border-primary transition-colors"
+              />
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </SidePanel>
 
     </div>
   );

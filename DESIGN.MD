@@ -69,6 +69,24 @@ Usar [`utils/chartTheme.ts`](utils/chartTheme.ts): `CHART_PALETTE`, `CHART_COLOR
 - **Tabs**: underline limpo (2px) na cor primária; inativo `text-muted`.
 - **Badge**: pílula, fundo 12% da cor semântica, texto na versão clara da cor.
 - **Header**: breadcrumb + seletor global de cliente + ações contextuais por rota.
+- **Padrão obrigatório para telas com múltiplas visões**: quando uma tela tem 2+ abas
+  de conteúdo (ex.: Visão Geral → Atendimento/Contratos/Financeiro; Carteira →
+  Carteira Recomendada/Consulta de Carteira), as abas são publicadas no **header**
+  (`components/Layout/Navbar.tsx`) via `useProntuarioNav()`
+  ([context/ProntuarioNavContext.tsx](context/ProntuarioNavContext.tsx)), **não**
+  renderizadas inline no corpo da página com `components/UI/Tabs.tsx`. Padrão:
+  ```tsx
+  const { setNav } = useProntuarioNav();
+  const [activeTab, setActiveTab] = useState('primeira-aba');
+  useEffect(() => {
+    setNav({ tabs: MEUS_TABS, activeTab, setActiveTab });
+    return () => setNav(null); // limpa ao desmontar/trocar de rota
+  }, [activeTab, setNav]);
+  ```
+  Referência de implementação: [views/Dashboard.tsx](views/Dashboard.tsx) e
+  [views/CarteiraPage.tsx](views/CarteiraPage.tsx). `components/UI/Tabs.tsx` continua
+  válido apenas para subdivisões *dentro* do conteúdo de uma aba (não para a navegação
+  de topo entre visões de uma tela).
 
 ## §9. Padrão de migração (light → dark)
 `bg-white`→`bg-surface` · `text-slate-900`→`text-main` · `text-slate-400/500`→`text-faint/muted`

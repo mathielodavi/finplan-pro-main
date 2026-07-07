@@ -2,6 +2,7 @@
 export type ContratoTipo = 'planejamento' | 'extra';
 export type ContratoStatus = 'ativo' | 'inativo' | 'concluido' | 'cancelado';
 export type FormaPagamento = 'vista' | 'parcelado';
+export type TipoEncerramento = 'nao_renovacao' | 'cancelamento_antecipado';
 
 export interface Contrato {
   id: string;
@@ -22,6 +23,14 @@ export interface Contrato {
   repasse_percentual: number;
   // Fix: Adicionado padrao_id para suportar o vínculo com modelos de contrato em contratoService.ts
   padrao_id?: string | null;
+  // Classificação de encerramento (distratos) e resgate (renovação tardia)
+  tipo_encerramento?: TipoEncerramento | null;
+  is_resgate?: boolean;
+  // true quando o advisor já tomou uma decisão explícita (renovar / confirmar não
+  // renovação) via o fluxo de Renovação — usado para tirar o contrato da lista de
+  // "Vencidos" mesmo quando a classificação de tipo_encerramento já existe (ex.: via
+  // backfill histórico) mas a decisão real ainda não tinha sido tomada.
+  resolvido_renovacao?: boolean;
   consultor_id?: string;
   empresa_id?: string;
   criado_em?: string;

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Upload, AlertCircle, CheckCircle2, FileText, XCircle } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import Button from '../UI/Button';
@@ -50,21 +50,21 @@ const ImportacaoCarteira: React.FC<ImportacaoCarteiraProps> = ({ onSuccess }) =>
     <div className="space-y-8 animate-fade-in">
       {!result ? (
         <div className="space-y-8">
-           <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl shadow-sm flex items-start gap-3">
-              <AlertCircle className="text-amber-500 shrink-0" size={20} />
+           <div className="p-4 bg-warning/10 border border-subtle rounded-xl flex items-start gap-3">
+              <AlertCircle className="text-warning shrink-0" size={20} />
               <div className="space-y-1">
-                 <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Atenção Crítica</p>
-                 <p className="text-[12px] text-amber-700 font-bold leading-snug">
+                 <p className="text-[10px] font-bold text-warning uppercase tracking-wider">Atenção Crítica</p>
+                 <p className="text-[12px] text-main font-bold leading-snug">
                    Este processo substituirá todos os ativos recomendados atuais. Certifique-se que o arquivo contém a tese completa.
                  </p>
               </div>
            </div>
 
-           <div className="border border-dashed border-subtle bg-surface-2/50 rounded-xl p-12 text-center hover:border-emerald-500 hover:bg-emerald-50/30 transition-all group">
+           <div className="border border-dashed border-subtle bg-surface-2/50 rounded-xl p-12 text-center hover:border-primary hover:bg-primary/5 transition-all group">
               <input type="file" id="up-carteira" className="hidden" accept=".xlsx,.csv" onChange={handleFileChange} />
               <label htmlFor="up-carteira" className="cursor-pointer block space-y-4">
-                 <div className="h-14 w-14 bg-surface rounded-xl border border-subtle shadow-sm flex items-center justify-center mx-auto group-hover:scale-105 transition-transform">
-                    <Upload className={file ? 'text-emerald-500' : 'text-faint'} size={24} />
+                 <div className="h-14 w-14 bg-surface rounded-xl border border-subtle flex items-center justify-center mx-auto group-hover:scale-105 transition-transform">
+                    <Upload className={file ? 'text-primary' : 'text-faint'} size={24} />
                  </div>
                  <div>
                     <p className="text-[14px] font-bold text-main uppercase tracking-tighter">
@@ -75,11 +75,11 @@ const ImportacaoCarteira: React.FC<ImportacaoCarteiraProps> = ({ onSuccess }) =>
               </label>
            </div>
 
-           <Button 
-            onClick={processar} 
-            disabled={!file || loading} 
+           <Button
+            onClick={processar}
+            disabled={!file || loading}
             isLoading={loading}
-            className="w-full h-9 text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-[8px] font-bold"
+            className="w-full h-9 text-[10px] uppercase tracking-wider rounded-[8px] font-bold"
            >
              Confirmar e Substituir
            </Button>
@@ -87,7 +87,7 @@ const ImportacaoCarteira: React.FC<ImportacaoCarteiraProps> = ({ onSuccess }) =>
       ) : (
         <div className="space-y-6 animate-slide-up">
            <div className="text-center space-y-3">
-              <div className="h-14 w-14 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
+              <div className="h-14 w-14 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto">
                  <CheckCircle2 size={28} />
               </div>
               <h3 className="text-[18px] font-bold text-main uppercase tracking-tighter">Importação Concluída</h3>
@@ -97,21 +97,21 @@ const ImportacaoCarteira: React.FC<ImportacaoCarteiraProps> = ({ onSuccess }) =>
            </div>
 
            {result.alertas.length > 0 && (
-             <div className="bg-rose-50 border border-rose-100 rounded-xl overflow-hidden shadow-sm">
-                <div className="p-3 bg-rose-500 text-white flex items-center gap-2">
+             <div className="bg-surface-2 border border-subtle rounded-xl overflow-hidden">
+                <div className="p-3 bg-danger/15 text-danger flex items-center gap-2 border-b border-subtle">
                    <XCircle size={16} />
                    <span className="text-[10px] font-bold uppercase tracking-wider">Inconsistências Detectadas ({result.alertas.length})</span>
                 </div>
                 <div className="p-5 max-h-[300px] overflow-y-auto space-y-3 custom-scrollbar">
                    {result.alertas.map((msg: string, i: number) => (
-                     <div key={i} className="flex items-start gap-3 text-rose-700">
-                        <div className="h-1.5 w-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                     <div key={i} className="flex items-start gap-3 text-muted">
+                        <div className="h-1.5 w-1.5 rounded-full bg-danger mt-1.5 shrink-0" />
                         <p className="text-[12px] font-medium leading-relaxed">{msg}</p>
                      </div>
                    ))}
                 </div>
-                <div className="p-3 bg-rose-100/50 border-t border-rose-200">
-                   <p className="text-[10px] text-rose-800 font-bold uppercase text-center">
+                <div className="p-3 bg-surface border-t border-subtle">
+                   <p className="text-[10px] text-faint font-bold uppercase text-center">
                      * Os itens acima foram ignorados ou não serão vinculados corretamente até que os cadastros básicos sejam feitos.
                    </p>
                 </div>
@@ -119,8 +119,8 @@ const ImportacaoCarteira: React.FC<ImportacaoCarteiraProps> = ({ onSuccess }) =>
            )}
 
            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setResult(null)} className="flex-1 h-9 uppercase text-[10px] tracking-wider rounded-[8px] border border-subtle text-muted hover:bg-surface-2 font-bold">Tentar Novamente</Button>
-              <Button onClick={onSuccess} className="flex-1 h-9 uppercase text-[10px] tracking-wider rounded-[8px] shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold">Finalizar e Ver Ativos</Button>
+              <Button variant="outline" onClick={() => setResult(null)} className="flex-1 h-9 uppercase text-[10px] tracking-wider rounded-[8px] font-bold">Tentar Novamente</Button>
+              <Button onClick={onSuccess} className="flex-1 h-9 uppercase text-[10px] tracking-wider rounded-[8px] font-bold">Finalizar e Ver Ativos</Button>
            </div>
         </div>
       )}

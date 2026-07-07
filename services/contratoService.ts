@@ -1,8 +1,67 @@
 
 import { supabase } from './supabaseClient';
-import { Contrato } from '../types/contrato';
+import { Contrato, TipoEncerramento } from '../types/contrato';
 import { toLocalDateString } from '../utils/formatadores';
 import { financeiroService } from './financeiroService';
+
+/** Fim natural do contrato = data_inicio + prazo_meses. */
+const fimNatural = (dataInicio: string, prazoMeses: number): Date => {
+  const [y, m, d] = dataInicio.split('-').map(Number);
+  const dt = new Date(y, (m - 1) + (prazoMeses || 0), d, 12, 0, 0);
+  return dt;
+};
+
+/** Encerramento efetivo de um contrato encerrado (data_fim, ou atualização, ou fim natural). */
+const fimEfetivo = (c: Partial<Contrato>): Date => {
+  if (c.data_fim) {
+    const [y, m, d] = c.data_fim.split('-').map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0);
+  }
+  if (c.atualizado_em) return new Date(c.atualizado_em);
+  return fimNatural(c.data_inicio!, c.prazo_meses || 0);
+};
+
+/**
+ * Classifica o encerramento de um contrato de planejamento:
+ * - cancelado antes do fim natural → 'cancelamento_antecipado'
+ * - concluído, ou cancelado já no/após o fim natural → 'nao_renovacao'
+ */
+const classificarEncerramento = (c: Partial<Contrato>): TipoEncerramento => {
+  if (c.status === 'cancelado') {
+    const efetivo = c.data_fim
+      ? fimEfetivo(c)
+      : new Date();
+    const natural = fimNatural(c.data_inicio!, c.prazo_meses || 0);
+    // Tolerância de 1 dia para evitar falso "antecipado" por arredondamento.
+    if (efetivo.getTime() < natural.getTime() - 24 * 60 * 60 * 1000) {
+      return 'cancelamento_antecipado';
+    }
+  }
+  return 'nao_renovacao';
+};
+
+/**
+ * Determina se um novo contrato de planejamento é um "resgate" (renovação tardia):
+ * o cliente teve um contrato de planejamento anterior encerrado mais de 1 mês
+ * antes do início deste novo contrato.
+ */
+const detectarResgate = async (clienteId: string, dataInicio: string): Promise<boolean> => {
+  const { data: anteriores } = await supabase
+    .from('contratos')
+    .select('data_fim, atualizado_em, data_inicio, prazo_meses, status')
+    .eq('cliente_id', clienteId)
+    .eq('tipo', 'planejamento')
+    .in('status', ['concluido', 'cancelado']);
+
+  if (!anteriores || anteriores.length === 0) return false;
+
+  const [y, m, d] = dataInicio.split('-').map(Number);
+  const inicioNovo = new Date(y, m - 1, d, 12, 0, 0);
+  const umMesAntes = new Date(inicioNovo);
+  umMesAntes.setMonth(umMesAntes.getMonth() - 1);
+
+  return anteriores.some((c: any) => fimEfetivo(c) < umMesAntes);
+};
 
 const gerarParcelasFinanceiras = async (contrato: Contrato, valorRestante: number, numPagas: number = 0) => {
   if (contrato.status === 'cancelado') return;
@@ -123,11 +182,20 @@ export const criarContrato = async (contrato: Partial<Contrato>) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Usuário não identificado');
 
-  const payload = {
+  const payload: Partial<Contrato> = {
     ...contrato,
     consultor_id: user.id,
     empresa_id: user.user_metadata?.empresa_id || user.id
   };
+
+  // Resgate: novo contrato de planejamento reativando cliente >1 mês após distrato anterior.
+  if (payload.tipo === 'planejamento' && payload.status === 'ativo' && payload.cliente_id && payload.data_inicio) {
+    payload.is_resgate = await detectarResgate(payload.cliente_id, payload.data_inicio);
+  }
+  // Se já é criado encerrado (cancelado), classifica o encerramento.
+  if (payload.tipo === 'planejamento' && payload.status === 'cancelado' && !payload.tipo_encerramento) {
+    payload.tipo_encerramento = classificarEncerramento(payload);
+  }
 
   const { data, error } = await supabase.from('contratos').insert([payload]).select().single();
   if (error) throw error;
@@ -158,6 +226,19 @@ export const atualizarContrato = async (id: string, dados: Partial<Contrato>) =>
     (dados.forma_pagamento !== undefined && dados.forma_pagamento !== contratoAntigo.forma_pagamento) ||
     (dados.prazo_recebimento_dias !== undefined && dados.prazo_recebimento_dias !== contratoAntigo.prazo_recebimento_dias) ||
     (dados.status !== undefined && dados.status !== contratoAntigo.status);
+
+  // Classificação de encerramento (distratos) ao transicionar para cancelado/concluído.
+  const merged = { ...contratoAntigo, ...dados } as Contrato;
+  if (merged.tipo === 'planejamento') {
+    const encerrando = (dados.status === 'cancelado' || dados.status === 'concluido');
+    if (encerrando && dados.tipo_encerramento === undefined) {
+      dados.tipo_encerramento = classificarEncerramento(merged);
+    }
+    // Reativação: volta a ativo → limpa a classificação de encerramento.
+    if (dados.status === 'ativo') {
+      dados.tipo_encerramento = null;
+    }
+  }
 
   const { data, error } = await supabase.from('contratos').update(dados).eq('id', id).select().single();
   if (error) throw error;
@@ -196,6 +277,44 @@ export const atualizarContrato = async (id: string, dados: Partial<Contrato>) =>
   }
 
   return contratoAtualizado;
+};
+
+/**
+ * Encerra administrativamente um contrato de planejamento (marca como 'concluido'
+ * e classifica o tipo de encerramento) SEM tocar em financeiro_parcelas.
+ *
+ * Usado pelo fluxo de Renovação da Visão Geral: um contrato vencido só está sendo
+ * formalizado como encerrado (renovado ou não) — as parcelas já geradas (pagas,
+ * pendentes ou atrasadas) permanecem intactas para conciliação financeira e não
+ * devem ser apagadas/recriadas, ao contrário do que `atualizarContrato` faz ao
+ * detectar mudança de status.
+ */
+export const encerrarContratoPlanejamento = async (id: string, tipoEncerramento: TipoEncerramento | null) => {
+  const { data, error } = await supabase
+    .from('contratos')
+    .update({ status: 'concluido', tipo_encerramento: tipoEncerramento, resolvido_renovacao: true })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+
+  const contrato = data as Contrato;
+  if (contrato.tipo === 'planejamento') {
+    // Só inativa o cliente se não houver outro contrato de planejamento ativo
+    // (ex.: no fluxo de renovação, o novo contrato já está ativo neste ponto).
+    const { data: outrosAtivos } = await supabase
+      .from('contratos')
+      .select('id')
+      .eq('cliente_id', contrato.cliente_id)
+      .eq('tipo', 'planejamento')
+      .eq('status', 'ativo')
+      .neq('id', id)
+      .limit(1);
+    if (!outrosAtivos || outrosAtivos.length === 0) {
+      await supabase.from('clientes').update({ status: 'Inativo' }).eq('id', contrato.cliente_id);
+    }
+  }
+  return contrato;
 };
 
 export const deletarContrato = async (id: string) => {
