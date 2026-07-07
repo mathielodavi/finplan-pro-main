@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
    BarChart, Bar, Cell, ComposedChart, Area, Line, XAxis, YAxis,
-   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend
+   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot, Legend
 } from 'recharts';
 import { formatarMoeda } from '../../utils/formatadores';
 import { atualizarCliente } from '../../services/clienteService';
@@ -177,6 +177,9 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
    const labelCls = 'block text-[11px] font-semibold text-muted mb-1.5';
    const kpiLabel = 'text-[11px] font-semibold text-faint uppercase tracking-wider';
    const cardCls = 'bg-surface rounded-xl border border-subtle p-4';
+
+   const formatarRotuloEixo = (data: Date) => data.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).toUpperCase();
+   const formatarRotuloAposentadoria = (data: Date) => `Aposentadoria: ${data.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}`;
 
    const formatarMesAno = (meses: number) => {
       if (meses < 12) return `${meses} ${meses === 1 ? 'mês' : 'meses'}`;
@@ -368,6 +371,30 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
                            <ReferenceLine y={projecao.patrimonioNecessario} stroke="#3a4254" strokeDasharray="5 5" />
                            <Line type="monotone" dataKey="plano" name="Patrimônio Ideal (até 90 anos)" stroke="#6b7280" strokeWidth={2} dot={false} />
                            <Area type="monotone" dataKey="real" name="Patrimônio Real + Projeção" stroke="var(--primary)" strokeWidth={2.5} fill="url(#gradReal)" connectNulls />
+                           {projecao.dataIndependenciaPlano && (
+                              <ReferenceDot
+                                 x={formatarRotuloEixo(projecao.dataIndependenciaPlano)}
+                                 y={projecao.patrimonioNecessario}
+                                 r={4}
+                                 fill="#6b7280"
+                                 stroke="var(--surface)"
+                                 strokeWidth={2}
+                                 isFront
+                                 label={{ value: formatarRotuloAposentadoria(projecao.dataIndependenciaPlano), position: 'insideTopLeft', fill: '#9aa1b5', fontSize: 10, dy: -8 }}
+                              />
+                           )}
+                           {projecao.dataIndependenciaReal && (
+                              <ReferenceDot
+                                 x={formatarRotuloEixo(projecao.dataIndependenciaReal)}
+                                 y={projecao.patrimonioNecessario}
+                                 r={5}
+                                 fill="var(--primary)"
+                                 stroke="var(--surface)"
+                                 strokeWidth={2}
+                                 isFront
+                                 label={{ value: formatarRotuloAposentadoria(projecao.dataIndependenciaReal), position: 'insideBottomLeft', fill: 'var(--primary)', fontSize: 10, dy: 8 }}
+                              />
+                           )}
                         </ComposedChart>
                      </ResponsiveContainer>
                   </div>

@@ -14,6 +14,10 @@ export interface ResultadoProjecao {
   patrimonioNecessario: number;
   chartData: PontoProjecao[];
   dataAlvo: Date;
+  /** Data em que a trajetória PLANEJADA (linha "plano") atinge o patrimônio necessário. Null se não atingir dentro do horizonte simulado. */
+  dataIndependenciaPlano: Date | null;
+  /** Data em que a trajetória REAL (histórico + projeção forward) atinge o patrimônio necessário. Null se não atingir dentro do horizonte simulado. */
+  dataIndependenciaReal: Date | null;
 }
 
 export interface ConsumoPatrimonio {
@@ -21,6 +25,13 @@ export interface ConsumoPatrimonio {
   idadeAtual: number | null;
   /** Fator de rentabilização anual (%) aplicado ao patrimônio durante a fase de consumo, definido em Configurações. */
   taxaRentabilizacaoAnual: number;
+}
+
+/** Trajetória mês a mês, mais o índice (mês) em que a fase de consumo se inicia. */
+interface TrajetoriaSimulada {
+  serie: number[];
+  /** Índice (mês, relativo ao início desta série) em que `consumindo` passou a `true`. Null se nunca atingir dentro do horizonte simulado. */
+  indiceIndependencia: number | null;
 }
 
 /**
@@ -37,20 +48,24 @@ function simularTrajetoria(
   aporteMensal: number,
   taxaConsumoMensal: number,
   rendaAlvoMensal: number
-): number[] {
+): TrajetoriaSimulada {
   const serie: number[] = [valorInicial];
   let valor = valorInicial;
   let consumindo = valor >= patrimonioNecessario;
+  let indiceIndependencia: number | null = consumindo ? 0 : null;
   for (let m = 1; m <= mesesTotal; m++) {
     if (!consumindo) {
       valor = valor * (1 + taxaAcumulacaoMensal) + aporteMensal;
-      if (valor >= patrimonioNecessario) consumindo = true;
+      if (valor >= patrimonioNecessario) {
+        consumindo = true;
+        indiceIndependencia = m;
+      }
     } else {
       valor = Math.max(0, valor * (1 + taxaConsumoMensal) - rendaAlvoMensal);
     }
     serie.push(valor);
   }
-  return serie;
+  return { serie, indiceIndependencia };
 }
 
 /**
@@ -86,8 +101,23 @@ export function projetarIndependencia(
   const mesesHorizonte = mesesAteIdade90 !== null ? Math.max(totalMesesPlano, mesesAteIdade90) : totalMesesPlano;
   const taxaConsumoMensal = consumo ? Math.pow(1 + consumo.taxaRentabilizacaoAnual / 100, 1 / 12) - 1 : taxaMensal;
 
-  const seriePlano = simularTrajetoria(params.patrimonio_inicial, mesesHorizonte, patrimonioNecessario, taxaMensal, params.aporte_mensal, taxaConsumoMensal, params.renda_alvo);
-  const serieRealForward = simularTrajetoria(patrimonioAtual, mesesHorizonte, patrimonioNecessario, taxaMensal, params.aporte_mensal, taxaConsumoMensal, params.renda_alvo);
+  const { serie: seriePlano, indiceIndependencia: indicePlano } = simularTrajetoria(params.patrimonio_inicial, mesesHorizonte, patrimonioNecessario, taxaMensal, params.aporte_mensal, taxaConsumoMensal, params.renda_alvo);
+  const { serie: serieRealForward, indiceIndependencia: indiceRealForward } = simularTrajetoria(patrimonioAtual, mesesHorizonte, patrimonioNecessario, taxaMensal, params.aporte_mensal, taxaConsumoMensal, params.renda_alvo);
+
+  // A série "real" só passa a existir a partir de hoje (antes disso é histórico real, não simulado),
+  // então o índice de independência da série "real", que é relativo ao início do forward (hoje),
+  // precisa ser deslocado pelo nº de meses entre o início do plano e hoje para virar um índice
+  // absoluto (desde `dataInicio`) — mesma base de tempo usada no eixo X do gráfico.
+  const mesesAteHoje = Math.max(0, (hoje.getFullYear() - dataInicio.getFullYear()) * 12 + (hoje.getMonth() - dataInicio.getMonth()));
+  const indiceRealAbsoluto = indiceRealForward !== null ? mesesAteHoje + indiceRealForward : null;
+
+  const mesParaData = (indice: number): Date => {
+    const d = new Date(dataInicio);
+    d.setMonth(dataInicio.getMonth() + indice);
+    return d;
+  };
+  const dataIndependenciaPlano = indicePlano !== null ? mesParaData(indicePlano) : null;
+  const dataIndependenciaReal = indiceRealAbsoluto !== null ? mesParaData(indiceRealAbsoluto) : null;
 
   const chartData: PontoProjecao[] = [];
 
@@ -98,9 +128,18 @@ export function projetarIndependencia(
     ])
   );
 
-  for (let i = 0; i <= mesesHorizonte; i += 6) {
-    const dataPonto = new Date(dataInicio);
-    dataPonto.setMonth(dataInicio.getMonth() + i);
+  // Índices amostrados a cada 6 meses, mais (se aplicável) os índices exatos de independência —
+  // para que o recharts tenha um ponto real no dado em que plotar o ReferenceDot, em vez de só
+  // o múltiplo de 6 mais próximo.
+  const indicesAmostra = new Set<number>();
+  for (let i = 0; i <= mesesHorizonte; i += 6) indicesAmostra.add(i);
+  if (indicePlano !== null) indicesAmostra.add(indicePlano);
+  if (indiceRealAbsoluto !== null && indiceRealAbsoluto <= mesesHorizonte) indicesAmostra.add(indiceRealAbsoluto);
+
+  const indicesOrdenados = Array.from(indicesAmostra).sort((a, b) => a - b);
+
+  for (const i of indicesOrdenados) {
+    const dataPonto = mesParaData(i);
     const label = dataPonto.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).toUpperCase();
 
     // 1. Linha teórica (plano): acumula e, ao atingir o necessário, passa a consumir
@@ -124,7 +163,7 @@ export function projetarIndependencia(
   const dataAlvo = new Date(dataInicio);
   dataAlvo.setFullYear(dataInicio.getFullYear() + params.prazo_anos);
 
-  return { patrimonioNecessario, chartData, dataAlvo };
+  return { patrimonioNecessario, chartData, dataAlvo, dataIndependenciaPlano, dataIndependenciaReal };
 }
 
 export interface ResultadoPrazo {
