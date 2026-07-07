@@ -5,6 +5,7 @@ import { BRASIL_ESTADOS, BRASIL_VIEWBOX } from '../../utils/brasilEstadosPaths';
 interface ClienteResumo {
   id: string;
   nome: string;
+  status?: string;
 }
 
 interface EstadoDado {
@@ -17,10 +18,19 @@ interface EstadoDado {
 
 interface Props {
   dados: EstadoDado[];
+  filtroStatus?: 'all' | 'ativos' | 'inativos';
   onSelectEstado?: (estado: string, clientes: ClienteResumo[]) => void;
 }
 
-const MapaBrasil: React.FC<Props> = ({ dados, onSelectEstado }) => {
+/** Contagem exibida no mapa conforme o filtro de status. */
+const contagemFiltrada = (d: EstadoDado | undefined, filtro: 'all' | 'ativos' | 'inativos'): number => {
+  if (!d) return 0;
+  if (filtro === 'ativos') return d.ativos;
+  if (filtro === 'inativos') return d.inativos;
+  return d.total;
+};
+
+const MapaBrasil: React.FC<Props> = ({ dados, filtroStatus = 'all', onSelectEstado }) => {
   if (dados.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-faint">
@@ -33,7 +43,7 @@ const MapaBrasil: React.FC<Props> = ({ dados, onSelectEstado }) => {
   }
 
   const porEstado = new Map(dados.map(d => [d.estado, d]));
-  const maxTotal = Math.max(1, ...dados.map(d => d.total));
+  const maxTotal = Math.max(1, ...dados.map(d => contagemFiltrada(d, filtroStatus)));
 
   return (
     <div className="w-full h-full flex flex-col flex-1 min-h-0">
@@ -41,9 +51,9 @@ const MapaBrasil: React.FC<Props> = ({ dados, onSelectEstado }) => {
         <svg viewBox={BRASIL_VIEWBOX} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 w-full h-full">
         {BRASIL_ESTADOS.map(uf => {
           const d = porEstado.get(uf.id);
-          const total = d?.total || 0;
+          const total = contagemFiltrada(d, filtroStatus);
           const intensidade = total > 0 ? 0.18 + (total / maxTotal) * 0.82 : 0;
-          const clicavel = !!onSelectEstado && (d?.clientes?.length || 0) > 0;
+          const clicavel = !!onSelectEstado && total > 0;
           return (
             <path
               key={uf.id}

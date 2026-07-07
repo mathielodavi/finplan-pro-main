@@ -10,7 +10,7 @@ export const dashboardService = {
     if (!user) throw new Error("Não autenticado");
 
     // Buscamos todos os dados necessários
-    const { data: allClientes } = await supabase.from('clientes').select('id, nome, patrimonio_total, status');
+    const { data: allClientes } = await supabase.from('clientes').select('id, nome, patrimonio_total, status, telefone, email, em_agenda_externa');
     const { data: allContratos } = await supabase.from('contratos').select('*');
     const { data: reunioes } = await supabase.from('reunioes').select('*');
 
@@ -227,6 +227,64 @@ export const dashboardService = {
   },
 
   /**
+   * Contratos de planejamento VENCIDOS e ainda pendentes de resolução: data_fim no
+   * passado, sem um contrato de planejamento mais recente que já os tenha superado
+   * (renovação), sem decisão explícita registrada (`resolvido_renovacao`) e — para
+   * contratos já classificados historicamente (`tipo_encerramento`, via backfill ou
+   * uso normal do app) — apenas se o vencimento ainda está dentro da janela de
+   * decisão (JANELA_VENCIDOS_DIAS). Isso evita que TODO o histórico de distratos
+   * antigos reapareça como "pendente": só os vencimentos recentes, ainda sem uma
+   * decisão real do consultor, entram na lista.
+   *
+   * Não filtramos por `clientes.status === 'Ativo'`: pela regra vigente (sem cron),
+   * o cliente já vira Inativo assim que deixa de ter contrato de planejamento ativo
+   * — ou seja, TODO contrato vencido sem renovação já corresponde a um cliente
+   * Inativo. Alimenta o filtro "Vencidos" da Renovação, onde o usuário confirma a
+   * não renovação (encerra) ou renova (novo contrato).
+   */
+  async getContratosVencidos() {
+    const JANELA_VENCIDOS_DIAS = 30;
+    const agora = new Date();
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const hojeStr = formatter.format(agora);
+    const hoje = new Date(`${hojeStr}T00:00:00-03:00`);
+
+    const { data: contratos } = await supabase
+      .from('contratos')
+      .select('*, clientes(nome, status)')
+      .in('status', ['ativo', 'concluido'])
+      .eq('tipo', 'planejamento')
+      .not('data_fim', 'is', null)
+      .order('data_fim', { ascending: true });
+
+    const lista = contratos || [];
+
+    return lista
+      .filter(c => !(c as any).resolvido_renovacao) // decisão já registrada via o fluxo de Renovação → fora
+      .map(c => {
+        const [y, m, d] = c.data_fim.split('-').map(Number);
+        const dataExp = new Date(y, m - 1, d, 12, 0, 0);
+        const diffDays = Math.ceil((dataExp.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+        return { ...c, dataFimCalculada: dataExp.toISOString(), diffDays };
+      })
+      .filter(c => c.diffDays < 0)
+      // Já classificado historicamente (backfill/app) e fora da janela de decisão → histórico, não "pendente"
+      .filter(c => !(c as any).tipo_encerramento || Math.abs(c.diffDays) <= JANELA_VENCIDOS_DIAS)
+      // Já renovado: cliente possui outro contrato de planejamento ativo, ou um
+      // contrato mais novo com início após este vencimento.
+      .filter(c => !lista.some(o =>
+        o.cliente_id === c.cliente_id && o.id !== c.id &&
+        (o.status === 'ativo' || new Date(o.data_inicio) > new Date(c.data_fim))
+      ))
+      .sort((a, b) => a.diffDays - b.diffDays);
+  },
+
+  /**
    * Calcula métricas MENSAIS de movimentação da base de clientes (últimos 7 meses).
    *
    * Retorna por mês:
@@ -250,6 +308,25 @@ export const dashboardService = {
     const getClientDetails = (id: string) => {
       const c = contratosPlan.find(x => x.cliente_id === id);
       return { id, nome: c?.clientes?.nome || 'Cliente não identificado' };
+    };
+
+    /**
+     * Tipo de encerramento (distrato) do cliente até o fim de um mês: usa o
+     * contrato de planejamento encerrado mais recente. Prioriza o campo explícito
+     * tipo_encerramento; se ausente, deriva de status/datas.
+     */
+    const getTipoEncerramento = (clienteId: string, fimMes: Date): 'nao_renovacao' | 'cancelamento_antecipado' => {
+      const encerrados = contratosComFim
+        .filter(c => c.cliente_id === clienteId
+          && (c.status === 'concluido' || c.status === 'cancelado')
+          && c._dataFimEfetiva && c._dataFimEfetiva <= fimMes)
+        .sort((a, b) => (b._dataFimEfetiva as Date).getTime() - (a._dataFimEfetiva as Date).getTime());
+      const ultimo: any = encerrados[0];
+      if (!ultimo) return 'nao_renovacao';
+      if (ultimo.tipo_encerramento === 'cancelamento_antecipado' || ultimo.tipo_encerramento === 'nao_renovacao') {
+        return ultimo.tipo_encerramento;
+      }
+      return ultimo.status === 'cancelado' ? 'cancelamento_antecipado' : 'nao_renovacao';
     };
 
     // Pré-calcular data_fim efetiva para cada contrato (data_fim ou data_inicio + prazo_meses)
@@ -295,12 +372,30 @@ export const dashboardService = {
 
         contratosCliente.forEach((c, idx) => {
           if (idx === 0) return;
+          // Resgates (renovação tardia) são contabilizados na categoria própria, não aqui.
+          if (c.is_resgate) return;
           const dataInicio = new Date(c.data_inicio);
           if (dataInicio >= inicioMes && dataInicio <= fimMes) {
             // Evitar duplicidade caso haja mais de um contrato no mesmo mês
             if (!listaRenovacoes.some(x => x.id === clienteId)) {
               renovacoes++;
               listaRenovacoes.push(getClientDetails(clienteId));
+            }
+          }
+        });
+      });
+
+      // ── 2b. RESGATES: contratos marcados como renovação tardia iniciados neste mês ──
+      let resgates = 0;
+      const listaResgates: any[] = [];
+      todosClienteIds.forEach(clienteId => {
+        const contratosCliente = contratosPlan.filter(c => c.cliente_id === clienteId && c.is_resgate);
+        contratosCliente.forEach(c => {
+          const dataInicio = new Date(c.data_inicio);
+          if (dataInicio >= inicioMes && dataInicio <= fimMes) {
+            if (!listaResgates.some(x => x.id === clienteId)) {
+              resgates++;
+              listaResgates.push(getClientDetails(clienteId));
             }
           }
         });
@@ -339,7 +434,7 @@ export const dashboardService = {
       const listaDistratos: any[] = [];
       baseParaDistratos.forEach(id => {
         if (!clientesAtivosNoFimDoMes.has(id)) {
-          listaDistratos.push(getClientDetails(id));
+          listaDistratos.push({ ...getClientDetails(id), tipo_encerramento: getTipoEncerramento(id, fimMes) });
         }
       });
       const distratos = listaDistratos.length;
@@ -401,12 +496,14 @@ export const dashboardService = {
           ativos: totalAtivos,
           novos: novosClientes,
           renovacoes,
+          resgates,
           distratos,
           churnMensal: Math.round(churnMensal * 10) / 10,
           churnPrecoce: Math.round(churnPrecoce * 10) / 10,
           churnPrecoce12m: Math.round(churnPrecoce12m * 10) / 10,
           clientesNovos: listaNovos,
           clientesRenovacoes: listaRenovacoes,
+          clientesResgates: listaResgates,
           clientesDistratos: listaDistratos
         });
       }
@@ -575,13 +672,13 @@ export const dashboardService = {
   async getDistribuicaoGeografica() {
     const { data: clientes } = await supabase.from('clientes').select('id, nome, estado, status').not('estado', 'is', null);
 
-    const porEstado = new Map<string, { ativos: number; inativos: number; clientes: { id: string; nome: string }[] }>();
+    const porEstado = new Map<string, { ativos: number; inativos: number; clientes: { id: string; nome: string; status: string }[] }>();
     (clientes || []).forEach((c: any) => {
       if (!c.estado) return;
       const entry = porEstado.get(c.estado) || { ativos: 0, inativos: 0, clientes: [] };
       if (c.status === 'Ativo') entry.ativos += 1;
       else entry.inativos += 1;
-      entry.clientes.push({ id: c.id, nome: c.nome });
+      entry.clientes.push({ id: c.id, nome: c.nome, status: c.status === 'Ativo' ? 'Ativo' : 'Inativo' });
       porEstado.set(c.estado, entry);
     });
 

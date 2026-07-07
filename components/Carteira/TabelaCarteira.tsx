@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { formatarMoeda } from '../../utils/formatadores';
-import { Landmark, TrendingUp, Info, Search, Briefcase, Calculator } from 'lucide-react';
+import { Landmark, TrendingUp, Search, Briefcase } from 'lucide-react';
 import Badge from '../UI/Badge';
 
 interface TabelaCarteiraProps {
@@ -23,15 +22,15 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos }) => {
 
    return (
       <div className="space-y-6 animate-fade-in">
-         <div className="flex flex-col md:flex-row gap-3 justify-between items-center bg-surface p-3 px-4 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+         <div className="flex flex-col md:flex-row gap-3 justify-between items-center bg-surface p-3 px-4 rounded-xl border border-subtle">
             <div className="flex items-center gap-2 w-full md:w-80 relative group">
-               <Search className="absolute left-3 top-2.5 h-4 w-4 text-faint group-focus-within:text-emerald-500 transition-colors" />
+               <Search className="absolute left-3 top-2.5 h-4 w-4 text-faint group-focus-within:text-primary transition-colors" />
                <input
                   type="text"
                   placeholder="Buscar por nome ou ticker..."
                   value={busca}
                   onChange={e => setBusca(e.target.value)}
-                  className="w-full pl-9 pr-3 h-9 bg-surface-2 border border-subtle rounded-[8px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-emerald-500 transition-all font-bold text-[12px] text-main placeholder:text-faint shadow-sm"
+                  className="w-full pl-9 pr-3 h-9 bg-surface-2 border border-subtle rounded-[8px] outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-bold text-[12px] text-main placeholder:text-faint"
                />
             </div>
 
@@ -40,7 +39,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos }) => {
                   <button
                      key={est}
                      onClick={() => setFiltroEstrategia(est)}
-                     className={`px-3 h-7 rounded-md font-bold text-[10px] uppercase tracking-wider transition-all whitespace-nowrap ${filtroEstrategia === est ? 'bg-surface text-emerald-600 shadow-[0_1px_2px_rgba(0,0,0,0.05)] border border-subtle/50' : 'text-faint hover:text-muted'
+                     className={`px-3 h-7 rounded-md font-bold text-[10px] uppercase tracking-wider transition-all whitespace-nowrap ${filtroEstrategia === est ? 'bg-surface-3 text-primary border border-subtle' : 'text-faint hover:text-muted'
                         }`}
                   >
                      {est}
@@ -49,7 +48,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos }) => {
             </div>
          </div>
 
-         <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden">
+         <div className="bg-surface rounded-xl border border-subtle overflow-hidden">
             <div className="overflow-x-auto">
                <table className="w-full text-left">
                   <thead>
@@ -66,16 +65,9 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos }) => {
                         <tr key={a.id} className="border-b border-subtle last:border-0 hover:bg-surface-2 transition-all group">
                            <td className="px-5 py-3.5">
                               <p className="font-bold text-main uppercase text-[13px] tracking-tight leading-none mb-1">{a.nome_ativo}</p>
-                              <div className="flex items-center gap-2">
-                                 <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                                    {a.asset_classe_nome}
-                                 </span>
-                                 {a.variacoes_fundo && (
-                                    <div className="flex items-center gap-1 text-[10px] font-bold text-faint uppercase tracking-wider">
-                                       <Calculator size={10} /> Variações
-                                    </div>
-                                 )}
-                              </div>
+                              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                 {a.asset_classe_nome}
+                              </span>
                            </td>
                            <td className="px-5 py-3.5">
                               <p className="font-bold text-main text-[12px] tracking-tight leading-none mb-1">{a.estrategias_base?.nome}</p>

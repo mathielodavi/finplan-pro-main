@@ -81,6 +81,29 @@ export const toLocalDateString = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+/**
+ * Converte um timestamp ISO para o formato aceito por <input type="datetime-local">
+ * (YYYY-MM-DDTHH:mm), respeitando o fuso de Brasília — mesmo padrão usado em
+ * components/Prontuario/AbaReunioes.tsx.
+ */
+export const paraDatetimeLocal = (dataStr: string | null | undefined): string => {
+  if (!dataStr) return '';
+  const date = new Date(dataStr);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T').substring(0, 16);
+};
+
+/**
+ * Converte o valor de um <input type="datetime-local"> (YYYY-MM-DDTHH:mm, sem fuso)
+ * para um timestamp ISO com o offset de Brasília (-03:00) explícito.
+ */
+export const deDatetimeLocalParaISO = (valor: string): string | null => {
+  const partes = valor.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!partes) return null;
+  const [, y, m, d, h, min] = partes;
+  return `${y}-${m}-${d}T${h}:${min}:00-03:00`;
+};
+
 export const formatarCNPJ = (cnpj: string): string => {
   if (!cnpj) return '';
   const apenasNumeros = cnpj.replace(/\\D/g, '');

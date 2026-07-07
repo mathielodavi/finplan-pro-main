@@ -35,6 +35,44 @@ export const investimentoService = {
     return data;
   },
 
+  /**
+   * Busca ativos de clientes por nome, ticker, CNPJ ou nome da instituição financeira
+   * (via banco_corretora_id). Usada pela Consulta de Carteira para identificar quais
+   * clientes possuem um ativo específico. Evita `.or()` com string interpolada (o termo
+   * de busca pode conter vírgula/parênteses, que corrompem a sintaxe do filtro PostgREST) —
+   * roda os filtros em paralelo e mescla por id.
+   */
+  async buscarAtivosPorTermo(termo: string) {
+    const t = termo.trim();
+    if (!t) return [];
+    const like = `%${t}%`;
+    const selectComCliente = '*, clientes(id, nome, status), bancos_corretoras(nome)';
+
+    const [porNome, porTicker, porCnpj, bancosMatch] = await Promise.all([
+      supabase.from('ativos').select(selectComCliente).ilike('nome', like),
+      supabase.from('ativos').select(selectComCliente).ilike('ticker', like),
+      supabase.from('ativos').select(selectComCliente).ilike('cnpj', like),
+      supabase.from('bancos_corretoras').select('id').ilike('nome', like),
+    ]);
+
+    if (porNome.error) throw porNome.error;
+    if (porTicker.error) throw porTicker.error;
+    if (porCnpj.error) throw porCnpj.error;
+    if (bancosMatch.error) throw bancosMatch.error;
+
+    let porBanco: any[] = [];
+    const bancoIds = (bancosMatch.data || []).map((b: any) => b.id);
+    if (bancoIds.length > 0) {
+      const { data, error } = await supabase.from('ativos').select(selectComCliente).in('banco_corretora_id', bancoIds);
+      if (error) throw error;
+      porBanco = data || [];
+    }
+
+    const mapa = new Map<string, any>();
+    [...(porNome.data || []), ...(porTicker.data || []), ...(porCnpj.data || []), ...porBanco].forEach(a => mapa.set(a.id, a));
+    return Array.from(mapa.values());
+  },
+
   async getProjetos(clienteId: string) {
     const { data, error } = await supabase.from('projetos').select('*').eq('cliente_id', clienteId).order('data_alvo', { ascending: true });
     if (error) throw error;

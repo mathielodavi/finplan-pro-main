@@ -1,9 +1,11 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { configService } from '../../services/configuracoesService';
+import { calendarioService, CalendarioConexao, CalendarioProvedor } from '../../services/calendarioService';
+import { formatarData } from '../../utils/formatadores';
 import Button from '../UI/Button';
-import { Camera, Shield, Mail, Phone, User as UserIcon } from 'lucide-react';
+import { Camera, Shield, Mail, Phone, User as UserIcon, CalendarDays, RefreshCw, AlertCircle } from 'lucide-react';
 
 const PerfilConfig: React.FC = () => {
   const { user, resetPass } = useAuth();
@@ -16,6 +18,59 @@ const PerfilConfig: React.FC = () => {
     avatar_url: user?.user_metadata?.avatar_url || ''
   });
   const [msg, setMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // ── Calendário externo (ICS) ──────────────────────────────────────────────
+  const [conexao, setConexao] = useState<CalendarioConexao | null>(null);
+  const [icsUrl, setIcsUrl] = useState('');
+  const [provedor, setProvedor] = useState<CalendarioProvedor>('google');
+  const [salvandoConexao, setSalvandoConexao] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [msgCalendario, setMsgCalendario] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const carregarConexao = async () => {
+    try {
+      const c = await calendarioService.getConexao();
+      setConexao(c);
+      if (c) { setIcsUrl(c.ics_url); setProvedor(c.provedor); }
+    } catch (err) {
+      console.error('Erro ao carregar conexão de calendário:', err);
+    }
+  };
+
+  useEffect(() => { carregarConexao(); }, []);
+
+  const handleSalvarConexao = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSalvandoConexao(true);
+    setMsgCalendario(null);
+    try {
+      await calendarioService.salvarConexao(icsUrl.trim(), provedor);
+      await carregarConexao();
+      setMsgCalendario({ type: 'success', text: 'Conexão salva! Use "Sincronizar agora" para testar.' });
+    } catch (err: any) {
+      setMsgCalendario({ type: 'error', text: 'Erro ao salvar conexão: ' + err.message });
+    } finally {
+      setSalvandoConexao(false);
+    }
+  };
+
+  const handleSincronizarAgora = async () => {
+    setSincronizando(true);
+    setMsgCalendario(null);
+    try {
+      const res = await calendarioService.sincronizarAgora();
+      await carregarConexao();
+      if (res.ok) {
+        setMsgCalendario({ type: 'success', text: 'Sincronização concluída.' });
+      } else {
+        setMsgCalendario({ type: 'error', text: 'Erro ao sincronizar: ' + res.erro });
+      }
+    } catch (err: any) {
+      setMsgCalendario({ type: 'error', text: 'Erro ao sincronizar: ' + err.message });
+    } finally {
+      setSincronizando(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +225,77 @@ const PerfilConfig: React.FC = () => {
          >
            Redefinir Senha →
          </button>
+      </div>
+
+      <div className="pt-6 border-t border-subtle space-y-4">
+        <div className="flex items-center gap-2">
+          <CalendarDays size={16} className="text-primary" />
+          <div>
+            <h4 className="text-[13px] font-bold text-main tracking-tight">Calendário externo</h4>
+            <p className="text-[10px] text-faint font-bold uppercase tracking-wider mt-0.5">
+              Visualização apenas — sem OAuth, via URL secreta de calendário (ICS)
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSalvarConexao} className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-end">
+          <div>
+            <label className={labelStyle}>Provedor</label>
+            <select
+              value={provedor}
+              onChange={e => setProvedor(e.target.value as CalendarioProvedor)}
+              className={inputStyle}
+            >
+              <option value="google">Google</option>
+              <option value="microsoft">Microsoft</option>
+              <option value="ics">Outro</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelStyle}>URL secreta do calendário (iCal/ICS)</label>
+            <input
+              type="text"
+              value={icsUrl}
+              onChange={e => setIcsUrl(e.target.value)}
+              placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+              className={inputStyle}
+              required
+            />
+          </div>
+          <Button type="submit" isLoading={salvandoConexao} className="h-9 px-4 text-[11px] font-semibold whitespace-nowrap">
+            Salvar conexão
+          </Button>
+        </form>
+
+        {conexao && (
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
+            <button
+              type="button"
+              onClick={handleSincronizarAgora}
+              disabled={sincronizando}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-[8px] border border-subtle text-main font-semibold hover:bg-surface-2 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={sincronizando ? 'animate-spin' : ''} />
+              Sincronizar agora
+            </button>
+            <span>
+              Última sincronização: {conexao.ultima_sync ? formatarData(conexao.ultima_sync, true) : 'nunca'}
+            </span>
+          </div>
+        )}
+
+        {conexao?.ultimo_erro && (
+          <div className="px-4 py-3 rounded-[8px] bg-danger/10 border border-subtle flex items-start gap-3">
+            <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
+            <p className="text-[12px] text-main font-medium leading-snug">{conexao.ultimo_erro}</p>
+          </div>
+        )}
+
+        {msgCalendario && (
+          <div className={`px-4 py-3 rounded-[8px] text-[10px] font-bold uppercase tracking-wider flex items-center gap-3 border animate-slide-up ${msgCalendario.type === 'success' ? 'bg-primary/10 text-primary border-subtle' : 'bg-danger/10 text-danger border-subtle'}`}>
+            {msgCalendario.type === 'success' ? '✓' : '⚠'} {msgCalendario.text}
+          </div>
+        )}
       </div>
     </div>
   );
