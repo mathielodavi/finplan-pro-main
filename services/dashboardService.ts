@@ -696,23 +696,32 @@ export const dashboardService = {
    * com status 'Ativo'; "inativos" = demais status (Inativo/Sem Contrato). Conta cada
    * cliente uma única vez — reconcilia com a base de clientes (diferente de contar
    * contratos, em que um cliente com vários contratos era contado várias vezes).
+   * Só entram clientes que têm (ou já tiveram) contrato de PLANEJAMENTO — ativo ou
+   * inativo, tanto faz o status do contrato — pois é essa frente que a origem mede.
+   * Clientes que só têm contrato(s) do tipo "extra" não entram nesta contagem.
    * Usado pelo gráfico de barras da Visão Geral.
    */
   async getClientesPorOrigem() {
-    const [{ data: clientes }, { data: origens }] = await Promise.all([
-      supabase.from('clientes').select('id, origem_id, status'),
+    const [{ data: clientes }, { data: origens }, { data: contratos }] = await Promise.all([
+      supabase.from('clientes').select('id, nome, origem_id, status, etiquetas_tags'),
       supabase.from('origens').select('id, nome'),
+      supabase.from('contratos').select('cliente_id, tipo'),
     ]);
 
     const origemNome = new Map((origens || []).map((o: any) => [o.id, o.nome]));
+    const clientesComPlanejamento = new Set(
+      (contratos || []).filter((c: any) => c.tipo === 'planejamento').map((c: any) => c.cliente_id)
+    );
 
-    const porOrigem = new Map<string, { total: number; ativos: number; inativos: number }>();
+    const porOrigem = new Map<string, { total: number; ativos: number; inativos: number; clientes: any[] }>();
     (clientes || []).forEach((c: any) => {
+      if (!clientesComPlanejamento.has(c.id)) return;
       const nome = (c.origem_id && origemNome.get(c.origem_id)) || 'Sem origem';
-      const entry = porOrigem.get(nome) || { total: 0, ativos: 0, inativos: 0 };
+      const entry = porOrigem.get(nome) || { total: 0, ativos: 0, inativos: 0, clientes: [] };
       entry.total += 1;
       if (c.status === 'Ativo') entry.ativos += 1;
       else entry.inativos += 1;
+      entry.clientes.push({ id: c.id, nome: c.nome, status: c.status, etiquetas_tags: c.etiquetas_tags || [] });
       porOrigem.set(nome, entry);
     });
 

@@ -6,7 +6,9 @@ import Card from '../components/UI/Card';
 import Badge from '../components/UI/Badge';
 import Button from '../components/UI/Button';
 import Modal from '../components/Modal';
-import { CheckCircle2, Search, ArrowUpRight, CheckSquare, Square, History, CalendarDays, Calendar, AlertTriangle, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import InputMoeda from '../components/UI/InputMoeda';
+import ConciliacaoOcrDrawer from '../components/Conciliacao/ConciliacaoOcrDrawer';
+import { CheckCircle2, Search, ArrowUpRight, CheckSquare, Square, History, CalendarDays, Calendar, AlertTriangle, Filter, ChevronLeft, ChevronRight, ScanLine } from 'lucide-react';
 
 const ConciliacaoPage: React.FC = () => {
   const [parcelas, setParcelas] = useState<Parcela[]>([]);
@@ -17,6 +19,7 @@ const ConciliacaoPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [isOcrDrawerOpen, setIsOcrDrawerOpen] = useState(false);
   const [resumo, setResumo] = useState({ previsto: 0, realizado: 0, countAtrasado: 0 });
 
   const hoje = new Date();
@@ -129,12 +132,6 @@ const ConciliacaoPage: React.FC = () => {
     }
   }, [selecionadas, valoresLiquidos, datasRecebimento, carregarDados, processing]);
 
-  const handleMascaraLiquido = (id: string, rawValue: string) => {
-    const cleanValue = rawValue.replace(/\D/g, "");
-    const numeric = parseInt(cleanValue || "0") / 100;
-    setValoresLiquidos(prev => ({ ...prev, [id]: numeric }));
-  };
-
   const labelMesAno = (key: string) => {
     const [ano, mes] = key.split('-');
     const nomes = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
@@ -155,7 +152,9 @@ const ConciliacaoPage: React.FC = () => {
 
   return (
     <div className="animate-fade-in max-w-[1400px] mx-auto pb-24 px-4 lg:px-8">
-      <div className="sticky top-0 z-30 bg-canvas pt-6 pb-6 border-b border-subtle mb-6 -mx-4 px-4 lg:-mx-8 lg:px-8">
+      {/* -top-6 compensa o p-6 do <main> (scroll container): sem isso o painel fixa 24px abaixo
+          do topo visível e as linhas da tabela aparecem na faixa acima dele ao rolar. */}
+      <div className="sticky -top-6 z-30 bg-canvas pt-6 pb-6 border-b border-subtle mb-6 -mx-4 px-4 lg:-mx-8 lg:px-8">
         <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 mb-6">
           <div className="flex flex-wrap items-center gap-2">
             {/* Navegador de período */}
@@ -207,6 +206,11 @@ const ConciliacaoPage: React.FC = () => {
               className="w-full pl-9 pr-3 h-9 bg-surface-2 border border-subtle rounded-lg font-medium text-[13px] outline-none focus:border-primary transition-all text-main placeholder:text-faint"
             />
           </div>
+
+          <Button variant="outline" size="md" onClick={() => setIsOcrDrawerOpen(true)} className="h-9 gap-2 text-[12px] font-semibold shrink-0">
+            <ScanLine size={15} />
+            Conciliar arquivo
+          </Button>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -243,7 +247,12 @@ const ConciliacaoPage: React.FC = () => {
           </div>
 
           <div className="bg-surface border border-subtle p-4 rounded-xl flex flex-col transition-colors h-[108px]">
-            <span className="text-[11px] font-medium text-faint block leading-none mb-4">Saldo a conciliar</span>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[11px] font-medium text-faint block leading-none">Saldo a conciliar</span>
+              {resumo.countAtrasado > 0 && (
+                <Badge variant="danger" size="sm">{resumo.countAtrasado} em atraso</Badge>
+              )}
+            </div>
             <div className="flex justify-between items-end mt-auto">
               <p className="text-[24px] font-bold text-main tracking-tight break-words xl:truncate leading-none">{formatarMoeda(resumo.previsto - resumo.realizado)}</p>
               <div className="p-1.5 rounded-lg" style={{ backgroundColor: 'rgba(248,113,113,0.14)', color: 'var(--danger)' }}>
@@ -258,6 +267,8 @@ const ConciliacaoPage: React.FC = () => {
         {parcelasAgrupadas.map(([periodoKey, lista]) => {
           const editaveisNoGrupo = lista.filter(p => p.status !== 'pago').map(p => p.id);
           const todosSelecionadosNoGrupo = editaveisNoGrupo.length > 0 && editaveisNoGrupo.every(id => selecionadas.includes(id));
+          const liquidoPrevistoGrupo = lista.reduce((acc, p) => acc + p.valor_previsto * ((p.contratos?.repasse_percentual || 100) / 100), 0);
+          const abertasNoGrupo = lista.filter(p => p.status !== 'pago' && p.status !== 'cancelado').length;
 
           return (
             <div key={periodoKey} className="space-y-6">
@@ -265,6 +276,8 @@ const ConciliacaoPage: React.FC = () => {
                 <CalendarDays size={16} className="text-muted" />
                 <span className="text-[13px] font-semibold text-main">{labelMesAno(periodoKey)}</span>
                 <Badge variant="neutral" size="sm">{lista.length} parcelas</Badge>
+                {abertasNoGrupo > 0 && <Badge variant="warning" size="sm">{abertasNoGrupo} abertas</Badge>}
+                <span className="text-[12px] font-semibold text-muted border-l border-subtle pl-3">líq. previsto {formatarMoeda(liquidoPrevistoGrupo)}</span>
               </div>
 
               <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden transition-all">
@@ -276,7 +289,7 @@ const ConciliacaoPage: React.FC = () => {
                           {editaveisNoGrupo.length > 0 && (
                             <button
                               onClick={() => selecionarGrupo(lista)}
-                              className={`p-1 transition-colors ${todosSelecionadosNoGrupo ? 'text-emerald-600' : 'text-faint hover:text-emerald-600'}`}
+                              className={`p-1 transition-colors ${todosSelecionadosNoGrupo ? 'text-primary' : 'text-faint hover:text-primary'}`}
                             >
                               {todosSelecionadosNoGrupo ? <CheckSquare size={16} strokeWidth={2.5} /> : <Square size={16} strokeWidth={2.5} />}
                             </button>
@@ -285,7 +298,7 @@ const ConciliacaoPage: React.FC = () => {
                         <th className="px-4 py-2 text-[10px] font-bold uppercase text-faint tracking-wider">Cliente / Acordo</th>
                         <th className="px-4 py-2 text-[10px] font-bold uppercase text-faint tracking-wider text-center">Vencimento</th>
                         <th className="px-4 py-2 text-[10px] font-bold uppercase text-faint tracking-wider text-right">Líquido Previsto</th>
-                        <th className="px-4 py-2 text-[10px] font-bold uppercase text-emerald-600 tracking-wider text-right">Líquido Recebido</th>
+                        <th className="px-4 py-2 text-[10px] font-bold uppercase text-primary tracking-wider text-right">Líquido Recebido</th>
                         <th className="px-4 py-2 text-[10px] font-bold uppercase text-faint tracking-wider text-center">Recebimento</th>
                         <th className="px-4 py-2 text-right text-[10px] font-bold uppercase text-faint tracking-wider">Ação</th>
                       </tr>
@@ -298,19 +311,23 @@ const ConciliacaoPage: React.FC = () => {
                         const isPago = p.status === 'pago';
 
                         return (
-                          <tr key={p.id} className={`group transition-all border-b border-subtle last:border-0 ${isPago ? 'bg-surface-2/50' : isSelecionada ? 'bg-emerald-50/40' : 'hover:bg-surface-2 cursor-pointer'}`}>
+                          <tr
+                            key={p.id}
+                            onClick={() => !isPago && toggleSelecao(p.id)}
+                            className={`group transition-all border-b border-subtle last:border-0 ${isPago ? 'bg-surface-2/50' : isSelecionada ? 'bg-primary/10 cursor-pointer' : 'hover:bg-surface-2 cursor-pointer'}`}
+                          >
                             <td className="px-4 py-2.5 text-center">
                               {!isPago ? (
-                                <button onClick={() => toggleSelecao(p.id)} className={`p-1 transition-colors ${isSelecionada ? 'text-emerald-600' : 'text-faint hover:text-emerald-400'}`}>
+                                <button onClick={(e) => { e.stopPropagation(); toggleSelecao(p.id); }} className={`p-1 transition-colors ${isSelecionada ? 'text-primary' : 'text-faint hover:text-primary'}`}>
                                   {isSelecionada ? <CheckSquare size={16} /> : <Square size={16} />}
                                 </button>
                               ) : (
-                                <div className="p-1 text-emerald-500 opacity-40 mx-auto"><CheckCircle2 size={16} /></div>
+                                <div className="p-1 text-primary opacity-40 mx-auto"><CheckCircle2 size={16} /></div>
                               )}
                             </td>
                             <td className="px-4 py-2.5">
                               <div className="flex items-center gap-2.5">
-                                <span className={`w-1 h-5 rounded-full shrink-0 ${p.contratos?.tipo === 'planejamento' ? 'bg-blue-400' : 'bg-amber-400'}`} />
+                                <span className={`w-1 h-5 rounded-full shrink-0 ${p.contratos?.tipo === 'planejamento' ? 'bg-info' : 'bg-warning'}`} />
                                 <div>
                                   <p className="font-bold text-main text-[13px] tracking-tight leading-none mb-1">{p.clientes?.nome}</p>
                                   <span className="text-[10px] text-faint font-bold uppercase block">{p.contratos?.descricao}</span>
@@ -328,19 +345,15 @@ const ConciliacaoPage: React.FC = () => {
                                 </span>
                               </div>
                             </td>
-                            <td className="px-4 py-2.5 text-right min-w-[140px] align-middle">
-                              <div className="relative group/input">
-                                <span className="absolute left-3 top-2 text-[10px] font-bold text-faint group-focus-within/input:text-emerald-500">R$</span>
-                                <input
-                                  type="text"
-                                  disabled={isPago}
-                                  value={new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(valoresLiquidos[p.id] || 0)}
-                                  onChange={(e) => handleMascaraLiquido(p.id, e.target.value)}
-                                  className="w-full pl-8 pr-2 h-8 bg-surface border border-subtle rounded-[8px] font-bold text-right text-emerald-700 outline-none focus:bg-surface focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all text-[12px] disabled:opacity-50 disabled:bg-transparent shadow-inner"
-                                />
-                              </div>
+                            <td className="px-4 py-2.5 text-right min-w-[140px] align-middle" onClick={(e) => e.stopPropagation()}>
+                              <InputMoeda
+                                value={valoresLiquidos[p.id] || 0}
+                                onChange={(v) => setValoresLiquidos(prev => ({ ...prev, [p.id]: v }))}
+                                disabled={isPago}
+                                className="text-right"
+                              />
                             </td>
-                            <td className="px-4 py-2.5 text-center min-w-[140px] align-middle">
+                            <td className="px-4 py-2.5 text-center min-w-[140px] align-middle" onClick={(e) => e.stopPropagation()}>
                               <div className="relative">
                                 <Calendar size={12} className="absolute left-2.5 top-2.5 text-faint pointer-events-none" />
                                 <input
@@ -348,11 +361,11 @@ const ConciliacaoPage: React.FC = () => {
                                   disabled={isPago}
                                   value={datasRecebimento[p.id] || ''}
                                   onChange={e => setDatasRecebimento({ ...datasRecebimento, [p.id]: e.target.value })}
-                                  className="w-full pl-7 pr-1 h-8 bg-surface border border-subtle rounded-[8px] font-bold text-[11px] outline-none focus:bg-surface focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all uppercase disabled:opacity-50 disabled:bg-transparent text-main shadow-inner"
+                                  className="w-full pl-7 pr-1 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-[11px] outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all uppercase disabled:opacity-50 disabled:bg-transparent text-main"
                                 />
                               </div>
                             </td>
-                            <td className="px-4 py-2.5 text-right align-middle">
+                            <td className="px-4 py-2.5 text-right align-middle" onClick={(e) => e.stopPropagation()}>
                               {!isPago ? (
                                 <button
                                   onClick={async () => {
@@ -363,13 +376,13 @@ const ConciliacaoPage: React.FC = () => {
                                       alert("Erro ao baixar parcela.");
                                     }
                                   }}
-                                  className="text-white font-bold text-[10px] uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 px-3 h-8 rounded-[8px] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)] ml-auto"
+                                  className="text-[#0b0e14] font-bold text-[10px] uppercase tracking-wider bg-primary hover:opacity-90 px-3 h-8 rounded-[8px] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)] ml-auto"
                                 >
                                   Baixar
                                 </button>
                               ) : (
                                 <div className="flex flex-col items-end">
-                                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Conciliado</span>
+                                  <span className="text-[10px] font-bold text-primary uppercase tracking-wider block">Conciliado</span>
                                   <span className="text-[10px] font-bold text-faint uppercase tracking-wider block">{formatarData(p.data_pagamento)}</span>
                                 </div>
                               )}
@@ -459,6 +472,12 @@ const ConciliacaoPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <ConciliacaoOcrDrawer
+        open={isOcrDrawerOpen}
+        onClose={() => setIsOcrDrawerOpen(false)}
+        onConcluido={carregarDados}
+      />
     </div>
   );
 };

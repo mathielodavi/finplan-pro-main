@@ -36,20 +36,20 @@ const PanelLabel: React.FC<{ title: string; hint?: string }> = ({ title, hint })
   </div>
 );
 
-// Badge único das Pautas (substitui os antigos badges de categoria + "Em agenda"):
-// Atraso (vermelho) > Hoje (amarelo, reunião de hoje ainda dentro da janela de
-// tolerância de 1h) > Agendada (neutro, outro dia futuro) > Check-in (aviso).
-const estadoPauta = (r: any): { variant: 'danger' | 'warning' | 'neutral'; label: string; Icon: React.ComponentType<any> } => {
-  if (r.categoria === 'late') return { variant: 'danger', label: r.qtd_atrasadas > 1 ? `ATRASO ×${r.qtd_atrasadas}` : 'ATRASO', Icon: AlertCircle };
-  if (r.categoria === 'pending') return { variant: 'warning', label: 'CHECK-IN', Icon: CalendarX };
-  if (r.atencaoHoje) return { variant: 'warning', label: 'HOJE', Icon: Clock };
-  return { variant: 'neutral', label: 'AGENDADA', Icon: Clock };
+// Sistema de cores da Agenda — sem tags de texto (redundante com cor + filtro): atraso
+// (vermelho) > hoje (amarelo, reunião de hoje ainda dentro da janela de tolerância de 1h)
+// > agendamento futuro (verde) > check-in pendente (aviso).
+const estadoPauta = (r: any): { variant: 'danger' | 'warning' | 'success'; Icon: React.ComponentType<any> } => {
+  if (r.categoria === 'late') return { variant: 'danger', Icon: AlertCircle };
+  if (r.categoria === 'pending') return { variant: 'warning', Icon: CalendarX };
+  if (r.atencaoHoje) return { variant: 'warning', Icon: Clock };
+  return { variant: 'success', Icon: Clock };
 };
 
 const CORES_ESTADO_PAUTA: Record<string, { bg: string; fg: string }> = {
   danger: { bg: 'rgba(248,113,113,0.14)', fg: 'var(--danger)' },
   warning: { bg: 'rgba(251,191,36,0.14)', fg: 'var(--warning)' },
-  neutral: { bg: 'rgba(155,161,176,0.14)', fg: 'var(--text-muted)' },
+  success: { bg: 'rgba(52,211,153,0.14)', fg: 'var(--success)' },
 };
 
 const legendContent = (props: any) => (
@@ -105,7 +105,7 @@ const Dashboard: React.FC = () => {
     isOpen: boolean;
     type: string;
     mes: string;
-    list: { id: string; nome: string; status?: string; tipo_encerramento?: string }[];
+    list: { id: string; nome: string; status?: string; tipo_encerramento?: string; etiquetas_tags?: string[] }[];
   }>({ isOpen: false, type: '', mes: '', list: [] });
 
   const ITEMS_PER_PAGE = 5;
@@ -210,6 +210,7 @@ const Dashboard: React.FC = () => {
         cliente_email: cli.email || null,
         em_agenda_externa: !!cli.em_agenda_externa,
         link_reuniao: reuniaoExibida?.link_reuniao || null,
+        calendario_evento_uid: reuniaoExibida?.calendario_evento_uid || null,
         categoria,
         atencaoHoje,
         reuniao_id: reuniaoExibida?.id || null,
@@ -332,19 +333,26 @@ const Dashboard: React.FC = () => {
     `px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted'}`;
 
   // ── Drawer de clientes (drill-down): linha e segmentos ──
-  const renderCliente = (c: any, i: number) => (
-    <button
-      key={c.id || i}
-      onClick={() => { setModalClientes(m => ({ ...m, isOpen: false })); navigate(`/clientes/${c.id}`); }}
-      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-surface-2 transition-colors border border-transparent hover:border-subtle text-left group"
-    >
-      <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-full bg-surface-3 text-muted font-bold flex items-center justify-center text-xs">{c.nome.charAt(0).toUpperCase()}</div>
-        <span className="font-medium text-main">{c.nome}</span>
-      </div>
-      <ChevronRight size={16} className="text-faint group-hover:text-muted" />
-    </button>
-  );
+  const renderCliente = (c: any, i: number) => {
+    // Marcador de status no avatar: verde = Ativo, vermelho = demais status (Inativo/Sem Contrato).
+    const ativo = c.status === 'Ativo';
+    const avatarCls = ativo ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger';
+    return (
+      <button
+        key={c.id || i}
+        onClick={() => { setModalClientes(m => ({ ...m, isOpen: false })); navigate(`/clientes/${c.id}`); }}
+        className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-surface-2 transition-colors border border-transparent hover:border-subtle text-left group"
+      >
+        <div className="flex items-center gap-3">
+          <div className={`h-8 w-8 rounded-full font-bold flex items-center justify-center text-xs ${avatarCls}`} title={c.status || undefined}>
+            {c.nome.charAt(0).toUpperCase()}
+          </div>
+          <span className="font-medium text-main">{c.nome}</span>
+        </div>
+        <ChevronRight size={16} className="text-faint group-hover:text-muted" />
+      </button>
+    );
+  };
 
   const renderSegmento = (titulo: string, desc: string | null, itens: any[]) => (
     <div className="mb-5 last:mb-0">
@@ -357,8 +365,18 @@ const Dashboard: React.FC = () => {
     </div>
   );
 
+  // Clique numa barra do gráfico "Clientes por Origem": abre o drawer com todos os clientes
+  // daquela origem (a barra clicada — Total/Ativos/Inativos — não filtra a lista, só entra).
+  const abrirDrawerOrigem = (data: any) => {
+    const origem = data?.origem;
+    if (!origem) return;
+    const grupo = clientesPorOrigem.find((o: any) => o.origem === origem);
+    setModalClientes({ isOpen: true, type: 'Origem', mes: origem, list: grupo?.clientes || [] });
+  };
+
   const drawerTitulo = modalClientes.type === 'Engajamento' ? `Status: ${modalClientes.mes}`
     : modalClientes.type === 'Clientes' ? `Clientes em ${modalClientes.mes}`
+    : modalClientes.type === 'Origem' ? `Origem: ${modalClientes.mes}`
     : `${modalClientes.type} · ${modalClientes.mes}`;
 
   return (
@@ -453,8 +471,8 @@ const Dashboard: React.FC = () => {
           <div className={`${panelCls} lg:col-span-4 overflow-hidden`}>
             <div className={panelHeadCls}>
               <div className="flex gap-2 items-baseline">
-                <h3 className="text-[13px] font-semibold text-main">Pautas</h3>
-                <span className="text-[11px] text-faint hidden sm:inline">Agenda e check-ins</span>
+                <h3 className="text-[13px] font-semibold text-main">Agenda</h3>
+                <span className="text-[11px] text-faint hidden sm:inline">Compromissos e check-ins</span>
               </div>
               <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
                 {['all', 'late', 'upcoming', 'pending'].map((f) => (
@@ -488,14 +506,7 @@ const Dashboard: React.FC = () => {
                             Sem reunião{temCalendarioAtivo && !r.em_agenda_externa ? ' · não encontrada no calendário' : ''}
                           </span>
                         ) : (
-                          <>
-                            <span className="text-[11px] text-muted">{r.data_reuniao ? formatarData(r.data_reuniao, true) : '—'}</span>
-                            {temCalendarioAtivo && r.em_agenda_externa && (
-                              <span title="Confirmado no calendário externo" className="text-faint inline-flex">
-                                <CalendarCheck size={11} />
-                              </span>
-                            )}
-                          </>
+                          <span className="text-[11px] text-muted">{r.data_reuniao ? formatarData(r.data_reuniao, true) : '—'}</span>
                         )}
                         {r.categoria === 'late' && r.qtd_atrasadas > 1 && (
                           <span className="text-[11px] text-faint">· {r.qtd_atrasadas} em atraso</span>
@@ -520,7 +531,25 @@ const Dashboard: React.FC = () => {
                         </a>
                       );
                     })()}
-                    <Badge variant={estado.variant} size="sm">{estado.label}</Badge>
+                    {(() => {
+                      const temReuniao = r.categoria !== 'pending';
+                      const vinculada = temReuniao && !!r.calendario_evento_uid;
+                      const clicavel = temReuniao && !!r.link_reuniao;
+                      const titulo = !temReuniao ? 'Sem reunião agendada' : vinculada ? 'Vinculada ao calendário externo' : 'Reunião manual (não vinculada ao calendário externo)';
+                      return (
+                        <a
+                          href={clicavel ? r.link_reuniao : undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => { if (!clicavel) e.preventDefault(); }}
+                          title={titulo}
+                          className={`h-7 w-7 flex items-center justify-center rounded-lg border border-subtle transition-colors ${clicavel ? 'hover:bg-surface-3' : 'opacity-40 cursor-not-allowed'}`}
+                          style={{ color: !temReuniao ? 'var(--text-faint)' : vinculada ? 'var(--success)' : 'var(--text-faint)' }}
+                        >
+                          <CalendarCheck size={14} />
+                        </a>
+                      );
+                    })()}
                   </div>
                 </div>
                 );
@@ -647,7 +676,7 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Clientes por Origem */}
         <div className={`${panelCls} lg:col-span-5`}>
-          <PanelLabel title="Clientes por Origem" hint="Total · ativos · inativos" />
+          <PanelLabel title="Clientes por Origem" hint="Total · ativos · inativos · clique para detalhar" />
           <div className="p-4 flex-1 min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={clientesPorOrigem} margin={{ top: 5, right: 8, bottom: 0, left: -16 }}>
@@ -657,9 +686,9 @@ const Dashboard: React.FC = () => {
                 <YAxis axisLine={false} tickLine={false} tick={axisTick} allowDecimals={false} />
                 <Tooltip contentStyle={tooltipStyle} cursor={tooltipCursor} />
                 <Legend content={legendContent} />
-                <Bar dataKey="total" name="Total" fill={CHART_COLORS.info} radius={[3, 3, 0, 0]} barSize={14} />
-                <Bar dataKey="ativos" name="Ativos" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} barSize={14} />
-                <Bar dataKey="inativos" name="Inativos" fill={CHART_COLORS.danger} radius={[3, 3, 0, 0]} barSize={14} />
+                <Bar dataKey="total" name="Total" fill={CHART_COLORS.info} radius={[3, 3, 0, 0]} barSize={14} style={{ cursor: 'pointer' }} onClick={abrirDrawerOrigem} />
+                <Bar dataKey="ativos" name="Ativos" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} barSize={14} style={{ cursor: 'pointer' }} onClick={abrirDrawerOrigem} />
+                <Bar dataKey="inativos" name="Inativos" fill={CHART_COLORS.danger} radius={[3, 3, 0, 0]} barSize={14} style={{ cursor: 'pointer' }} onClick={abrirDrawerOrigem} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -861,6 +890,13 @@ const Dashboard: React.FC = () => {
           <>
             {renderSegmento('Ativos', null, modalClientes.list.filter(c => c.status === 'Ativo'))}
             {renderSegmento('Inativos', null, modalClientes.list.filter(c => c.status === 'Inativo'))}
+          </>
+        ) : modalClientes.type === 'Origem' ? (
+          <>
+            {Array.from(new Set(modalClientes.list.flatMap(c => c.etiquetas_tags || []))).sort().map(tag =>
+              renderSegmento(tag, null, modalClientes.list.filter(c => (c.etiquetas_tags || []).includes(tag)))
+            )}
+            {renderSegmento('Sem tags', null, modalClientes.list.filter(c => !(c.etiquetas_tags || []).length))}
           </>
         ) : (
           <div className="space-y-1">{modalClientes.list.map(renderCliente)}</div>
