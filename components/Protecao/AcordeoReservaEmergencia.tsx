@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Shield, ChevronDown, ChevronUp, Settings, Zap, Edit3, Check, X } from 'lucide-react';
+import { Shield, ChevronDown, ChevronUp, Settings, Zap, Edit3, Check, X, Loader2 } from 'lucide-react';
 import { ClienteSeguro, ParametrosCalculo, protecaoService } from '../../services/protecaoService';
 import { supabase } from '../../services/supabaseClient';
 
@@ -50,6 +50,8 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
     const [inclNaoObr, setInclNaoObr] = useState(dados.reserva_incluir_nao_obrigatorias ?? true);
     const [inclFinanc, setInclFinanc] = useState(dados.reserva_incluir_financiamentos ?? true);
     const [inclDividas, setInclDividas] = useState(dados.reserva_incluir_dividas ?? true);
+    const [salvando, setSalvando] = useState(false);
+    const [erroSalvar, setErroSalvar] = useState<string | null>(null);
 
     const [reservaLegada, setReservaLegada] = useState<number>(0);
 
@@ -95,22 +97,31 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                 pct >= 25 ? 'parcial' : 'desprotegido';
 
     const salvar = async () => {
-        const reservaFinal = modo === 'automatico' ? calcularReservaAutomatica() : reservaManual;
-        const campos: Partial<ClienteSeguro> = {
-            reserva_modo: modo,
-            reserva_incluir_nao_obrigatorias: inclNaoObr,
-            reserva_incluir_financiamentos: inclFinanc,
-            reserva_incluir_dividas: inclDividas,
-        };
-        // Atualiza modo e configurações no clientes_seguros
-        await protecaoService.update(dados.cliente_id, campos);
+        setSalvando(true);
+        setErroSalvar(null);
+        try {
+            const reservaFinal = modo === 'automatico' ? calcularReservaAutomatica() : reservaManual;
+            const campos: Partial<ClienteSeguro> = {
+                reserva_modo: modo,
+                reserva_incluir_nao_obrigatorias: inclNaoObr,
+                reserva_incluir_financiamentos: inclFinanc,
+                reserva_incluir_dividas: inclDividas,
+            };
+            // Atualiza modo e configurações no clientes_seguros
+            await protecaoService.update(dados.cliente_id, campos);
 
-        // Atualiza a reserva_recomendada da tabela clientes (Single Source of Truth)
-        await supabase.from('clientes').update({ reserva_recomendada: reservaFinal }).eq('id', dados.cliente_id);
+            // Atualiza a reserva_recomendada da tabela clientes (Single Source of Truth)
+            const { error } = await supabase.from('clientes').update({ reserva_recomendada: reservaFinal }).eq('id', dados.cliente_id);
+            if (error) throw error;
 
-        setReservaLegada(reservaFinal);
-        onUpdate(campos);
-        setModalAberto(false);
+            setReservaLegada(reservaFinal);
+            onUpdate(campos);
+            setModalAberto(false);
+        } catch (err: any) {
+            setErroSalvar('Erro ao salvar reserva de emergência: ' + (err?.message || 'tente novamente.'));
+        } finally {
+            setSalvando(false);
+        }
     };
 
     const barW = Math.min(pct, 100);
@@ -181,7 +192,7 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
 
                     {/* Botão definir reserva */}
                     <button
-                        onClick={() => setModalAberto(true)}
+                        onClick={() => { setErroSalvar(null); setModalAberto(true); }}
                         className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:border-[color:var(--primary)] hover:text-[color:var(--primary)] transition-all w-max shadow-[0_1px_2px_rgba(0,0,0,0.05)] bg-surface"
                     >
                         <Settings size={13} />
@@ -291,10 +302,17 @@ const AcordeoReservaEmergencia: React.FC<Props> = ({ dados, parametros, onUpdate
                             </div>
                         )}
 
+                        {erroSalvar && (
+                            <div className="px-3 py-2 rounded-lg bg-[rgba(248,113,113,0.12)] border border-[rgba(248,113,113,0.25)] text-[color:var(--danger)] text-[11px] font-semibold">
+                                {erroSalvar}
+                            </div>
+                        )}
+
                         <div className="flex gap-2 pt-4">
-                            <button onClick={() => setModalAberto(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
-                                <Check size={13} /> Salvar
+                            <button onClick={() => setModalAberto(false)} disabled={salvando} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm disabled:opacity-50">Cancelar</button>
+                            <button onClick={salvar} disabled={salvando} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5 disabled:opacity-60">
+                                {salvando ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                                {salvando ? 'Salvando...' : 'Salvar'}
                             </button>
                         </div>
                     </div>

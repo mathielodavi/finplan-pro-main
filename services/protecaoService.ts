@@ -136,10 +136,15 @@ export interface SeguroVida {
     cliente_id: string;
     membro: string; // 'cliente', 'conjuge', ou nome do dependente
     seguradora?: string;
-    cobertura_funeral?: number;
-    cobertura_morte?: number;
+    modalidade?: 'individual' | 'grupo';
+    // Padrão de Vida
+    cobertura_doencas_graves?: number;
     cobertura_invalidez?: number;
+    cobertura_cirurgia?: number;
     dit?: number;
+    // Sucessão
+    cobertura_morte?: number;
+    cobertura_funeral?: number;
     inicio_vigencia?: string;
     fim_vigencia?: string;
     mensalidade?: number;

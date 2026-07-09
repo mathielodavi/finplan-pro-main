@@ -9,7 +9,8 @@ import { calcularCoberturaVida, calcularSucessao, calcularTaxaRealMensal } from 
 import AcordeoReservaEmergencia from './AcordeoReservaEmergencia';
 import AcordeoPlanoSaude from './AcordeoPlanoSaude';
 import AcordeoSeguros from './AcordeoSeguros';
-import AcordeoExtras from './AcordeoExtras';
+import AcordeoProtecaoPatrimonial from './AcordeoProtecaoPatrimonial';
+import AcordeoProtecaoProfissional from './AcordeoProtecaoProfissional';
 import { supabase } from '../../services/supabaseClient';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -28,13 +29,15 @@ interface Props {
 
 const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar }) => {
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
-    const [drawer, setDrawer] = useState<null | 'seguros' | 'reserva' | 'plano' | 'extras'>(null);
+    const [drawer, setDrawer] = useState<null | 'seguros' | 'reserva' | 'plano' | 'patrimonial' | 'profissional'>(null);
     const [score, setScore] = useState(0);
     const [saldoReserva, setSaldoReserva] = useState(0);
-    const [coberturaContratada, setCoberturaContratada] = useState(0);
+    const [segurosLista, setSegurosLista] = useState<any[]>([]);
+    const [previdencia, setPrevidencia] = useState({ pgbl: 0, vgbl: 0 });
     const [reservaIdeal, setReservaIdeal] = useState(0);
     const [planosCount, setPlanosCount] = useState(0);
-    const [extrasCount, setExtrasCount] = useState(0);
+    const [patrimonialCount, setPatrimonialCount] = useState(0);
+    const [profissionalCount, setProfissionalCount] = useState(0);
     const [planejadorEmail, setPlanejadorEmail] = useState('');
     const [planejadorNome, setPlanejadorNome] = useState('');
 
@@ -63,9 +66,24 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
 
         const loadSeguros = async () => {
             const seguros = await protecaoService.getSegurosVida(dados.cliente_id);
-            const soma = (seguros || []).reduce((acc, s) => acc + (Number(s.cobertura_morte) || 0), 0);
-            setCoberturaContratada(soma);
+            setSegurosLista(seguros || []);
         };
+
+        // Ativos de Previdência Privada cadastrados na Carteira — fonte única de
+        // verdade para a Sucessão (substitui os campos manuais pgbl_*/vgbl_*).
+        const loadPrevidencia = async () => {
+            const { data } = await supabase
+                .from('ativos')
+                .select('valor_atual, tipo_previdencia')
+                .eq('cliente_id', dados.cliente_id)
+                .eq('origem', 'previdencia_privada');
+            const pgbl = (data || []).filter(a => a.tipo_previdencia === 'PGBL').reduce((acc, a) => acc + (a.valor_atual || 0), 0);
+            const vgbl = (data || []).filter(a => a.tipo_previdencia === 'VGBL').reduce((acc, a) => acc + (a.valor_atual || 0), 0);
+            setPrevidencia({ pgbl, vgbl });
+        };
+
+        const TIPOS_PATRIMONIAL = ['Residencial', 'Automotivo'];
+        const TIPOS_PROFISSIONAL = ['Empresarial', 'Responsabilidade Civil'];
 
         const loadPilares = async () => {
             const [{ data: cli }, planos, extras] = await Promise.all([
@@ -75,7 +93,8 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
             ]);
             setReservaIdeal(cli?.reserva_recomendada || 0);
             setPlanosCount((planos || []).length);
-            setExtrasCount((extras || []).length);
+            setPatrimonialCount((extras || []).filter(e => TIPOS_PATRIMONIAL.includes(e.tipo_seguro || '')).length);
+            setProfissionalCount((extras || []).filter(e => TIPOS_PROFISSIONAL.includes(e.tipo_seguro || '')).length);
         };
 
         const loadScore = async () => {
@@ -85,6 +104,7 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
         loadReserva();
         loadPlanejador();
         loadSeguros();
+        loadPrevidencia();
         loadPilares();
         loadScore();
     }, [dados.cliente_id]);
@@ -109,22 +129,30 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
         dados.bens_cliente || 0, dados.bens_conjuge || 0,
         dados.investimentos_cliente || 0, dados.investimentos_conjuge || 0,
         dados.dividas_cliente || 0, dados.dividas_conjuge || 0,
-        dados.pgbl_cliente || 0, dados.pgbl_conjuge || 0,
-        dados.vgbl_cliente || 0, dados.vgbl_conjuge || 0,
+        previdencia.pgbl, 0,
+        previdencia.vgbl, 0,
         parametros.perc_custos_inventario,
         dados.honorarios_perc,
         dados.itcmd_perc,
-    ), [dados, parametros]);
+    ), [dados, parametros, previdencia]);
 
     const totalEducacao = dependentes.reduce((acc, d) => acc + (d.total_calculado || 0), 0);
     const totalGeral = totalEducacao + coberturaVida.coberturaFamiliar + sucessao.coberturaSucessao;
-    const lacunaTotal = Math.max(0, totalGeral - coberturaContratada);
 
-    // Pilares da necessidade recomendada (o "contratado" não é etiquetado por pilar).
+    // Contratado por grupo de coberturas (Seguro de Vida) — Sucessão (Morte + Funeral)
+    // conta para Educação/Dependentes e Sucessão Patrimonial; Padrão de Vida (Doenças
+    // Graves + Invalidez + Cirurgia + DIT) conta só para o pilar de Padrão de Vida.
+    const contratadoSucessao = segurosLista.reduce((acc, s) => acc + (s.cobertura_morte || 0) + (s.cobertura_funeral || 0), 0);
+    const contratadoPadraoVida = segurosLista.reduce((acc, s) => acc +
+        (s.cobertura_doencas_graves || 0) + (s.cobertura_invalidez || 0) + (s.cobertura_cirurgia || 0) + (s.dit || 0), 0);
+    const coberturaContratada = contratadoSucessao + contratadoPadraoVida;
+    const lacunaTotal = Math.max(0, totalGeral - coberturaContratada);
+    const sucessaoIdeal = totalEducacao + sucessao.coberturaSucessao;
+
     const pilares = [
-        { label: 'Educação e dependentes', valor: totalEducacao },
-        { label: 'Padrão de vida', valor: coberturaVida.coberturaFamiliar },
-        { label: 'Sucessão patrimonial', valor: sucessao.coberturaSucessao },
+        { label: 'Educação e dependentes', valor: totalEducacao, contratado: contratadoSucessao },
+        { label: 'Padrão de vida', valor: coberturaVida.coberturaFamiliar, contratado: contratadoPadraoVida },
+        { label: 'Sucessão patrimonial', valor: sucessao.coberturaSucessao, contratado: contratadoSucessao },
     ];
 
     // Panorama dos demais pilares (leitura) — mesma regra do acordeão de reserva.
@@ -365,8 +393,8 @@ Planejador: ${planejadorEmail || '—'}`;
                 rowSucessao(`Bens (inv. ${percEfetivo.toFixed(1)}%)`, fmtMoeda(dados.bens_cliente || 0), fmtMoeda(dados.bens_conjuge || 0), fmtMoeda(sucessao.custoInventario)),
                 rowSucessao('Investimentos Líquidos', fmtMoeda(dados.investimentos_cliente || 0), fmtMoeda(dados.investimentos_conjuge || 0), fmtMoeda((dados.investimentos_cliente || 0) + (dados.investimentos_conjuge || 0))),
                 rowSucessao('Dívidas', fmtMoeda(dados.dividas_cliente || 0), fmtMoeda(dados.dividas_conjuge || 0), fmtMoeda((dados.dividas_cliente || 0) + (dados.dividas_conjuge || 0))),
-                rowSucessao('Previdência PGBL', fmtMoeda(dados.pgbl_cliente || 0), fmtMoeda(dados.pgbl_conjuge || 0), fmtMoeda((dados.pgbl_cliente || 0) + (dados.pgbl_conjuge || 0))),
-                rowSucessao('Previdência VGBL', fmtMoeda(dados.vgbl_cliente || 0), fmtMoeda(dados.vgbl_conjuge || 0), fmtMoeda((dados.vgbl_cliente || 0) + (dados.vgbl_conjuge || 0))),
+                rowSucessao('Previdência PGBL (Carteira)', '—', '—', fmtMoeda(previdencia.pgbl)),
+                rowSucessao('Previdência VGBL (Carteira)', '—', '—', fmtMoeda(previdencia.vgbl)),
                 rowSucessao('Honorários', `${dados.honorarios_perc || 0}%`, '—', '—'),
                 rowSucessao('ITCMD', `${dados.itcmd_perc || 0}%`, '—', '—'),
             ],
@@ -409,18 +437,17 @@ Planejador: ${planejadorEmail || '—'}`;
             headerSection('6. COBERTURAS DE SEGURO CADASTRADAS', y); y += 6;
             autoTable(doc, {
                 startY: y,
-                head: [['Membro', 'Seguradora', 'Cob. Morte', 'Cob. Funeral', 'Invalidez', 'DIT (diária)', 'Mensalidade', 'Vigência']],
+                head: [['Membro', 'Modalidade', 'Morte', 'Funeral', 'Doenças Graves', 'Invalidez', 'Cirurgia', 'DIT', 'Mensalidade']],
                 body: segurosData.map(s => [
                     s.membro === 'cliente' ? nomeCliente_ : nomeConjuge,
-                    s.seguradora || '—',
+                    s.modalidade === 'grupo' ? 'Grupo' : 'Individual',
                     fmtMoeda(s.cobertura_morte || 0),
                     fmtMoeda(s.cobertura_funeral || 0),
+                    fmtMoeda(s.cobertura_doencas_graves || 0),
                     fmtMoeda(s.cobertura_invalidez || 0),
+                    fmtMoeda(s.cobertura_cirurgia || 0),
                     fmtMoeda(s.dit || 0),
                     fmtMoeda(s.mensalidade || 0),
-                    s.inicio_vigencia && s.fim_vigencia
-                        ? `${fmtData(s.inicio_vigencia)} a ${fmtData(s.fim_vigencia)}`
-                        : (s.inicio_vigencia ? `Desde ${fmtData(s.inicio_vigencia)}` : '—'),
                 ]),
                 headStyles: { fillColor: [109, 40, 217], textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
                 bodyStyles: { fontSize: 7, textColor: [51, 65, 85] },
@@ -474,17 +501,55 @@ Planejador: ${planejadorEmail || '—'}`;
                             className="flex items-center gap-2 px-3 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-all"
                         >
                             <Pencil size={12} />
-                            Editar levantamento
+                            <span className="hidden md:inline">Editar levantamento</span>
+                        </button>
+                        <div className="w-px h-6 bg-subtle mx-0.5" />
+                        <button
+                            onClick={gerarWhatsApp}
+                            title="Compartilhar via WhatsApp"
+                            className="flex items-center gap-2 px-3 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-all"
+                        >
+                            <MessageCircle size={14} />
+                            <span className="hidden md:inline">WhatsApp</span>
+                        </button>
+                        <button
+                            onClick={gerarPDF}
+                            title="Baixar PDF do levantamento"
+                            className="flex items-center gap-2 px-3 h-9 rounded-lg text-white font-semibold text-[12px] hover:opacity-90 transition-all"
+                            style={{ backgroundColor: 'var(--primary)' }}
+                        >
+                            <Download size={14} />
+                            <span className="hidden md:inline">Baixar PDF</span>
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* ── Pilar: Seguros de vida (necessidade × cobertura × lacuna) ── */}
+            {/* ── Reserva de Emergência + Plano de Saúde (pilares de base, lado a lado) ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-[13px] font-semibold text-main">Reserva de emergência</h3>
+                        <button onClick={() => setDrawer('reserva')} title="Configurar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Settings size={15} /></button>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ color: statusMap.cor, backgroundColor: statusMap.bg }}>{statusMap.label}</span>
+                    <p className="text-[13px] font-semibold text-main mt-2">{fmtMoeda(saldoReserva)} <span className="text-faint font-normal">/ {fmtMoeda(reservaIdeal)}</span></p>
+                </div>
+
+                <div className="bg-surface rounded-xl border border-subtle p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-[13px] font-semibold text-main">Plano de saúde</h3>
+                        <button onClick={() => setDrawer('plano')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
+                    </div>
+                    <p className="text-[13px] font-semibold text-main mt-2">{planosCount > 0 ? `${planosCount} contratado(s)` : 'Nenhum'}</p>
+                </div>
+            </div>
+
+            {/* ── Seguro de Vida (necessidade × contratado × lacuna) ── */}
             <div className="bg-surface rounded-xl border border-subtle p-4 space-y-4">
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex items-baseline gap-2">
-                        <h3 className="text-[13px] font-semibold text-main">Seguros de vida</h3>
+                        <h3 className="text-[13px] font-semibold text-main">Seguro de vida</h3>
                         <span className="text-[11px] text-faint">necessidade × contratado</span>
                     </div>
                     <button onClick={() => setDrawer('seguros')} className="shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">
@@ -510,87 +575,44 @@ Planejador: ${planejadorEmail || '—'}`;
                 <div className="border border-subtle rounded-lg overflow-hidden">
                     <div className="flex justify-between items-center px-3 py-2 bg-surface-2">
                         <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Pilar da necessidade</span>
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Valor recomendado</span>
+                        <div className="flex items-center gap-4">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint w-24 text-right">Recomendado</span>
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint w-24 text-right">Contratado</span>
+                        </div>
                     </div>
                     {pilares.map((p, i) => (
                         <div key={i} className="flex justify-between items-center px-3 py-2.5 text-[13px] border-t border-subtle">
                             <span className="text-muted">{p.label}</span>
-                            <span className="font-semibold text-main">{fmtMoeda(p.valor)}</span>
+                            <div className="flex items-center gap-4">
+                                <span className="font-semibold text-main w-24 text-right">{fmtMoeda(p.valor)}</span>
+                                <span className="font-semibold text-[color:var(--primary)] w-24 text-right">{fmtMoeda(p.contratado)}</span>
+                            </div>
                         </div>
                     ))}
                 </div>
-
-                <p className="text-[11px] text-faint">A cobertura atual soma os seguros de vida contratados (cobertura por morte). O comparativo é no total — o detalhamento do contratado por pilar depende de etiquetar cada apólice.</p>
             </div>
 
-            {/* ── Outros pilares (leitura + editar em drawer) ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* ── Proteção Patrimonial / Profissional ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="bg-surface rounded-xl border border-subtle p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-[12px] font-semibold text-main">Reserva de emergência</span>
-                        <button onClick={() => setDrawer('reserva')} title="Configurar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Settings size={15} /></button>
+                        <h3 className="text-[13px] font-semibold text-main">Proteção patrimonial</h3>
+                        <button onClick={() => setDrawer('patrimonial')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ color: statusMap.cor, backgroundColor: statusMap.bg }}>{statusMap.label}</span>
-                    <p className="text-[13px] font-semibold text-main mt-2">{fmtMoeda(saldoReserva)} <span className="text-faint font-normal">/ {fmtMoeda(reservaIdeal)}</span></p>
-                </div>
-                <div className="bg-surface rounded-xl border border-subtle p-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-[12px] font-semibold text-main">Plano de saúde</span>
-                        <button onClick={() => setDrawer('plano')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
-                    </div>
-                    <p className="text-[13px] font-semibold text-main">{planosCount > 0 ? `${planosCount} contratado(s)` : 'Nenhum'}</p>
+                    <p className="text-[13px] font-semibold text-main">{patrimonialCount > 0 ? `${patrimonialCount} apólice(s)` : 'Nenhuma'}</p>
                 </div>
                 <div className="bg-surface rounded-xl border border-subtle p-4">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-[12px] font-semibold text-main">Proteções extras</span>
-                        <button onClick={() => setDrawer('extras')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
+                        <h3 className="text-[13px] font-semibold text-main">Proteção profissional/empresarial</h3>
+                        <button onClick={() => setDrawer('profissional')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
                     </div>
-                    <p className="text-[13px] font-semibold text-main">{extrasCount > 0 ? `${extrasCount} apólice(s)` : 'Nenhuma'}</p>
-                </div>
-            </div>
-
-            {/* ── Faixa de exportação ─────────────────────────────────── */}
-            <div className="bg-surface-3 rounded-xl p-5 flex items-center justify-between gap-4 flex-wrap shadow-lg">
-                <div>
-                    <p className="text-[10px] font-bold text-[color:var(--primary)] uppercase tracking-wider mb-1">Pronto para cotação</p>
-                    <p className="text-[14px] font-bold text-white tracking-tight">Compartilhe o levantamento com seu corretor</p>
-                    <p className="text-[10px] text-faint mt-1 font-bold uppercase tracking-wider">Inclui todos os dados do levantamento com visão cliente/cônjuge.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={gerarWhatsApp}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-surface/5 text-white border border-white/10 font-bold text-[10px] uppercase tracking-wider hover:bg-surface/10 transition-all"
-                    >
-                        <MessageCircle size={14} />
-                        WhatsApp
-                    </button>
-                    <button
-                        onClick={gerarPDF}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
-                    >
-                        <Download size={14} />
-                        Baixar PDF
-                    </button>
+                    <p className="text-[13px] font-semibold text-main">{profissionalCount > 0 ? `${profissionalCount} apólice(s)` : 'Nenhuma'}</p>
                 </div>
             </div>
 
             {/* ── Drawers de edição por pilar ── */}
-            <SidePanel open={drawer === 'seguros'} onClose={() => setDrawer(null)} title="Seguros de vida" subtitle="Necessidade e apólices contratadas" widthClass="max-w-2xl">
-                <div className="space-y-4">
-                    <div className="border border-subtle rounded-lg overflow-hidden">
-                        <div className="flex justify-between items-center px-3 py-2 bg-surface-2">
-                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Necessidade por pilar</span>
-                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Recomendado</span>
-                        </div>
-                        {pilares.map((p, i) => (
-                            <div key={i} className="flex justify-between items-center px-3 py-2.5 text-[13px] border-t border-subtle">
-                                <span className="text-muted">{p.label}</span>
-                                <span className="font-semibold text-main">{fmtMoeda(p.valor)}</span>
-                            </div>
-                        ))}
-                    </div>
-                    <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} defaultAberto />
-                </div>
+            <SidePanel open={drawer === 'seguros'} onClose={() => setDrawer(null)} title="Seguro de vida" subtitle="Necessidade e apólices contratadas" widthClass="max-w-2xl">
+                <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} sucessaoIdeal={sucessaoIdeal} defaultAberto />
             </SidePanel>
 
             <SidePanel open={drawer === 'reserva'} onClose={() => setDrawer(null)} title="Reserva de emergência" widthClass="max-w-2xl">
@@ -601,8 +623,12 @@ Planejador: ${planejadorEmail || '—'}`;
                 <AcordeoPlanoSaude dados={dados} dependentes={dependentes} defaultAberto />
             </SidePanel>
 
-            <SidePanel open={drawer === 'extras'} onClose={() => setDrawer(null)} title="Proteções extras" widthClass="max-w-2xl">
-                <AcordeoExtras dados={dados} defaultAberto />
+            <SidePanel open={drawer === 'patrimonial'} onClose={() => setDrawer(null)} title="Proteção patrimonial" widthClass="max-w-2xl">
+                <AcordeoProtecaoPatrimonial dados={dados} defaultAberto />
+            </SidePanel>
+
+            <SidePanel open={drawer === 'profissional'} onClose={() => setDrawer(null)} title="Proteção profissional/empresarial" widthClass="max-w-2xl">
+                <AcordeoProtecaoProfissional dados={dados} defaultAberto />
             </SidePanel>
         </div>
     );

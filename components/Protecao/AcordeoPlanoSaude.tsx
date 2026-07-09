@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Heart, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
+import { Heart, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
 import { PlanoSaude, protecaoService, ClienteSeguro, DependenteSeguro } from '../../services/protecaoService';
 
 const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
@@ -35,6 +35,13 @@ const PLANO_VAZIO: Omit<PlanoSaude, 'id' | 'cliente_id'> = {
     mensalidade: 0,
 };
 
+const Toggle = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
+    <button type="button" onClick={() => onChange(!value)}
+        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${value ? 'bg-[color:var(--primary)]' : 'bg-surface-3'}`}>
+        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
+    </button>
+);
+
 interface Props {
     dados: ClienteSeguro;
     dependentes: DependenteSeguro[];
@@ -47,6 +54,8 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
     const [loading, setLoading] = useState(false);
     const [modal, setModal] = useState(false);
     const [form, setForm] = useState<Partial<PlanoSaude>>(PLANO_VAZIO);
+    const [salvando, setSalvando] = useState(false);
+    const [erroSalvar, setErroSalvar] = useState<string | null>(null);
 
     const membros = [
         'cliente',
@@ -75,34 +84,40 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
     const status: StatusType = todosProtegidos ? 'protegido' : alguemProtegido ? 'parcial' : 'desprotegido';
 
     const openNovoModal = () => {
+        setErroSalvar(null);
         setForm({ ...PLANO_VAZIO, cliente_id: dados.cliente_id, membro: membros[0] });
         setModal(true);
     };
 
     const openEditModal = (p: PlanoSaude) => {
+        setErroSalvar(null);
         setForm({ ...p });
         setModal(true);
     };
 
     const salvar = async () => {
-        if (!form.membro || !form.operadora) return;
-        const plano = { ...form, cliente_id: dados.cliente_id } as PlanoSaude;
-        const saved = await protecaoService.upsertPlanoSaude(plano);
-        setPlanos(prev => form.id ? prev.map(p => p.id === form.id ? saved : p) : [...prev, saved]);
-        setModal(false);
+        if (!form.membro || !form.operadora) {
+            setErroSalvar('Preencha ao menos o membro e a operadora antes de salvar.');
+            return;
+        }
+        setSalvando(true);
+        setErroSalvar(null);
+        try {
+            const plano = { ...form, cliente_id: dados.cliente_id } as PlanoSaude;
+            const saved = await protecaoService.upsertPlanoSaude(plano);
+            setPlanos(prev => form.id ? prev.map(p => p.id === form.id ? saved : p) : [...prev, saved]);
+            setModal(false);
+        } catch (err: any) {
+            setErroSalvar('Erro ao salvar plano de saúde: ' + (err?.message || 'tente novamente.'));
+        } finally {
+            setSalvando(false);
+        }
     };
 
     const excluir = async (id: string) => {
         await protecaoService.deletePlanoSaude(id);
         setPlanos(prev => prev.filter(p => p.id !== id));
     };
-
-    const Toggle = ({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) => (
-        <button type="button" onClick={() => onChange(!value)}
-            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${value ? 'bg-[color:var(--primary)]' : 'bg-surface-3'}`}>
-            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
-        </button>
-    );
 
     return (
         <div className={defaultAberto ? '' : 'bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden'}>
@@ -233,10 +248,17 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
                             ))}
                         </div>
 
+                        {erroSalvar && (
+                            <div className="px-3 py-2 rounded-lg bg-[rgba(248,113,113,0.12)] border border-[rgba(248,113,113,0.25)] text-[color:var(--danger)] text-[11px] font-semibold">
+                                {erroSalvar}
+                            </div>
+                        )}
+
                         <div className="flex gap-2 pt-4">
-                            <button onClick={() => setModal(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
-                                <Check size={13} /> Salvar
+                            <button onClick={() => setModal(false)} disabled={salvando} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm disabled:opacity-50">Cancelar</button>
+                            <button onClick={salvar} disabled={salvando} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5 disabled:opacity-60">
+                                {salvando ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                                {salvando ? 'Salvando...' : 'Salvar'}
                             </button>
                         </div>
                     </div>

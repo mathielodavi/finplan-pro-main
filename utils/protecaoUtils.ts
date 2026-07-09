@@ -82,8 +82,11 @@ export function calcularScoreProtecaoCliente(input: ScoreProtecaoInput): number 
   );
   const idealCliente = dados?.cobertura_cliente || coberturaWizard.coberturaCliente;
   const idealConjuge = dados?.cobertura_conjuge || coberturaWizard.coberturaConjuge;
-  const realCliente = segurosClienteVida.filter((s: any) => s.membro === 'cliente').reduce((a: number, s: any) => a + (s.cobertura_morte || 0), 0);
-  const realConjuge = segurosClienteVida.filter((s: any) => s.membro === 'conjuge').reduce((a: number, s: any) => a + (s.cobertura_morte || 0), 0);
+  // Comparado contra o ideal de Padrão de Vida — soma as coberturas desse grupo
+  // (Doenças Graves, Invalidez, Cirurgia, DIT), não a de Sucessão (Morte/Funeral).
+  const somaPadraoVida = (s: any) => (s.cobertura_doencas_graves || 0) + (s.cobertura_invalidez || 0) + (s.cobertura_cirurgia || 0) + (s.dit || 0);
+  const realCliente = segurosClienteVida.filter((s: any) => s.membro === 'cliente').reduce((a: number, s: any) => a + somaPadraoVida(s), 0);
+  const realConjuge = segurosClienteVida.filter((s: any) => s.membro === 'conjuge').reduce((a: number, s: any) => a + somaPadraoVida(s), 0);
   const clienteOk = realCliente >= idealCliente && realCliente > 0;
   const conjugeOk = !dados?.casado_cliente || (realConjuge >= idealConjuge && realConjuge > 0);
   const statusSeguros = segurosClienteVida.length === 0 ? 'desprotegido' : (clienteOk && conjugeOk) ? 'protegido' : 'parcial';

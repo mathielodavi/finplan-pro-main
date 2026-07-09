@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { Package, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
+import { Briefcase, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
 import { SeguroExtra, protecaoService, ClienteSeguro } from '../../services/protecaoService';
 
 const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
 const lbl = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
 const fmtMoeda = (v: number) => `R$ ${(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
-const TIPOS = ['Residencial', 'Automotivo', 'Empresarial', 'Responsabilidade Civil', 'Vida em Grupo', 'Outro'];
+const TIPOS = ['Empresarial', 'Responsabilidade Civil'];
 
 const EXTRA_VAZIO: Omit<SeguroExtra, 'id' | 'cliente_id'> = {
     tipo_seguro: '',
@@ -22,12 +22,14 @@ interface Props {
     defaultAberto?: boolean;
 }
 
-const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
+const AcordeoProtecaoProfissional: React.FC<Props> = ({ dados, defaultAberto }) => {
     const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [extras, setExtras] = useState<SeguroExtra[]>([]);
     const [loading, setLoading] = useState(false);
     const [modal, setModal] = useState(false);
     const [form, setForm] = useState<Partial<SeguroExtra>>(EXTRA_VAZIO);
+    const [salvando, setSalvando] = useState(false);
+    const [erroSalvar, setErroSalvar] = useState<string | null>(null);
 
     useEffect(() => {
         if (aberto) loadExtras();
@@ -37,22 +39,40 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
         setLoading(true);
         try {
             const data = await protecaoService.getSegurosExtras(dados.cliente_id);
-            setExtras(data);
+            setExtras((data || []).filter(e => TIPOS.includes(e.tipo_seguro || '')));
         } finally {
             setLoading(false);
         }
     };
 
     const openModal = (extra?: SeguroExtra) => {
+        setErroSalvar(null);
         setForm(extra ? { ...extra } : { ...EXTRA_VAZIO, cliente_id: dados.cliente_id });
         setModal(true);
     };
 
     const salvar = async () => {
-        const extra = { ...form, cliente_id: dados.cliente_id } as SeguroExtra;
-        const saved = await protecaoService.upsertSeguroExtra(extra);
-        setExtras(prev => form.id ? prev.map(e => e.id === form.id ? saved : e) : [...prev, saved]);
-        setModal(false);
+        if (!form.tipo_seguro) {
+            setErroSalvar('Selecione o tipo de seguro antes de salvar.');
+            return;
+        }
+        setSalvando(true);
+        setErroSalvar(null);
+        try {
+            const extra = {
+                ...form,
+                cliente_id: dados.cliente_id,
+                inicio_vigencia: form.inicio_vigencia || null,
+                fim_vigencia: form.fim_vigencia || null,
+            } as SeguroExtra;
+            const saved = await protecaoService.upsertSeguroExtra(extra);
+            setExtras(prev => form.id ? prev.map(e => e.id === form.id ? saved : e) : [...prev, saved]);
+            setModal(false);
+        } catch (err: any) {
+            setErroSalvar('Erro ao salvar proteção profissional: ' + (err?.message || 'tente novamente.'));
+        } finally {
+            setSalvando(false);
+        }
     };
 
     const excluir = async (id: string) => {
@@ -68,11 +88,11 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
                 className={`w-full flex items-center justify-between px-5 py-4 hover:bg-surface-2/50 transition-colors ${defaultAberto ? 'hidden' : ''}`}>
                 <div className="flex items-center gap-3">
                     <div className="h-9 w-9 bg-surface-2 rounded-[8px] flex items-center justify-center shrink-0">
-                        <Package size={16} className="text-muted" />
+                        <Briefcase size={16} className="text-muted" />
                     </div>
                     <div className="text-left">
-                        <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none mb-1">Extras</p>
-                        <p className="text-[14px] font-bold text-main tracking-tight leading-none">Proteções Adicionais</p>
+                        <p className="text-[10px] font-bold text-faint uppercase tracking-wider leading-none mb-1">Seguros</p>
+                        <p className="text-[14px] font-bold text-main tracking-tight leading-none">Proteção Profissional/Empresarial</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -91,15 +111,21 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
 
             {aberto && (
                 <div className={`space-y-5 ${defaultAberto ? '' : 'border-t border-subtle px-5 py-5'}`}>
-                    {/* Total de mensalidades */}
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="text-[10px] font-bold text-faint uppercase tracking-wider">Apólices cadastradas</p>
+                        <button onClick={() => openModal()}
+                            className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider transition-all shadow-sm hover:opacity-90">
+                            <Plus size={13} /> Adicionar Proteção Profissional
+                        </button>
+                    </div>
+
                     {extras.length > 0 && (
                         <div className="flex items-center justify-between bg-surface-2 border border-subtle rounded-xl px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Total de Mensalidades Extras</p>
+                            <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Total de Mensalidades</p>
                             <p className="text-[16px] font-bold text-main tracking-tight">{fmtMoeda(totalMensalidade)}</p>
                         </div>
                     )}
 
-                    {/* Lista */}
                     {loading ? (
                         <div className="py-6 flex justify-center"><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[color:var(--primary)]" /></div>
                     ) : extras.length > 0 ? (
@@ -128,13 +154,8 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
                             </div>
                         </div>
                     ) : (
-                        <p className="text-sm text-faint text-center py-4">Nenhuma proteção adicional cadastrada.</p>
+                        <p className="text-sm text-faint text-center py-4">Nenhuma proteção profissional/empresarial cadastrada.</p>
                     )}
-
-                    <button onClick={() => openModal()}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-[8px] border border-dashed border-subtle text-muted hover:bg-surface-2 hover:text-main hover:border-subtle font-bold text-[10px] uppercase tracking-wider transition-all w-max shadow-sm">
-                        <Plus size={13} /> Adicionar Proteção Extra
-                    </button>
                 </div>
             )}
 
@@ -143,7 +164,7 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
                 <div className="fixed inset-0 bg-surface-3/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md p-5 space-y-5">
                         <div className="flex items-center justify-between border-b border-subtle pb-3">
-                            <h3 className="text-[16px] font-bold text-main tracking-tight">{form.id ? 'Editar' : 'Nova'} Proteção Extra</h3>
+                            <h3 className="text-[16px] font-bold text-main tracking-tight">{form.id ? 'Editar' : 'Nova'} Proteção Profissional/Empresarial</h3>
                             <button onClick={() => setModal(false)}><X size={18} className="text-faint hover:text-muted transition-colors" /></button>
                         </div>
 
@@ -157,7 +178,7 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
                             </div>
                             <div>
                                 <label className={lbl}>Descrição / Cobertura</label>
-                                <input value={form.descricao || ''} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} className={inp} placeholder="Ex: Casa da Praia, Veículo Família..." />
+                                <input value={form.descricao || ''} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} className={inp} placeholder="Ex: Consultório, Sociedade Empresarial..." />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -181,10 +202,17 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
                             </div>
                         </div>
 
+                        {erroSalvar && (
+                            <div className="px-3 py-2 rounded-lg bg-[rgba(248,113,113,0.12)] border border-[rgba(248,113,113,0.25)] text-[color:var(--danger)] text-[11px] font-semibold">
+                                {erroSalvar}
+                            </div>
+                        )}
+
                         <div className="flex gap-2 pt-4">
-                            <button onClick={() => setModal(false)} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm">Cancelar</button>
-                            <button onClick={salvar} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5">
-                                <Check size={13} /> Salvar
+                            <button onClick={() => setModal(false)} disabled={salvando} className="flex-1 h-9 rounded-[8px] border border-subtle text-muted font-bold text-[10px] uppercase tracking-wider hover:bg-surface-2 shadow-sm disabled:opacity-50">Cancelar</button>
+                            <button onClick={salvar} disabled={salvando} className="flex-1 h-9 rounded-[8px] bg-[color:var(--primary)] text-white font-bold text-[10px] uppercase tracking-wider shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 flex items-center justify-center gap-1.5 disabled:opacity-60">
+                                {salvando ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                                {salvando ? 'Salvando...' : 'Salvar'}
                             </button>
                         </div>
                     </div>
@@ -194,4 +222,4 @@ const AcordeoExtras: React.FC<Props> = ({ dados, defaultAberto }) => {
     );
 };
 
-export default AcordeoExtras;
+export default AcordeoProtecaoProfissional;
