@@ -5,6 +5,7 @@ import { configService } from '../../services/configuracoesService';
 import { calendarioService, CalendarioConexao, CalendarioProvedor } from '../../services/calendarioService';
 import { formatarData } from '../../utils/formatadores';
 import Button from '../UI/Button';
+import Confirmacao from '../Confirmacao';
 import { Camera, Shield, Mail, Phone, User as UserIcon, CalendarDays, RefreshCw, AlertCircle } from 'lucide-react';
 
 const PerfilConfig: React.FC = () => {
@@ -26,6 +27,7 @@ const PerfilConfig: React.FC = () => {
   const [salvandoConexao, setSalvandoConexao] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [msgCalendario, setMsgCalendario] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [confirmarReset, setConfirmarReset] = useState(false);
 
   const carregarConexao = async () => {
     try {
@@ -102,7 +104,7 @@ const PerfilConfig: React.FC = () => {
   };
 
   const handleResetPassword = async () => {
-    if (!window.confirm("Deseja receber um link para criar uma nova senha em seu e-mail de acesso?")) return;
+    setConfirmarReset(false);
     try {
       setLoading(true);
       await resetPass(user!.email!);
@@ -116,7 +118,7 @@ const PerfilConfig: React.FC = () => {
 
   const avatarUrl = formData.avatar_url || `https://ui-avatars.com/api/?name=${formData.full_name}&size=256&background=10b981&color=fff&bold=true`;
 
-  const inputStyle = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-[12px]";
+  const inputStyle = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-[12px]";
   const labelStyle = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
 
   return (
@@ -144,7 +146,7 @@ const PerfilConfig: React.FC = () => {
                  onChange={handleFileChange} 
                />
             </div>
-            <div className="absolute -bottom-1.5 -right-1.5 bg-indigo-600 text-white p-1.5 rounded-[8px] shadow-lg border-2 border-white">
+            <div className="absolute -bottom-1.5 -right-1.5 bg-primary text-[#0b0e14] p-1.5 rounded-[8px] shadow-lg border-2 border-surface">
                <Shield size={14} />
             </div>
          </div>
@@ -199,7 +201,7 @@ const PerfilConfig: React.FC = () => {
 
         <div className="md:col-span-2 pt-4">
            {msg && (
-             <div className={`px-4 py-3 rounded-[8px] mb-6 text-[10px] font-bold uppercase tracking-wider flex items-center gap-3 border animate-slide-up ${msg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
+             <div className={`px-4 py-3 rounded-[8px] mb-6 text-[10px] font-bold uppercase tracking-wider flex items-center gap-3 border animate-slide-up ${msg.type === 'success' ? 'bg-success/10 text-success border-subtle' : 'bg-danger/10 text-danger border-subtle'}`}>
                 {msg.type === 'success' ? '✓' : '⚠'} {msg.text}
              </div>
            )}
@@ -218,14 +220,24 @@ const PerfilConfig: React.FC = () => {
             <h4 className="text-[13px] font-bold text-main tracking-tight">Segurança de Acesso</h4>
             <p className="text-[10px] text-faint font-bold uppercase tracking-wider mt-0.5">Sua senha e chaves de criptografia</p>
          </div>
-         <button 
-          onClick={handleResetPassword}
+         <button
+          onClick={() => setConfirmarReset(true)}
           disabled={loading}
-          className="text-indigo-600 font-bold text-[10px] uppercase tracking-wider hover:underline h-9 px-4 bg-indigo-50 rounded-[8px] border border-indigo-100 transition-all disabled:opacity-50"
+          className="text-primary font-bold text-[10px] uppercase tracking-wider hover:underline h-9 px-4 bg-primary/10 rounded-[8px] border border-subtle transition-all disabled:opacity-50"
          >
            Redefinir Senha →
          </button>
       </div>
+
+      <Confirmacao
+        isOpen={confirmarReset}
+        onClose={() => setConfirmarReset(false)}
+        onConfirm={handleResetPassword}
+        title="Redefinir Senha"
+        message="Deseja receber um link para criar uma nova senha em seu e-mail de acesso?"
+        danger={false}
+        confirmLabel="Enviar e-mail"
+      />
 
       <div className="pt-6 border-t border-subtle space-y-4">
         <div className="flex items-center gap-2">

@@ -1,15 +1,23 @@
 
 import React, { useState, useEffect } from 'react';
 import { configService } from '../../services/configuracoesService';
-import Modal from '../Modal';
+import SidePanel from '../UI/SidePanel';
 import Button from '../UI/Button';
-import { Activity, Plus, Edit3, Trash2, ListChecks, Layout, CheckCircle, GripVertical } from 'lucide-react';
+import Badge from '../UI/Badge';
+import Confirmacao from '../Confirmacao';
+import { Activity, Plus, Edit3, Trash2, ListChecks, CheckCircle, GripVertical } from 'lucide-react';
+
+const campoInputStyle = "w-full px-3 h-9 bg-surface-2 rounded-[8px] border border-subtle font-bold outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-[12px]";
+const campoLabelStyle = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
 
 const AcompanhamentoConfig: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -23,10 +31,18 @@ const AcompanhamentoConfig: React.FC = () => {
 
   useEffect(() => { loadData(); }, []);
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Deseja remover este checklist padrão?")) return;
-    // Implementação real de delete no service se desejado
-    loadData();
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await configService.deleteAcompanhamento(deleteTarget.id);
+      await loadData();
+      setDeleteTarget(null);
+    } catch (err: any) {
+      alert("Erro ao excluir roteiro: " + (err.message || "Verifique a conexão."));
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -36,8 +52,8 @@ const AcompanhamentoConfig: React.FC = () => {
             <h3 className="text-[16px] font-bold text-main tracking-tight leading-none">Metodologia & Roteiros</h3>
             <p className="text-faint text-[10px] font-bold uppercase tracking-wider mt-1">Padronize o atendimento através de checklists</p>
          </div>
-         <Button 
-          onClick={() => { setEditingItem(null); setModalOpen(true); }}
+         <Button
+          onClick={() => { setEditingItem(null); setPanelOpen(true); }}
           leftIcon={<Plus size={14} />}
           className="text-[10px] uppercase tracking-wider px-4 h-9 font-bold"
          >
@@ -45,39 +61,69 @@ const AcompanhamentoConfig: React.FC = () => {
          </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {loading ? (
-          <div className="col-span-2 py-16 text-center text-faint font-bold uppercase tracking-wider text-[10px] animate-pulse">Sincronizando processos...</div>
-        ) : data.length === 0 ? (
-          <div className="col-span-2 py-16 text-center bg-surface-2 rounded-xl border-2 border-dashed border-subtle">
-             <ListChecks size={24} className="mx-auto text-faint mb-3" />
-             <p className="text-faint font-bold uppercase tracking-wider text-[10px]">Crie seu primeiro roteiro padrão</p>
-          </div>
-        ) : data.map(item => (
-          <div key={item.id} className="px-5 py-4 bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:border-indigo-200 transition-all group relative overflow-hidden">
-             <div className="relative z-10 flex justify-between items-start mb-4">
-                <div className="h-10 w-10 bg-emerald-50 text-emerald-600 rounded-[8px] flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
-                   <Activity size={18} />
-                </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <button onClick={() => { setEditingItem(item); setModalOpen(true); }} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-[8px] transition-all"><Edit3 size={15} /></button>
-                   <button onClick={() => handleDelete(item.id)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-[8px] transition-all"><Trash2 size={15} /></button>
-                </div>
-             </div>
-             <div className="relative z-10">
-                <h4 className="font-bold text-main text-[13px] tracking-tight leading-none mb-2">{item.nome}</h4>
-                <div className="flex gap-2">
-                   <span className="text-[9px] font-bold bg-surface-2 text-muted px-2 py-0.5 rounded-[6px] border border-subtle uppercase tracking-wider">{item.fases?.length || 0} Etapas</span>
-                   <span className="text-[9px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-[6px] border border-indigo-100 uppercase tracking-wider">{item.itens?.length || 0} Tarefas</span>
-                </div>
-             </div>
-          </div>
-        ))}
+      <div className="bg-surface rounded-xl border border-subtle overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-surface-2 border-b border-subtle">
+                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Nome do Roteiro</th>
+                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Etapas</th>
+                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Tarefas</th>
+                <th className="px-5 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-subtle">
+              {loading ? (
+                <tr><td colSpan={4} className="py-16 text-center text-faint font-bold uppercase tracking-wider text-[10px] animate-pulse">Sincronizando processos...</td></tr>
+              ) : data.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-16 text-center">
+                     <ListChecks size={24} className="mx-auto text-faint mb-3" />
+                     <p className="text-faint font-bold uppercase tracking-wider text-[10px]">Crie seu primeiro roteiro padrão</p>
+                  </td>
+                </tr>
+              ) : data.map(item => (
+                <tr key={item.id} className="hover:bg-surface-2 transition-colors group">
+                   <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                         <div className="h-9 w-9 bg-primary/10 text-primary rounded-[8px] flex items-center justify-center shrink-0">
+                            <Activity size={16} />
+                         </div>
+                         <p className="font-bold text-main text-[13px] tracking-tight">{item.nome}</p>
+                      </div>
+                   </td>
+                   <td className="px-5 py-3"><Badge variant="neutral" size="sm">{item.fases?.length || 0} Etapas</Badge></td>
+                   <td className="px-5 py-3"><Badge variant="primary" size="sm">{item.itens?.length || 0} Tarefas</Badge></td>
+                   <td className="px-5 py-3 text-right">
+                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button onClick={() => { setEditingItem(item); setPanelOpen(true); }} className="p-2 text-faint hover:text-primary hover:bg-primary/10 rounded-[8px] transition-all"><Edit3 size={15} /></button>
+                         <button onClick={() => setDeleteTarget(item)} className="p-2 text-faint hover:text-danger hover:bg-danger/10 rounded-[8px] transition-all"><Trash2 size={15} /></button>
+                      </div>
+                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={`${editingItem ? 'Editar' : 'Novo'} Roteiro Padrão`}>
-         <FormAcompanhamento item={editingItem} onSave={() => { setModalOpen(false); loadData(); }} onCancel={() => setModalOpen(false)} />
-      </Modal>
+      <SidePanel
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        title={`${editingItem ? 'Editar' : 'Novo'} Roteiro Padrão`}
+        widthClass="max-w-2xl"
+      >
+         <FormAcompanhamento item={editingItem} onSave={() => { setPanelOpen(false); loadData(); }} onCancel={() => setPanelOpen(false)} />
+      </SidePanel>
+
+      <Confirmacao
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Excluir Roteiro Padrão"
+        message={`Deseja remover o checklist "${deleteTarget?.nome}"? Roteiros já em uso em atendimentos ativos não serão afetados retroativamente.`}
+        loading={isDeleting}
+      />
     </div>
   );
 };
@@ -111,102 +157,90 @@ const FormAcompanhamento = ({ item, onSave, onCancel }: any) => {
     }
   };
 
-  const inputStyle = "w-full px-3 h-9 bg-surface-2 rounded-[8px] border border-subtle font-bold outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-[12px]";
-  const labelStyle = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-10">
-       <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
-          {/* Coluna Esquerda: Definições Gerais */}
-          <div className="md:col-span-5 space-y-10 border-r border-subtle pr-6">
-             <div>
-               <label className={labelStyle}>Nome do Roteiro</label>
-               <input type="text" required value={nome} onChange={e => setNome(e.target.value)} className={inputStyle} placeholder="Ex: Onboarding Wealth" />
-             </div>
+    <form id="form-acompanhamento" onSubmit={handleSubmit} className="space-y-8">
+       <div>
+         <label className={campoLabelStyle}>Nome do Roteiro</label>
+         <input type="text" required value={nome} onChange={e => setNome(e.target.value)} className={campoInputStyle} placeholder="Ex: Onboarding Wealth" />
+       </div>
 
-             <div className="flex items-center gap-4 p-5 bg-emerald-50/20 rounded-3xl border border-emerald-100/50">
-                <input type="checkbox" id="chkTemFases" checked={temFases} onChange={e => setTemFases(e.target.checked)} className="h-6 w-6 rounded-lg text-emerald-600 focus:ring-0 border-subtle" />
-                <label htmlFor="chkTemFases" className="text-[10px] font-black text-emerald-800 uppercase tracking-widest cursor-pointer">Estruturar por Fases</label>
-             </div>
+       <div className="flex items-center gap-3 p-4 bg-success/10 rounded-xl border border-subtle">
+          <input type="checkbox" id="chkTemFases" checked={temFases} onChange={e => setTemFases(e.target.checked)} className="h-5 w-5 rounded text-primary focus:ring-0 border-subtle" />
+          <label htmlFor="chkTemFases" className="text-[10px] font-bold text-success uppercase tracking-wider cursor-pointer">Estruturar por Fases</label>
+       </div>
 
-             {temFases && (
-               <div className="space-y-6 animate-slide-up">
-                  <div className="flex justify-between items-center px-1">
-                     <h4 className="text-[9px] font-black text-faint uppercase tracking-widest">Etapas do Processo</h4>
-                     <button type="button" onClick={addPhase} className="text-[9px] font-black text-emerald-600 uppercase tracking-widest bg-surface border border-emerald-100 px-3 py-1.5 rounded-xl">+ Add Fase</button>
-                  </div>
-                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                    {fases.map((f, i) => (
-                      <div key={f.tempId || f.id} className="flex gap-3 items-center group animate-fade-in">
-                         <div className="w-8 h-10 flex items-center justify-center font-black text-emerald-200 italic">#{i+1}</div>
-                         <input 
-                           placeholder="Nome da Fase" 
-                           value={f.nome_fase} 
-                           onChange={e => { const nf = [...fases]; nf[i].nome_fase = e.target.value; setFases(nf); }} 
-                           className="flex-1 p-3.5 bg-surface rounded-2xl font-bold text-xs outline-none border border-subtle focus:border-emerald-500 shadow-sm" 
-                         />
-                         <button type="button" onClick={() => setFases(fases.filter(ph => (ph.tempId || ph.id) !== (f.tempId || f.id)))} className="p-2 text-faint hover:text-rose-500 transition-colors">✕</button>
-                      </div>
-                    ))}
-                  </div>
-               </div>
-             )}
+       {temFases && (
+         <div className="space-y-4 animate-slide-up">
+            <div className="flex justify-between items-center px-1">
+               <h4 className="text-[9px] font-bold text-faint uppercase tracking-widest">Etapas do Processo</h4>
+               <Button type="button" variant="outline" size="sm" onClick={addPhase} leftIcon={<Plus size={12} />} className="text-[9px] font-bold">Add Fase</Button>
+            </div>
+            <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1 custom-scrollbar">
+              {fases.map((f, i) => (
+                <div key={f.tempId || f.id} className="flex gap-2 items-center group animate-fade-in">
+                   <div className="w-7 h-9 flex items-center justify-center font-bold text-[11px] text-primary/50 italic">#{i+1}</div>
+                   <input
+                     placeholder="Nome da Fase"
+                     value={f.nome_fase}
+                     onChange={e => { const nf = [...fases]; nf[i].nome_fase = e.target.value; setFases(nf); }}
+                     className={`flex-1 ${campoInputStyle}`}
+                   />
+                   <button type="button" onClick={() => setFases(fases.filter(ph => (ph.tempId || ph.id) !== (f.tempId || f.id)))} className="p-2 text-faint hover:text-danger transition-colors"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+         </div>
+       )}
+
+       <div className="space-y-4">
+          <div className="flex justify-between items-center px-1">
+             <h4 className={campoLabelStyle} style={{ marginBottom: 0 }}>Checklist de Atividades</h4>
+             <Button type="button" size="sm" onClick={addItem} leftIcon={<CheckCircle size={14} />} className="text-[9px] font-bold">Adicionar Tarefa</Button>
           </div>
 
-          {/* Coluna Direita: Checklist de Itens */}
-          <div className="md:col-span-7 space-y-6">
-             <div className="flex justify-between items-center px-1">
-                <h4 className={labelStyle}>Checklist de Atividades</h4>
-                <button type="button" onClick={addItem} className="text-[9px] font-black text-white bg-surface-3 px-6 py-3 rounded-2xl shadow-xl hover:bg-strong flex items-center gap-3 transition-all">
-                   <CheckCircle size={16} />
-                   ADICIONAR TAREFA
-                </button>
-             </div>
-
-             <div className="space-y-4 max-h-[500px] overflow-y-auto pr-4 custom-scrollbar">
-                {itens.map((it, i) => (
-                  <div key={it.id || i} className="flex flex-col sm:flex-row gap-4 bg-surface-2/50 p-6 rounded-[2rem] border border-subtle group animate-slide-up hover:bg-surface transition-all shadow-sm">
-                     <div className="flex items-center gap-3 shrink-0 opacity-20 group-hover:opacity-100 transition-opacity">
-                        <GripVertical size={20} className="text-faint cursor-grab" />
-                     </div>
-                     <div className="flex-1 space-y-4">
-                        <div className="flex gap-3">
-                           <input 
-                             placeholder="Descreva a atividade aqui..." 
-                             value={it.descricao} 
-                             onChange={e => { const ni = [...itens]; ni[i].descricao = e.target.value; setItens(ni); }} 
-                             className="flex-1 p-3 bg-surface rounded-2xl font-bold text-xs outline-none border border-subtle focus:border-emerald-400" 
-                           />
-                           <button type="button" onClick={() => setItens(itens.filter((_, idx) => idx !== i))} className="p-3 text-faint hover:text-rose-500 transition-all">✕</button>
-                        </div>
-                        {temFases && (
-                          <div className="flex items-center gap-3">
-                             <span className="text-[8px] font-black text-faint uppercase tracking-widest ml-1">Vincular Etapa:</span>
-                             <select 
-                               value={it.fase_temp_id || (it.fase_id || '')} 
-                               onChange={e => { const ni = [...itens]; ni[i].fase_temp_id = e.target.value; setItens(ni); }}
-                               className="bg-surface border border-subtle rounded-xl px-4 py-2 text-[9px] font-black uppercase tracking-tighter outline-none focus:ring-4 focus:ring-emerald-500/5 transition-all shadow-sm"
-                             >
-                                <option value="">Sem Etapa</option>
-                                {fases.map(f => <option key={f.tempId || f.id} value={f.tempId || f.id}>{f.nome_fase || `Etapa ${f.ordem}`}</option>)}
-                             </select>
-                          </div>
-                        )}
-                     </div>
+          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+             {itens.map((it, i) => (
+               <div key={it.id || i} className="flex flex-col sm:flex-row gap-3 bg-surface-2/50 p-4 rounded-xl border border-subtle group animate-slide-up">
+                  <div className="flex items-center gap-2 shrink-0 opacity-20 group-hover:opacity-100 transition-opacity">
+                     <GripVertical size={18} className="text-faint cursor-grab" />
                   </div>
-                ))}
-                {itens.length === 0 && (
-                  <div className="py-24 text-center border-2 border-dashed border-subtle rounded-[2.5rem]">
-                     <ListChecks size={40} className="mx-auto text-faint mb-4" />
-                     <p className="text-faint font-bold uppercase tracking-[0.3em] text-[10px]">Checklist Vazio</p>
+                  <div className="flex-1 space-y-3">
+                     <div className="flex gap-2">
+                        <input
+                          placeholder="Descreva a atividade aqui..."
+                          value={it.descricao}
+                          onChange={e => { const ni = [...itens]; ni[i].descricao = e.target.value; setItens(ni); }}
+                          className={`flex-1 ${campoInputStyle}`}
+                        />
+                        <button type="button" onClick={() => setItens(itens.filter((_, idx) => idx !== i))} className="p-2 text-faint hover:text-danger transition-all"><Trash2 size={14} /></button>
+                     </div>
+                     {temFases && (
+                       <div className="flex items-center gap-2">
+                          <span className="text-[8px] font-bold text-faint uppercase tracking-wider">Vincular Etapa:</span>
+                          <select
+                            value={it.fase_temp_id || (it.fase_id || '')}
+                            onChange={e => { const ni = [...itens]; ni[i].fase_temp_id = e.target.value; setItens(ni); }}
+                            className="bg-surface border border-subtle rounded-lg px-3 py-1.5 text-[9px] font-bold uppercase outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                          >
+                             <option value="">Sem Etapa</option>
+                             {fases.map(f => <option key={f.tempId || f.id} value={f.tempId || f.id}>{f.nome_fase || `Etapa ${f.ordem}`}</option>)}
+                          </select>
+                       </div>
+                     )}
                   </div>
-                )}
-             </div>
+               </div>
+             ))}
+             {itens.length === 0 && (
+               <div className="py-16 text-center border-2 border-dashed border-subtle rounded-xl">
+                  <ListChecks size={32} className="mx-auto text-faint mb-3" />
+                  <p className="text-faint font-bold uppercase tracking-widest text-[10px]">Checklist Vazio</p>
+               </div>
+             )}
           </div>
        </div>
 
        <div className="flex gap-3 pt-6 border-t border-subtle">
-          <Button variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Descartar</Button>
+          <Button type="button" variant="ghost" onClick={onCancel} className="flex-1 h-9 text-[11px] font-semibold">Descartar</Button>
           <Button type="submit" isLoading={loading} className="flex-1 h-9 text-[11px] font-semibold">Sincronizar Roteiro</Button>
        </div>
     </form>
