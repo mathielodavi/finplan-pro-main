@@ -241,7 +241,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                   <tbody className="divide-y divide-subtle text-sm">
                     {ativosClasse.map((a: any) => (
                       <tr key={a.id} className="hover:bg-surface-2/50 transition-colors group">
-                        <td className="px-4 py-3"><p className="font-bold text-main uppercase text-[12px] tracking-tight truncate">{a.nome}</p><span className="text-[10px] font-bold text-[color:var(--info)] uppercase">{a.origem === 'fundo' ? formatarCNPJ(a.cnpj || '') : (a.ticker || a.tipo_especifico || 'CUSTÓDIA')}</span></td>
+                        <td className="px-4 py-3"><p className="font-bold text-main uppercase text-[12px] tracking-tight truncate">{a.nome}</p><span className="text-[10px] font-bold text-[color:var(--info)] uppercase">{a.origem === 'fundo' ? formatarCNPJ(a.cnpj || '') : a.origem === 'previdencia_privada' ? `${formatarCNPJ(a.cnpj || '')} · ${a.tipo_previdencia || 'PREV.'}` : (a.ticker || a.tipo_especifico || 'CUSTÓDIA')}</span></td>
                         <td className="px-4 py-3 text-center"><div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wider ${a.statusControle === 'Ok' ? 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]' : a.statusControle === 'Fora da estratégia' ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : a.statusControle === 'Fora da faixa' ? 'text-[color:var(--warning)] bg-[rgba(251,191,36,0.12)] border-[rgba(251,191,36,0.25)]' : 'bg-surface-2 text-faint border-subtle'}`}>{a.statusControle === 'Ok' ? <CheckCircle2 size={10} /> : a.statusControle === 'Não recomendado' ? <MinusCircle size={10} /> : <XCircle size={10} />}<span className="truncate">{a.statusControle}</span></div></td>
                         <td className="px-4 py-3 text-center"><Badge variant={a.status === 'Vender' ? 'danger' : 'success'} size="sm">{a.status === 'Vender' ? `Vender → ${DESTINOS_VENDA.find(d => d.key === a.destino_venda)?.label || 'Livre'}` : 'Manter'}</Badge></td>
                         <td className="px-4 py-3 text-center"><span className={`text-[12px] font-bold tracking-tight ${a.temIndependencia ? 'text-main' : 'text-faint'}`}>{a.pesoNaClasse.toFixed(1)}%</span></td>
@@ -321,18 +321,40 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={fLabel}>Origem</label>
-                <select value={editing?.origem || 'bolsa'} onChange={e => setEditing({ ...editing, origem: e.target.value, ticker: '', cnpj: '', tipo_especifico: '' })} className={fInput}>
+                <select value={editing?.origem || 'bolsa'} onChange={e => setEditing({ ...editing, origem: e.target.value, ticker: '', cnpj: '', tipo_especifico: '', tipo_previdencia: '', regime_tributario: '' })} className={fInput}>
                   <option value="bolsa">Bolsa (Ticker)</option>
                   <option value="fundo">Fundo (CNPJ)</option>
                   <option value="bancario">Bancário (Título)</option>
+                  <option value="previdencia_privada">Previdência Privada (CNPJ)</option>
                 </select>
               </div>
               <div>
                 {editing?.origem === 'bolsa' && <><label className={fLabel}>Ticker</label><input type="text" value={editing?.ticker || ''} onChange={e => setEditing({ ...editing, ticker: e.target.value.toUpperCase() })} className={fInput} /></>}
                 {editing?.origem === 'fundo' && <><label className={fLabel}>CNPJ</label><input type="text" value={editing?.cnpj || ''} onChange={e => setEditing({ ...editing, cnpj: formatarCNPJ(e.target.value) })} className={fInput} /></>}
                 {editing?.origem === 'bancario' && <><label className={fLabel}>Tipo</label><select value={editing?.tipo_especifico || ''} onChange={e => setEditing({ ...editing, tipo_especifico: e.target.value })} className={fInput}><option value="">Selecione...</option><option value="CDB">CDB</option><option value="Tesouro">Tesouro Direto</option><option value="Poupança">Poupança</option><option value="LCI/LCA">LCI/LCA</option><option value="Outros">Outros</option></select></>}
+                {editing?.origem === 'previdencia_privada' && <><label className={fLabel}>CNPJ</label><input type="text" value={editing?.cnpj || ''} onChange={e => setEditing({ ...editing, cnpj: formatarCNPJ(e.target.value) })} className={fInput} /></>}
               </div>
             </div>
+            {editing?.origem === 'previdencia_privada' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={fLabel}>Tipo</label>
+                  <select value={editing?.tipo_previdencia || ''} onChange={e => setEditing({ ...editing, tipo_previdencia: e.target.value })} className={fInput}>
+                    <option value="">Selecione...</option>
+                    <option value="PGBL">PGBL</option>
+                    <option value="VGBL">VGBL</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={fLabel}>Tributação</label>
+                  <select value={editing?.regime_tributario || ''} onChange={e => setEditing({ ...editing, regime_tributario: e.target.value })} className={fInput}>
+                    <option value="">Selecione...</option>
+                    <option value="regressiva">Regressiva</option>
+                    <option value="progressiva">Progressiva</option>
+                  </select>
+                </div>
+              </div>
+            )}
             <div>
               <label className={fLabel}>Saldo atual líquido (R$)</label>
               <input type="number" step="0.01" required value={editing?.valor_atual || ''} onChange={e => setEditing({ ...editing, valor_atual: parseFloat(e.target.value) || 0 })} className={fInput} />

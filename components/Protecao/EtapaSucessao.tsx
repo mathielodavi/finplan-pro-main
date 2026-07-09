@@ -1,8 +1,9 @@
 
-import React, { useMemo } from 'react';
-import { Building2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Building2, PiggyBank } from 'lucide-react';
 import { ClienteSeguro, ParametrosCalculo } from '../../services/protecaoService';
 import { calcularSucessao } from '../../utils/calculosFinanceiros';
+import { supabase } from '../../services/supabaseClient';
 import TooltipAjuda from './TooltipAjuda';
 
 const lbl = "block text-[12px] font-semibold text-[color:var(--text-muted)] ml-1 mb-1.5";
@@ -87,17 +88,37 @@ interface Props {
 }
 
 const EtapaSucessao: React.FC<Props> = ({ dados, onChange, parametros }) => {
+    const [previdencia, setPrevidencia] = useState({ pgbl: 0, vgbl: 0 });
+
+    // Ativos de Previdência Privada cadastrados na Carteira — fonte única de
+    // verdade (substitui os campos manuais de PGBL/VGBL, mesmo padrão da Reserva
+    // de Emergência, que já lê saldo real dos ativos).
+    useEffect(() => {
+        const carregarPrevidencia = async () => {
+            if (!dados.cliente_id) return;
+            const { data } = await supabase
+                .from('ativos')
+                .select('valor_atual, tipo_previdencia')
+                .eq('cliente_id', dados.cliente_id)
+                .eq('origem', 'previdencia_privada');
+            const pgbl = (data || []).filter(a => a.tipo_previdencia === 'PGBL').reduce((acc, a) => acc + (a.valor_atual || 0), 0);
+            const vgbl = (data || []).filter(a => a.tipo_previdencia === 'VGBL').reduce((acc, a) => acc + (a.valor_atual || 0), 0);
+            setPrevidencia({ pgbl, vgbl });
+        };
+        carregarPrevidencia();
+    }, [dados.cliente_id]);
+
     const resultado = useMemo(() => calcularSucessao(
         dados.funeral_cliente || 0, dados.funeral_conjuge || 0,
         dados.bens_cliente || 0, dados.bens_conjuge || 0,
         dados.investimentos_cliente || 0, dados.investimentos_conjuge || 0,
         dados.dividas_cliente || 0, dados.dividas_conjuge || 0,
-        dados.pgbl_cliente || 0, dados.pgbl_conjuge || 0,
-        dados.vgbl_cliente || 0, dados.vgbl_conjuge || 0,
+        previdencia.pgbl, 0,
+        previdencia.vgbl, 0,
         parametros.perc_custos_inventario,
         dados.honorarios_perc,
         dados.itcmd_perc,
-    ), [dados, parametros]);
+    ), [dados, parametros, previdencia]);
 
     const percEfetivoTotal = (dados.honorarios_perc !== undefined && dados.itcmd_perc !== undefined)
         ? dados.honorarios_perc + dados.itcmd_perc
@@ -162,17 +183,29 @@ const EtapaSucessao: React.FC<Props> = ({ dados, onChange, parametros }) => {
                     <Linha label="Dívidas" campoCliente="dividas_cliente" campoConjuge="dividas_conjuge"
                         dados={dados} onChange={onChange}
                         somaFamilia={(dados.dividas_cliente || 0) + (dados.dividas_conjuge || 0)} />
-                    <Linha label="Previdência PGBL"
-                        tooltip="Saldo de PGBL. A previdência passa diretamente aos beneficiários, sem inventário."
-                        campoCliente="pgbl_cliente" campoConjuge="pgbl_conjuge"
-                        dados={dados} onChange={onChange}
-                        somaFamilia={(dados.pgbl_cliente || 0) + (dados.pgbl_conjuge || 0)} />
-                    <Linha label="Previdência VGBL"
-                        tooltip="Saldo de VGBL. Indicado para quem usa declaração simplificada de IR."
-                        campoCliente="vgbl_cliente" campoConjuge="vgbl_conjuge"
-                        dados={dados} onChange={onChange}
-                        somaFamilia={(dados.vgbl_cliente || 0) + (dados.vgbl_conjuge || 0)} />
                 </div>
+            </div>
+
+            {/* Previdência Privada — lida automaticamente da Carteira */}
+            <div className="rounded-[12px] border border-[color:var(--border)] overflow-hidden shadow-[var(--shadow-card)] bg-surface">
+                <div className="bg-surface-2 px-5 py-3.5 border-b border-[color:var(--border)] flex items-center gap-2">
+                    <PiggyBank size={16} className="text-[color:var(--primary)]" />
+                    <p className="text-[12px] font-semibold text-main uppercase tracking-widest">Ativos de Previdência Privada (via Carteira)</p>
+                </div>
+                <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label className={lbl}>PGBL</label>
+                        <CampoCalc value={previdencia.pgbl} />
+                    </div>
+                    <div>
+                        <label className={lbl}>VGBL</label>
+                        <CampoCalc value={previdencia.vgbl} />
+                    </div>
+                </div>
+                <p className="text-xs text-faint px-5 pb-4 font-medium">
+                    Valores somados a partir dos ativos com origem "Previdência Privada" cadastrados na
+                    Carteira do cliente. Cadastre ou ajuste esses ativos na aba Patrimônio.
+                </p>
             </div>
 
             {/* Resultado */}
