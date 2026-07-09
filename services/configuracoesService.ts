@@ -1,12 +1,7 @@
 
 import { supabase } from './supabaseClient';
 import { financeiroService } from './financeiroService';
-
-const getTargetId = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  return user.user_metadata?.empresa_id || user.id;
-};
+import { getTargetId } from '../utils/getTargetId';
 
 export const configService = {
   // --- MEU PERFIL ---
