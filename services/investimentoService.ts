@@ -11,6 +11,10 @@ export interface PremissasIndependencia {
   aporte_mensal: number;
   prazo_anos: number;
   data_inicio: string;
+  /** Renda mensal esperada de outras fontes na aposentadoria (INSS, aluguéis...). Abate a renda alvo. */
+  outras_fontes_renda: number;
+  /** Taxa de rentabilização (% a.a.) na fase de consumo, específica deste cliente. Null = usa o padrão do escritório (Configurações > Investimentos). */
+  taxa_pos_aposentadoria: number | null;
 }
 
 export interface HistoricoPatrimonio {
@@ -153,17 +157,21 @@ export const investimentoService = {
   },
 
   /**
-   * Snapshot automático do patrimônio de independência (soma dos ativos vinculados ao objetivo
-   * 'independencia') com UPSERT MENSAL: se já houver um ponto no mês corrente para o cliente,
-   * atualiza-o (e ACUMULA o aporte do período); senão insere. Disparado ao salvar a carteira e
-   * ao finalizar o wizard de aporte (que informa o valor efetivamente aportado).
+   * Snapshot automático do patrimônio financeiro TOTAL do cliente (soma de todos os ativos, em
+   * todos os objetivos — reserva + projetos + independência) com UPSERT MENSAL: se já houver um
+   * ponto no mês corrente para o cliente, atualiza-o (e ACUMULA o aporte do período); senão
+   * insere. Disparado ao salvar a carteira e ao finalizar o wizard de aporte (que informa o valor
+   * efetivamente aportado).
+   *
+   * Até jul/2026, este snapshot registrava apenas a fatia vinculada ao objetivo
+   * 'independencia'. Linhas de historico_patrimonio salvas antes dessa mudança continuam
+   * representando o valor antigo (mais estreito) — não há como recalcular retroativamente sem o
+   * detalhamento de ativos daquela época. A partir de agora, todo novo snapshot é o patrimônio
+   * total, base usada tanto no gráfico de independência quanto na tabela de rentabilidade mensal.
    */
   async snapshotPatrimonioIndependencia(clienteId: string, aporteRealizado: number = 0) {
     const ativos = await this.getAtivos(clienteId);
-    const valorIndependencia = (ativos || []).reduce((acc: number, a: any) => {
-      const link = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'independencia');
-      return acc + (link ? (a.valor_atual || 0) * (link.percentual / 100) : 0);
-    }, 0);
+    const valorIndependencia = (ativos || []).reduce((acc: number, a: any) => acc + (a.valor_atual || 0), 0);
 
     const agora = new Date();
     const hojeStr = agora.toISOString().split('T')[0];

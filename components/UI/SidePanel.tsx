@@ -9,6 +9,9 @@ interface SidePanelProps {
   subtitle?: string;
   /** Largura máxima do drawer. Padrão: max-w-md. */
   widthClass?: string;
+  /** 'transparent' remove o blur/escurecimento do overlay — útil quando o conteúdo atrás
+   *  do drawer precisa continuar visível (ex.: simulação ao vivo de um gráfico). */
+  overlay?: 'default' | 'transparent';
   /** Rodapé fixo de ações (botões). Opcional. */
   footer?: React.ReactNode;
   children: React.ReactNode;
@@ -19,7 +22,7 @@ interface SidePanelProps {
  * components/Dividas/PanelDetalheCredito.tsx. Inclui overlay com blur, header com
  * título + botão fechar, corpo scrollável e rodapé opcional de ações.
  */
-const SidePanel: React.FC<SidePanelProps> = ({ open, onClose, title, subtitle, widthClass = 'max-w-md', footer, children }) => {
+const SidePanel: React.FC<SidePanelProps> = ({ open, onClose, title, subtitle, widthClass = 'max-w-md', overlay = 'default', footer, children }) => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     if (open) {
@@ -37,7 +40,7 @@ const SidePanel: React.FC<SidePanelProps> = ({ open, onClose, title, subtitle, w
   return createPortal(
     <>
       <div
-        className="fixed inset-0 bg-surface-3/40 backdrop-blur-sm z-[9998] transition-opacity animate-fade-in"
+        className={`fixed inset-0 z-[9998] transition-opacity animate-fade-in ${overlay === 'transparent' ? 'bg-transparent' : 'bg-surface-3/40 backdrop-blur-sm'}`}
         onClick={onClose}
       />
       <div className={`fixed inset-y-0 right-0 w-full ${widthClass} bg-surface shadow-2xl z-[9999] transform transition-transform animate-slide-left flex flex-col border-l border-subtle`}>

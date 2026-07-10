@@ -50,8 +50,8 @@ const AbaInvestimentos: React.FC<AbaInvestimentosProps> = ({ clienteId }) => {
   if (loading && ativos.length === 0) {
     return (
       <div className="py-24 flex flex-col items-center justify-center gap-6">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
-        <p className="text-faint font-bold uppercase tracking-[0.2em] text-[10px]">Analizando Carteira...</p>
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[color:var(--primary)]"></div>
+        <p className="text-faint font-semibold uppercase tracking-[0.2em] text-[10px]">Analisando carteira...</p>
       </div>
     );
   }
