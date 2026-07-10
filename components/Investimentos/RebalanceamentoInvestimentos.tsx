@@ -16,9 +16,13 @@ import {
 import Accordion from '../UI/Accordion';
 import { supabase } from '../../services/supabaseClient';
 import { DestinoVenda, DESTINOS_VENDA } from '../../utils/destinosVenda';
-import { baixarElementoComoPDF } from '../../utils/pdfFromElement';
+import { baixarElementoComoPDFPaginado } from '../../utils/pdfFromElement';
 import HistoricoAportes from './HistoricoAportes';
 import Badge from '../UI/Badge';
+import { protecaoService } from '../../services/protecaoService';
+import { calcularIdade } from '../../utils/calculosFinanceiros';
+import { projetarIndependencia, calcularPrazoERentabilidade, calcularAporteNecessario } from '../../utils/independenciaUtils';
+import { HistoricoPatrimonio, PremissasIndependencia } from '../../services/investimentoService';
 
 interface AlocacaoManual {
   id: string;
@@ -72,13 +76,13 @@ const PriceInputCell = ({ initialValue, onConfirm, prefix = "R$" }: { initialVal
 
   return (
     <div className="relative group">
-      <span className="absolute left-2.5 top-[11px] text-[9px] font-bold text-faint">{prefix}</span>
+      <span className="absolute left-2.5 top-[11px] text-[10px] font-semibold text-faint">{prefix}</span>
       <input
         type="text"
         inputMode="numeric"
         value={display}
         onChange={handleChange}
-        className="h-9 w-full pl-7 pr-2 bg-surface-2 border border-subtle rounded-[8px] text-[12px] font-bold text-main outline-none focus:bg-surface focus:border-[color:var(--primary)] focus:ring-2 focus:ring-emerald-500/20 transition-all text-center shadow-sm"
+        className="h-9 w-full pl-7 pr-2 bg-surface-2 border border-subtle rounded-lg text-[12px] font-semibold text-main outline-none focus:bg-surface focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[rgba(16,185,129,0.2)] transition-all text-center shadow-sm"
         placeholder="0,00"
       />
     </div>
@@ -142,6 +146,12 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   const [projetos, setProjetos] = useState<any[]>([]);
   const [reservaAlloc, setReservaAlloc] = useState<AlocacaoManual[]>([]);
   const [projetosAlloc, setProjetosAlloc] = useState<AlocacaoManual[]>([]);
+  // Dados do plano de independência — alimentam a seção "Plano de Independência" do relatório
+  // (mesmos cálculos do Resumo Geral: aporte necessário, prazos e alocação alvo vs carteira).
+  const [premissasIndep, setPremissasIndep] = useState<PremissasIndependencia | null>(null);
+  const [historicoPatrimonio, setHistoricoPatrimonio] = useState<HistoricoPatrimonio[]>([]);
+  const [idadeCliente, setIdadeCliente] = useState<number | null>(null);
+  const [taxaPosPadrao, setTaxaPosPadrao] = useState(6.25);
 
   useEffect(() => {
     Promise.all([
@@ -182,6 +192,19 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
         if (cli?.bancos_ativos) setBancosSelecionados(cli.bancos_ativos.split(',').filter(Boolean));
       });
+
+    // Plano de independência (isolado do carregamento principal — falha aqui não bloqueia o wizard)
+    Promise.all([
+      investimentoService.getPremissasIndependencia(clienteId),
+      investimentoService.getHistoricoMensal(clienteId),
+      protecaoService.getDataNascimentoCliente(clienteId),
+      protecaoService.getParametros(),
+    ]).then(([premData, histData, dataNascimento, parametros]) => {
+      setPremissasIndep(premData || null);
+      setHistoricoPatrimonio(histData || []);
+      setIdadeCliente(calcularIdade(dataNascimento || undefined));
+      setTaxaPosPadrao(Number(parametros.taxa_juros_aa) || 6.25);
+    }).catch(err => console.error('Erro ao carregar plano de independência:', err));
   }, [clienteId]);
 
   const totalAlocadoReserva = useMemo(() => reservaAlloc.reduce((acc, it) => acc + it.valor, 0), [reservaAlloc]);
@@ -273,6 +296,85 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   };
 
   const totalVendas = useMemo(() => (Object.values(vendas) as VendaItem[]).reduce((acc, v) => acc + v.valor, 0), [vendas]);
+
+  // ─── Plano de independência (para o relatório) — mesma matemática do Resumo Geral ───────────
+  const patrimonioFinanceiroTotal = useMemo(
+    () => (ativos || []).reduce((acc: number, a: any) => acc + (a.valor_atual || 0), 0),
+    [ativos]
+  );
+
+  const premissasEfetivas = useMemo<PremissasIndependencia>(() => ({
+    cliente_id: clienteId,
+    renda_alvo: Number(premissasIndep?.renda_alvo ?? 10000),
+    taxa_real_anual: Number(premissasIndep?.taxa_real_anual ?? 6),
+    patrimonio_inicial: cliente?.patrimonio_total || 0,
+    aporte_mensal: premissasIndep ? Number(premissasIndep.aporte_mensal) : (cliente?.aporte_mensal || 0),
+    prazo_anos: Number(premissasIndep?.prazo_anos ?? 20),
+    data_inicio: premissasIndep?.data_inicio ?? new Date().toISOString().split('T')[0],
+    outras_fontes_renda: Number(premissasIndep?.outras_fontes_renda) || 0,
+    taxa_pos_aposentadoria: premissasIndep?.taxa_pos_aposentadoria !== null && premissasIndep?.taxa_pos_aposentadoria !== undefined ? Number(premissasIndep.taxa_pos_aposentadoria) : null,
+  }), [premissasIndep, cliente, clienteId]);
+
+  const eventosSaque = useMemo(() => {
+    const dataInicio = new Date(premissasEfetivas.data_inicio);
+    return (projetos || [])
+      .filter((p: any) => p.data_alvo && p.valor_alvo > 0)
+      .map((p: any) => {
+        const dataAlvo = new Date(p.data_alvo);
+        return { mes: Math.round((dataAlvo.getFullYear() - dataInicio.getFullYear()) * 12 + (dataAlvo.getMonth() - dataInicio.getMonth())), valor: p.valor_alvo };
+      });
+  }, [projetos, premissasEfetivas.data_inicio]);
+
+  const prazoIndepInfo = useMemo(() => calcularPrazoERentabilidade(premissasEfetivas, historicoPatrimonio), [premissasEfetivas, historicoPatrimonio]);
+
+  const projecaoIndep = useMemo(
+    () => projetarIndependencia(premissasEfetivas, patrimonioFinanceiroTotal, historicoPatrimonio, {
+      consumo: { idadeAtual: idadeCliente, taxaRentabilizacaoAnual: premissasEfetivas.taxa_pos_aposentadoria ?? taxaPosPadrao },
+      realizado: prazoIndepInfo,
+      eventosSaque,
+    }),
+    [premissasEfetivas, patrimonioFinanceiroTotal, historicoPatrimonio, idadeCliente, taxaPosPadrao, prazoIndepInfo, eventosSaque]
+  );
+
+  // Meta de aporte mensal (mesma do callout do Resumo): quanto precisa investir/mês para chegar
+  // ao capital de liberdade no prazo planejado, repondo os saques de objetivos no caminho.
+  const aporteMetaMensal = useMemo(() => {
+    const mesesRestantes = premissasEfetivas.prazo_anos * 12 - projecaoIndep.mesesAteHoje;
+    const saquesAntesDaMeta = eventosSaque
+      .map(e => ({ mesesAteSaque: e.mes - projecaoIndep.mesesAteHoje, valor: e.valor }))
+      .filter(s => s.mesesAteSaque > 0 && s.mesesAteSaque <= mesesRestantes);
+    return calcularAporteNecessario(patrimonioFinanceiroTotal, projecaoIndep.patrimonioNecessario, mesesRestantes, premissasEfetivas.taxa_real_anual, saquesAntesDaMeta);
+  }, [premissasEfetivas, projecaoIndep, eventosSaque, patrimonioFinanceiroTotal]);
+
+  // Alocação alvo (modelo) vs carteira atual por classe — versão em barras CSS (html2canvas-safe)
+  // do gráfico do Resumo Geral, restrita à fatia de independência como lá.
+  const barDataRelatorio = useMemo(() => {
+    const modelo = modelosDisponiveis.find(m => m.id === estrategiaId);
+    const porClasse: Record<string, number> = {};
+    let total = 0;
+    (ativos || []).forEach((a: any) => {
+      const link = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'independencia');
+      if (link && link.percentual > 0) {
+        const valor = a.valor_atual * (link.percentual / 100);
+        const classe = a.tipo_ativo || 'Outros';
+        porClasse[classe] = (porClasse[classe] || 0) + valor;
+        total += valor;
+      }
+    });
+    return (modelo?.classes || []).map((c: any) => ({
+      classe: c.nome,
+      alvo: Number(c.percentual) || 0,
+      atual: total > 0 ? ((porClasse[c.nome] || 0) / total) * 100 : 0,
+      cor: c.cor_rgb || '#10b981',
+    }));
+  }, [modelosDisponiveis, estrategiaId, ativos]);
+
+  const formatarMesAno = (meses: number) => {
+    if (meses < 12) return `${meses} ${meses === 1 ? 'mês' : 'meses'}`;
+    const anos = Math.floor(meses / 12);
+    const restoMeses = meses % 12;
+    return restoMeses > 0 ? `${anos}a ${restoMeses}m` : `${anos} ${anos === 1 ? 'ano' : 'anos'}`;
+  };
 
   // Reconstrói a Revisão Final do último aporte a partir do log salvo (prefixos nos nomes), para o modo leitura.
   const revisaoData = useMemo(() => {
@@ -374,7 +476,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     setBaixandoPdf(true);
     try {
       const nomeArq = `Relatorio_Aporte_${(cliente?.nome || 'cliente').replace(/\s+/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
-      await baixarElementoComoPDF(relatorioRef.current, nomeArq);
+      await baixarElementoComoPDFPaginado(relatorioRef.current, nomeArq);
     } catch (err: any) {
       alert('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
     } finally {
@@ -384,12 +486,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
   // Documento do relatório de aporte — layout formal usado na tela de revisão e no PDF (html2canvas).
   // Cores em tokens/hex (sem paleta padrão do Tailwind, que é oklch e quebra o html2canvas).
+  // Cada card marcado com data-pdf-block é uma unidade indivisível na paginação do PDF: um bloco
+  // que não cabe no espaço restante da página desce inteiro para a próxima (sem cortes no meio).
   const renderRelatorioDoc = () => (
-    <div ref={relatorioRef} className="bg-surface rounded-xl border border-subtle shadow-sm overflow-hidden">
+    <div ref={relatorioRef} className="space-y-4">
       {/* Cabeçalho tipo timbrado */}
-      <div className="px-5 sm:px-8 py-6 border-b border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div data-pdf-block className="bg-surface rounded-xl border border-subtle px-5 sm:px-8 py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h3 className="text-[18px] font-semibold text-main">Relatório de Aporte Mensal</h3>
+          <h3 className="text-[16px] font-semibold text-main">Relatório de Aporte Mensal</h3>
           <p className="text-[12px] text-muted mt-1">
             {cliente?.nome || 'Cliente'} • {new Date().toLocaleDateString('pt-BR')}{planejador?.nome ? ` • Consultor: ${planejador.nome}` : ''}
           </p>
@@ -406,32 +510,84 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
         </div>
       </div>
 
-      <div className="p-5 sm:p-8 space-y-8">
-        {/* 01 — Resumo executivo */}
-        <div className="space-y-4">
-          <DocSectionTitle numero="01" titulo="Resumo Executivo" icon={<Landmark size={16} className="text-faint" />} />
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-[color:var(--primary)] rounded-xl p-4 sm:p-5 text-[#0b0e14] shadow-sm">
-              <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-70">Aporte Novo</span>
-              <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(aporte)}</p>
-            </div>
-            <div className="rounded-xl p-4 sm:p-5 text-white shadow-sm" style={{ backgroundColor: 'var(--danger)' }}>
-              <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-80">Saldo de Vendas</span>
-              <p className="text-[22px] font-bold tracking-tight">{formatarMoeda(totalVendas)}</p>
-            </div>
-            <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white shadow-sm sm:col-span-2 flex justify-between items-center">
-              <div>
-                <span className={kpiLabel}>Total Disponível</span>
-                <p className="text-[22px] font-bold tracking-tight mt-0.5">{formatarMoeda(aporte + totalVendas)}</p>
-              </div>
-              <Landmark size={26} className="text-main opacity-60" />
-            </div>
+      {/* 01 — Resumo executivo */}
+      <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-4">
+        <DocSectionTitle numero="01" titulo="Resumo Executivo" icon={<Landmark size={16} className="text-faint" />} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className={cardCls}>
+            <span className={kpiLabel}>Aporte Novo</span>
+            <p className="text-[22px] font-bold tracking-tight mt-2" style={{ color: 'var(--primary)' }}>{formatarMoeda(aporte)}</p>
+          </div>
+          <div className={cardCls}>
+            <span className={kpiLabel}>Saldo de Vendas</span>
+            <p className="text-[22px] font-bold tracking-tight mt-2" style={{ color: totalVendas > 0 ? 'var(--danger)' : 'var(--text-main)' }}>{formatarMoeda(totalVendas)}</p>
+          </div>
+          <div className={cardCls}>
+            <span className={kpiLabel}>Total Disponível</span>
+            <p className="text-[22px] font-bold tracking-tight text-main mt-2">{formatarMoeda(aporte + totalVendas)}</p>
           </div>
         </div>
+      </div>
 
-        {/* 02 — Distribuição por objetivo */}
-        <div className="space-y-4">
-          <DocSectionTitle numero="02" titulo="Distribuição por Objetivo" icon={<Target size={16} className="text-faint" />} />
+      {/* 02 — Plano de independência: aporte do mês vs meta, prazos e alocação alvo vs carteira */}
+      <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-5">
+        <DocSectionTitle numero="02" titulo="Plano de Independência" icon={<Bird size={16} className="text-faint" />} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className={cardCls}>
+            <span className={kpiLabel}>Aporte do mês</span>
+            <p className="text-[18px] font-bold text-main tracking-tight mt-2">{formatarMoeda(aporte)}</p>
+            {aporteMetaMensal !== null ? (
+              <>
+                <p className="text-[11px] font-semibold mt-1.5" style={{ color: aporte >= aporteMetaMensal ? 'var(--primary)' : 'var(--warning)' }}>
+                  {aporte >= aporteMetaMensal
+                    ? `Acima da meta (+${formatarMoeda(aporte - aporteMetaMensal)})`
+                    : `Abaixo da meta (−${formatarMoeda(aporteMetaMensal - aporte)})`}
+                </p>
+                <p className="text-[10px] text-faint mt-0.5">Meta: {formatarMoeda(aporteMetaMensal)}/mês</p>
+              </>
+            ) : (
+              <p className="text-[10px] text-faint mt-1.5">Meta indisponível — prazo alvo já decorrido</p>
+            )}
+          </div>
+          <div className={cardCls}>
+            <span className={kpiLabel}>Prazo planejado inicial</span>
+            <p className="text-[18px] font-bold text-main tracking-tight mt-2">{formatarMesAno(prazoIndepInfo.prazoInicialMeses)}</p>
+          </div>
+          <div className={cardCls}>
+            <span className={kpiLabel}>Prazo atualizado</span>
+            <p className="text-[18px] font-bold tracking-tight mt-2" style={{ color: 'var(--primary)' }}>
+              {projecaoIndep.mesIndependenciaReal === null ? 'Não atingível' : formatarMesAno(projecaoIndep.mesIndependenciaReal)}
+            </p>
+          </div>
+        </div>
+        {barDataRelatorio.length > 0 && (
+          <div>
+            <p className={`${kpiLabel} mb-3`}>Alocação · alvo vs carteira</p>
+            <div className="space-y-3">
+              {barDataRelatorio.map((d: any, i: number) => (
+                <div key={i}>
+                  <div className="flex justify-between text-[11px] font-semibold mb-1">
+                    <span className="text-main">{d.classe}</span>
+                    <span className="text-muted">Alvo {d.alvo.toFixed(1)}% · Carteira {d.atual.toFixed(1)}%</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-2 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(d.alvo, 100)}%`, backgroundColor: d.cor, opacity: 0.35 }} /></div>
+                    <div className="h-2 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(d.atual, 100)}%`, backgroundColor: d.cor }} /></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-4 mt-3">
+              <span className="flex items-center gap-1.5 text-[10px] text-muted"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: 'var(--primary)', opacity: 0.35 }} /> Alvo (modelo)</span>
+              <span className="flex items-center gap-1.5 text-[10px] text-muted"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: 'var(--primary)' }} /> Carteira atual</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 03 — Distribuição por objetivo */}
+      <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-4">
+        <DocSectionTitle numero="03" titulo="Distribuição por Objetivo" icon={<Target size={16} className="text-faint" />} />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-[color:var(--primary)]"><ShieldCheck size={15} /><span className="text-[12px] font-semibold">Reserva de Emergência</span></div>
@@ -489,75 +645,72 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           </div>
         </div>
 
-        {/* 03 — Ordens de compra */}
-        <div className="space-y-4">
-          <DocSectionTitle numero="03" titulo="Ordens de Compra (Simulador Tático)" icon={<ShoppingCart size={16} className="text-faint" />} />
-          <div className="space-y-3">
-            {distribuicaoAtivos.filter(c => c.ativos.some((a: any) => a.acao === 'COMPRAR')).map((classe, cIdx) => (
-              <div key={cIdx} className="bg-surface border border-subtle rounded-xl overflow-hidden">
-                <div className="bg-surface-2 px-5 py-2.5 border-b border-subtle flex justify-between items-center">
-                  <span className="text-[12px] font-semibold text-main">{classe.classe}</span>
-                  <span className="text-[11px] font-semibold text-[color:var(--primary)]">Fundo: {formatarMoeda(classe.valor_aporte_classe)}</span>
-                </div>
-                <table className="w-full text-left">
-                  <tbody className="divide-y divide-subtle text-[12px]">
-                    {classe.ativos.filter((a: any) => a.acao === 'COMPRAR').map((at: any, aIdx: number) => (
-                      <tr key={aIdx}>
-                        <td className="py-2.5 px-5">
-                          <p className="font-semibold text-main">{at.nome}</p>
-                          <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
-                        </td>
-                        <td className="py-2.5 px-5 text-right">
-                          <div className="flex flex-col items-end">
-                            <span className="text-[12px] font-semibold text-[color:var(--primary)]">Aporte: {formatarMoeda(manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido)}</span>
-                            <span className="text-[10px] text-faint mt-0.5">Cotas: {at.cotas || 0}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+      {/* 04 — Ordens de compra: título + cada classe são blocos independentes na paginação */}
+      <div data-pdf-block className="bg-surface rounded-xl border border-subtle px-5 sm:px-8 py-4">
+        <DocSectionTitle numero="04" titulo="Ordens de Compra (Simulador Tático)" icon={<ShoppingCart size={16} className="text-faint" />} />
+      </div>
+      {distribuicaoAtivos.filter(c => c.ativos.some((a: any) => a.acao === 'COMPRAR')).map((classe, cIdx) => (
+        <div key={cIdx} data-pdf-block className="bg-surface border border-subtle rounded-xl overflow-hidden">
+          <div className="bg-surface-2 px-5 py-2.5 border-b border-subtle flex justify-between items-center">
+            <span className="text-[12px] font-semibold text-main">{classe.classe}</span>
+            <span className="text-[11px] font-semibold text-[color:var(--primary)]">Fundo: {formatarMoeda(classe.valor_aporte_classe)}</span>
+          </div>
+          <table className="w-full text-left">
+            <tbody className="divide-y divide-subtle text-[12px]">
+              {classe.ativos.filter((a: any) => a.acao === 'COMPRAR').map((at: any, aIdx: number) => (
+                <tr key={aIdx}>
+                  <td className="py-2.5 px-5">
+                    <p className="font-semibold text-main">{at.nome}</p>
+                    <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
+                  </td>
+                  <td className="py-2.5 px-5 text-right">
+                    <div className="flex flex-col items-end">
+                      <span className="text-[12px] font-semibold text-[color:var(--primary)]">Aporte: {formatarMoeda(manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido)}</span>
+                      <span className="text-[10px] text-faint mt-0.5">Cotas: {at.cotas || 0}</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      {/* 05 — Ordens de venda (só quando há desinvestimento) */}
+      {Object.keys(vendas).length > 0 && (
+        <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-4">
+          <DocSectionTitle numero="05" titulo="Ordens de Venda (Desinvestimento)" icon={<Trash2 size={16} className="text-faint" />} />
+          <div className="bg-surface rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-subtle text-[12px]">
+                {(Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
+                  const at = ativos.find((a: any) => a.id === id);
+                  if (!at) return null;
+                  return (
+                    <tr key={id}>
+                      <td className="py-2.5 px-5">
+                        <p className="font-semibold text-main">{at.nome}</p>
+                        <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
+                      </td>
+                      <td className="py-2.5 px-5 text-center">
+                        <span className="text-[10px] font-semibold text-muted bg-surface-2 px-2.5 py-1 rounded-md">{venda.destino}</span>
+                      </td>
+                      <td className="py-2.5 px-5 text-right font-bold tracking-tight" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
-
-        {/* 04 — Ordens de venda (só quando há desinvestimento) */}
-        {Object.keys(vendas).length > 0 && (
-          <div className="space-y-4">
-            <DocSectionTitle numero="04" titulo="Ordens de Venda (Desinvestimento)" icon={<Trash2 size={16} className="text-faint" />} />
-            <div className="bg-surface rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}>
-                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th>
-                    <th className="px-5 py-3 text-[10px] font-bold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th>
-                    <th className="px-5 py-3 text-[10px] font-bold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-subtle text-[12px]">
-                  {(Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
-                    const at = ativos.find((a: any) => a.id === id);
-                    if (!at) return null;
-                    return (
-                      <tr key={id}>
-                        <td className="py-2.5 px-5">
-                          <p className="font-semibold text-main">{at.nome}</p>
-                          <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
-                        </td>
-                        <td className="py-2.5 px-5 text-center">
-                          <span className="text-[10px] font-semibold text-muted bg-surface-2 px-2.5 py-1 rounded-md">{venda.destino}</span>
-                        </td>
-                        <td className="py-2.5 px-5 text-right font-bold tracking-tight" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 
@@ -565,7 +718,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   if (modo === 'relatorio') {
     return (
       <div className="max-w-5xl mx-auto py-4 px-2 sm:px-4 relative animate-in fade-in slide-in-from-bottom-4">
-        {finishing && (<div className="fixed inset-0 z-[60] bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4"><RefreshCw size={48} className="text-[color:var(--primary)] animate-spin" /><p className="text-xs font-black text-main uppercase tracking-widest">Sincronizando Decisões...</p></div>)}
+        {finishing && (<div className="fixed inset-0 z-[60] bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4"><RefreshCw size={48} className="text-[color:var(--primary)] animate-spin" /><p className="text-[12px] font-semibold text-main">Sincronizando decisões...</p></div>)}
 
         <div className="flex items-center gap-3 mb-6">
           <button onClick={() => setModo('novo')} disabled={success} className="h-9 w-9 shrink-0 bg-surface-2 text-faint rounded-2xl flex items-center justify-center hover:bg-surface-3 transition-all disabled:opacity-40 disabled:cursor-not-allowed"><ArrowLeft size={18} /></button>
@@ -621,22 +774,22 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 bg-surface p-4 sm:p-5 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
           <div>
-            <h3 className="text-[15px] font-bold text-main uppercase tracking-tight">Aporte Mensal</h3>
-            <p className="text-faint font-bold uppercase text-[10px] tracking-wider mt-1">Simule o protocolo do mês ou revise o último executado</p>
+            <h3 className="text-[16px] font-semibold text-main">Aporte Mensal</h3>
+            <p className="text-[12px] text-muted mt-1">Simule o protocolo do mês ou revise o último executado</p>
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => ultimoRebal ? setModo('revisao') : alert('Nenhum histórico disponível.')}
               disabled={!ultimoRebal}
-              className="h-10 px-4 inline-flex items-center gap-2 rounded-[8px] border border-subtle bg-surface-2 text-muted text-[11px] font-bold uppercase tracking-wider hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-lg border border-subtle bg-surface-2 text-muted text-[12px] font-semibold hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <History size={15} /> Revisar Último
             </button>
             <button
               onClick={() => setModo('novo')}
-              className="h-10 px-4 inline-flex items-center gap-2 rounded-[8px] bg-[color:var(--primary)] text-[#0b0e14] text-[11px] font-bold uppercase tracking-wider hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+              className="h-10 px-4 inline-flex items-center gap-2 rounded-lg bg-[color:var(--primary)] text-[#0b0e14] text-[12px] font-semibold hover:opacity-90 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
             >
-              <Plus size={15} strokeWidth={3} /> Novo Aporte Mensal
+              <Plus size={15} /> Novo Aporte Mensal
             </button>
           </div>
         </div>
@@ -652,22 +805,22 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
         <div className="flex items-center gap-3 mb-6">
           <button onClick={() => setModo('idle')} className="h-9 w-9 shrink-0 bg-surface-2 text-faint rounded-2xl flex items-center justify-center hover:bg-surface-3 transition-all"><XCircle size={18} /></button>
           <div className="min-w-0">
-            <h3 className="text-[18px] font-bold text-main uppercase tracking-tight truncate">Último Aporte Executado</h3>
-            {ultimoRebal && <p className="text-faint font-bold uppercase text-[10px] tracking-wider mt-0.5">Em {formatarData(ultimoRebal.data_rebalanceamento)} • somente leitura</p>}
+            <h3 className="text-[16px] font-semibold text-main truncate">Último Aporte Executado</h3>
+            {ultimoRebal && <p className="text-[11px] text-faint mt-0.5">Em {formatarData(ultimoRebal.data_rebalanceamento)} • somente leitura</p>}
           </div>
         </div>
 
         {!ultimoRebal || !revisaoData ? (
-          <div className="py-16 text-center border border-dashed border-subtle rounded-xl"><p className="text-[12px] text-faint font-bold uppercase tracking-wider">Nenhum aporte registrado para revisar.</p></div>
+          <div className="py-16 text-center border border-dashed border-subtle rounded-xl"><p className="text-[12px] text-faint font-semibold">Nenhum aporte registrado para revisar.</p></div>
         ) : (
           <div className="bg-surface p-4 sm:p-8 rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-[color:var(--primary)] p-5 rounded-xl text-[#0b0e14] shadow-sm">
-                <span className="text-[10px] font-bold uppercase tracking-wider block mb-1 opacity-70">Aporte Novo</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-70">Aporte Novo</span>
                 <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda(ultimoRebal.valor_aporte)}</p>
               </div>
               <div className="p-5 rounded-xl text-white shadow-sm" style={{ backgroundColor: 'var(--danger)' }}>
-                <span className="text-[10px] font-bold uppercase tracking-wider block mb-1 opacity-80">Saldo de Vendas</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider block mb-1 opacity-80">Saldo de Vendas</span>
                 <p className="text-[24px] font-bold tracking-tighter">{formatarMoeda(revisaoData.totalVendasRev)}</p>
               </div>
               <div className="bg-surface-3 p-5 rounded-xl text-white shadow-sm sm:col-span-2 flex justify-between items-center">
@@ -686,14 +839,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                 { icon: <Bird size={18} />, titulo: 'Independência Financeira', total: revisaoData.totalIndep, itens: revisaoData.indep },
               ].map((bloco, bi) => (
                 <div key={bi} className="space-y-4">
-                  <div className="flex items-center gap-2.5 text-emerald-600">{bloco.icon}<h4 className="text-[11px] font-bold uppercase tracking-wider">{bloco.titulo}</h4></div>
+                  <div className="flex items-center gap-2.5" style={{ color: 'var(--primary)' }}>{bloco.icon}<h4 className="text-[12px] font-semibold">{bloco.titulo}</h4></div>
                   <div className="bg-surface-2 p-5 rounded-xl border border-subtle space-y-4 shadow-sm">
                     <div className="flex justify-between items-center pb-3 border-b border-subtle">
                       <span className="text-[10px] font-bold text-faint uppercase tracking-wider">Total Alocado</span>
                       <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(bloco.total)}</span>
                     </div>
                     <div className="space-y-2.5">
-                      {bloco.itens.length === 0 ? <p className="text-[11px] text-faint font-bold uppercase tracking-wider">—</p> : bloco.itens.map((it: any, ii: number) => (
+                      {bloco.itens.length === 0 ? <p className="text-[11px] text-faint">—</p> : bloco.itens.map((it: any, ii: number) => (
                         <div key={ii} className="flex justify-between text-[11px] font-bold text-muted"><span className="uppercase">{it.nome}</span><span className="font-bold">{formatarMoeda(it.valor)}</span></div>
                       ))}
                     </div>
@@ -704,13 +857,13 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
             {revisaoData.venda.length > 0 && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2.5" style={{ color: 'var(--danger)' }}><Trash2 size={18} /><h4 className="text-[11px] font-bold uppercase tracking-wider">Ordens de Venda (Desinvestimento)</h4></div>
+                <div className="flex items-center gap-2.5" style={{ color: 'var(--danger)' }}><Trash2 size={16} /><h4 className="text-[12px] font-semibold">Ordens de Venda (Desinvestimento)</h4></div>
                 <div className="bg-surface rounded-xl overflow-hidden shadow-sm border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
                   <table className="w-full text-left">
-                    <thead><tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}><th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th></tr></thead>
+                    <thead><tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}><th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th><th className="px-5 py-3 text-[11px] font-semibold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th><th className="px-5 py-3 text-[11px] font-semibold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th></tr></thead>
                     <tbody className="divide-y divide-subtle text-[12px]">
                       {revisaoData.venda.map((v: any, vi: number) => (
-                        <tr key={vi}><td className="py-3 px-5"><p className="font-bold text-main uppercase tracking-tight">{v.nome}</p></td><td className="py-3 px-5 text-center"><span className="text-[9px] font-bold text-muted uppercase tracking-wider bg-surface-2 px-2.5 py-1 rounded-md">{v.destino}</span></td><td className="py-3 px-5 text-right font-bold tracking-tighter" style={{ color: 'var(--danger)' }}>{formatarMoeda(v.valor)}</td></tr>
+                        <tr key={vi}><td className="py-3 px-5"><p className="font-bold text-main uppercase tracking-tight">{v.nome}</p></td><td className="py-3 px-5 text-center"><span className="text-[10px] font-semibold text-muted uppercase tracking-wider bg-surface-2 px-2.5 py-1 rounded-md">{v.destino}</span></td><td className="py-3 px-5 text-right font-bold tracking-tighter" style={{ color: 'var(--danger)' }}>{formatarMoeda(v.valor)}</td></tr>
                       ))}
                     </tbody>
                   </table>
@@ -725,7 +878,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
   return (
     <div className="max-w-6xl mx-auto py-4 px-2 sm:px-4 relative">
-      {finishing && (<div className="fixed inset-0 z-[60] bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4 print:hidden"><RefreshCw size={48} className="text-[color:var(--primary)] animate-spin" /><p className="text-xs font-black text-main uppercase tracking-widest">Sincronizando Decisões...</p></div>)}
+      {finishing && (<div className="fixed inset-0 z-[60] bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4 print:hidden"><RefreshCw size={48} className="text-[color:var(--primary)] animate-spin" /><p className="text-[12px] font-semibold text-main">Sincronizando decisões...</p></div>)}
 
       {/* Cabeçalho da página única — escondido na impressão (só a Revisão é impressa) */}
       <div className="flex items-center gap-3 mb-6 print:hidden">
@@ -746,13 +899,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           <SectionShell id="sec-capital" numero={1} hideOnPrint titulo="Capital Disponível" descricao="Defina o valor do aporte e confirme as vendas sinalizadas">
           <div className="space-y-4">
             <div className={`${cardCls} space-y-4`}>
-              <div className="flex flex-wrap justify-between items-center gap-2">
-                <label className={kpiLabel}>Capital Disponível</label>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-2 text-faint">
-                  <Landmark size={12} />
-                  <span className="text-[10px] font-semibold">Saldo em conta</span>
-                </div>
-              </div>
+              <label className={kpiLabel}>Capital Disponível</label>
               <div className="relative">
                 <span className="absolute left-0 top-2.5 text-faint font-bold text-[24px]">R$</span>
                 <input
@@ -818,7 +965,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                                 <p className={kpiLabel}>Valor a vender</p>
                                 <p className="text-[13px] font-bold tracking-tighter" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</p>
                               </div>
-                              <span className={`px-2.5 py-1 rounded-md border text-[9px] font-bold uppercase tracking-wider whitespace-nowrap ${destinoInfo.color}`}>{destinoInfo.label}</span>
+                              <span className={`px-2.5 py-1 rounded-md border text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap ${destinoInfo.color}`}>{destinoInfo.label}</span>
                               <button
                                 type="button"
                                 onClick={() => handleToggleVenda(id, at.valor_atual)}
@@ -858,9 +1005,9 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
           <SectionShell id="sec-distribuicao" numero={2} hideOnPrint titulo="Resumo da Distribuição" descricao="Alvos calculados para Reserva, Projetos e Independência" disabled={!secEnabled['sec-distribuicao']} hint="Defina o capital e a estratégia para calcular a distribuição">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className={cardCls}><ShieldCheck size={20} className="mb-4" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Reserva</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.reserva || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'reserva') && <p className="text-[11px] font-semibold mt-2" style={{ color: 'var(--info)' }}>+ saldo de vendas</p>}</div>
-              <div className={cardCls}><Target size={20} className="mb-4" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Projetos</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.projetos || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'projetos') && <p className="text-[11px] font-semibold mt-2 text-[#c4b5fd]">+ saldo de vendas</p>}</div>
-              <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white shadow-sm"><Bird size={20} className="text-emerald-400 mb-4" /><p className={kpiLabel}>Alvo Independência</p><p className="text-[22px] font-bold tracking-tight leading-none mt-2">{formatarMoeda(resumo?.independencia || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'independencia') && <p className="text-[11px] font-semibold text-emerald-400 mt-2">+ saldo de vendas</p>}</div>
+              <div className={cardCls}><ShieldCheck size={18} className="mb-3" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Reserva</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.reserva || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'reserva') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
+              <div className={cardCls}><Target size={18} className="mb-3" style={{ color: 'var(--info)' }} /><p className={kpiLabel}>Alvo Projetos</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.projetos || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'projetos') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
+              <div className={cardCls}><Bird size={18} className="mb-3" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Independência</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.independencia || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'independencia') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
             </div>
           </SectionShell>
 
@@ -881,20 +1028,30 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
           <SectionShell id="sec-tatico" numero={4} hideOnPrint titulo="Simulador Tático" descricao="Ajuste preço de mercado e aporte efetivo por ativo" disabled={!secEnabled['sec-tatico']} hint="Conclua a alocação manual para liberar o simulador">
             <div className="space-y-4">
-          <div className="bg-surface-3 rounded-xl p-4 sm:p-5 text-white flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden shadow-sm">
-            <div className="relative z-10 text-center md:text-left"><span className={`${kpiLabel} block mb-1`}>Simulador de ordens de compra</span><p className="text-[20px] font-bold tracking-tight">{formatarMoeda(resumo?.independencia || 0)} <span className="text-[11px] text-muted ml-1">Aporte IF total</span></p>{faixaAplicada && (<div className="mt-2 flex items-center gap-2"><Badge variant="primary" size="sm">Tese: {faixaAplicada.estrategias_base?.nome || 'Estratégia Base'} • Faixa: {faixaAplicada.nome}</Badge></div>)}</div>
-            <div className="relative z-10 text-right"><p className={kpiLabel}>Patrimônio IF projetado</p><p className="text-[20px] font-bold tracking-tight text-emerald-400">{formatarMoeda(patrimonioProjetado)}</p></div>
-            <Landmark size={120} className="absolute -bottom-10 -right-10 text-white/5 pointer-events-none" />
+          <div className={`${cardCls} flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-4`}>
+            <div>
+              <span className={kpiLabel}>Aporte IF total</span>
+              <p className="text-[20px] font-bold text-main tracking-tight leading-none mt-1.5">{formatarMoeda(resumo?.independencia || 0)}</p>
+            </div>
+            <div className="sm:text-right">
+              <span className={kpiLabel}>Patrimônio IF projetado</span>
+              <p className="text-[20px] font-bold tracking-tight leading-none mt-1.5" style={{ color: 'var(--primary)' }}>{formatarMoeda(patrimonioProjetado)}</p>
+            </div>
+            {faixaAplicada && (
+              <div className="w-full sm:w-auto sm:ml-auto order-last">
+                <Badge variant="primary" size="sm">Tese: {faixaAplicada.estrategias_base?.nome || 'Estratégia Base'} • Faixa: {faixaAplicada.nome}</Badge>
+              </div>
+            )}
           </div>
 
           {/* Resumo por classe — mesclado do antigo passo isolado "Rebate por Classes" */}
-          <div className="bg-surface rounded-xl border border-subtle overflow-hidden shadow-sm"><table className="w-full text-left"><thead><tr className="bg-surface-2 border-b border-subtle"><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider">Classe</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-right">Saldo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-center">% Alvo</th><th className="px-5 py-3 text-[10px] font-bold uppercase text-emerald-600 tracking-wider text-right">Aporte</th></tr></thead><tbody className="divide-y divide-subtle">{rebateClasses.map((c, i) => (<tr key={i}><td className="px-5 py-3 font-bold text-main uppercase text-[12px] tracking-tight">{c.classe}</td><td className="px-5 py-3 text-right font-bold text-muted text-[12px]">{formatarMoeda(c.saldo_atual)}</td><td className="px-5 py-3 text-center font-bold text-faint text-[11px]">{c.alvo_perc}%</td><td className="px-5 py-3 text-right font-bold text-emerald-600 text-[13px]">{formatarMoeda(c.aporte_sugerido)}</td></tr>))}</tbody></table></div>
+          <div className="bg-surface rounded-xl border border-subtle overflow-hidden shadow-sm"><table className="w-full text-left"><thead><tr className="bg-surface-2 border-b border-subtle"><th className="px-5 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider">Classe</th><th className="px-5 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-right">Saldo</th><th className="px-5 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">% Alvo</th><th className="px-5 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-right">Aporte</th></tr></thead><tbody className="divide-y divide-subtle">{rebateClasses.map((c, i) => (<tr key={i}><td className="px-5 py-3 font-semibold text-main text-[12px]">{c.classe}</td><td className="px-5 py-3 text-right font-semibold text-muted text-[12px]">{formatarMoeda(c.saldo_atual)}</td><td className="px-5 py-3 text-center font-semibold text-faint text-[11px]">{c.alvo_perc}%</td><td className="px-5 py-3 text-right font-semibold text-[13px]" style={{ color: 'var(--primary)' }}>{formatarMoeda(c.aporte_sugerido)}</td></tr>))}</tbody></table></div>
 
           <div className="space-y-4">
             {distribuicaoAtivos.map((classe, cIdx) => {
               const isClasseSkip = classe.valor_aporte_classe <= 0.01;
               return (
-                <Accordion key={cIdx} title={classe.classe} subtitle={isClasseSkip ? 'CATEGORIA IGNORADA (Redistribuído)' : `${classe.ativos.filter((a: any) => a.acao === 'COMPRAR').length} ativos em compra • Fundo: ${formatarMoeda(classe.valor_aporte_classe)}`} defaultOpen={!isClasseSkip}>
+                <Accordion key={cIdx} title={classe.classe} subtitle={isClasseSkip ? 'Categoria ignorada — valor redistribuído' : `${classe.ativos.filter((a: any) => a.acao === 'COMPRAR').length} ativos em compra • Fundo: ${formatarMoeda(classe.valor_aporte_classe)}`} defaultOpen={!isClasseSkip}>
                   <div className="mt-4"><table className="w-full text-left table-fixed">
                     <colgroup>
                       <col className="w-[22%]" />
@@ -906,20 +1063,20 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                       <col className="w-[16%]" />
                       <col className="w-[15%]" />
                     </colgroup>
-                    <thead><tr className="bg-surface-2 border-b border-subtle"><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider">Ativo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Atual</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Aloc. Sugerida</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-right">Sugerido</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Preço Mercado<span className="block normal-case font-medium text-[9px] text-faint/70">auto quando disponível</span></th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-center">Cotas</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-emerald-600 uppercase tracking-wider text-center">Aporte Efetivo</th><th className="py-3 px-2 sm:px-3 text-[10px] font-bold text-faint uppercase tracking-wider text-right">Ação</th></tr></thead>
+                    <thead><tr className="bg-surface-2 border-b border-subtle"><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold text-faint uppercase tracking-wider">Ativo</th><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-center">Aloc. Atual</th><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-center">Aloc. Sugerida</th><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold uppercase tracking-wider text-right" style={{ color: 'var(--primary)' }}>Sugerido</th><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-center" title="Preenchido automaticamente pela cotação quando disponível">Preço Mercado</th><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-center">Cotas</th><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold uppercase tracking-wider text-center" style={{ color: 'var(--primary)' }}>Aporte Efetivo</th><th className="py-3 px-2 sm:px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Ação</th></tr></thead>
                     <tbody className="divide-y divide-subtle">
                       {classe.ativos.map((at: any, aIdx: number) => {
                         const isComprando = at.acao === 'COMPRAR';
                         return (
                           <tr key={aIdx} className={`hover:bg-surface-2/50 transition-colors ${!isComprando ? 'opacity-50 grayscale bg-surface-2/30' : ''}`}>
-                            <td className="py-3 px-2 sm:px-3"><div className="flex items-center gap-2 min-w-0">{!isComprando && <AlertCircle size={10} className="text-faint shrink-0" />}<div className="min-w-0"><p className="text-[12px] font-bold text-main uppercase tracking-tight truncate">{at.nome}</p><p className="text-[10px] text-muted font-bold uppercase mt-0.5 tracking-wider truncate">{at.ticker || at.cnpj || '---'}</p></div></div></td>
-                            <td className="py-3 px-2 sm:px-3 text-center text-[11px] font-bold text-muted">{at.alocacao_atual.toFixed(1)}%</td>
-                            <td className="py-3 px-2 sm:px-3 text-center text-[11px] font-bold text-main rounded-md" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>{at.alocacao_atualizada.toFixed(1)}%</td>
-                            <td className="py-3 px-2 sm:px-3 text-right font-bold text-[12px] whitespace-nowrap" style={{ color: 'var(--primary)' }}>{at.aporte_sugerido > 0.01 ? formatarMoeda(at.aporte_sugerido) : '---'}</td>
+                            <td className="py-3 px-2 sm:px-3"><div className="flex items-center gap-2 min-w-0">{!isComprando && <AlertCircle size={10} className="text-faint shrink-0" />}<div className="min-w-0"><p className="text-[12px] font-semibold text-main truncate">{at.nome}</p><p className="text-[10px] text-muted font-medium mt-0.5 truncate">{at.ticker || at.cnpj || '---'}</p></div></div></td>
+                            <td className="py-3 px-2 sm:px-3 text-center text-[11px] font-semibold text-muted">{at.alocacao_atual.toFixed(1)}%</td>
+                            <td className="py-3 px-2 sm:px-3 text-center text-[11px] font-semibold text-main rounded-md" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>{at.alocacao_atualizada.toFixed(1)}%</td>
+                            <td className="py-3 px-2 sm:px-3 text-right font-semibold text-[12px] whitespace-nowrap" style={{ color: 'var(--primary)' }}>{at.aporte_sugerido > 0.01 ? formatarMoeda(at.aporte_sugerido) : '---'}</td>
                             <td className="py-3 px-1.5 sm:px-2"><PriceInputCell initialValue={at.preco_mercado} onConfirm={v => updateManual(at.id, { preco_mercado: v })} /></td>
-                            <td className="py-3 px-2 sm:px-3 text-center"><span className="text-[12px] font-bold" style={{ color: at.cotas > 0 ? 'var(--primary)' : 'var(--text-faint)' }}>{at.cotas || 0}</span></td>
+                            <td className="py-3 px-2 sm:px-3 text-center"><span className="text-[12px] font-semibold" style={{ color: at.cotas > 0 ? 'var(--primary)' : 'var(--text-faint)' }}>{at.cotas || 0}</span></td>
                             <td className="py-3 px-1.5 sm:px-2"><PriceInputCell initialValue={manualSettings[at.id]?.aporte_efetivo || 0} onConfirm={v => updateManual(at.id, { aporte_efetivo: v })} /></td>
-                            <td className="py-3 px-2 sm:px-3 text-right"><button onClick={() => updateManual(at.id, { status_manual: at.acao !== 'COMPRAR' })} className={`w-full px-2 h-7 rounded-md text-[9px] font-bold uppercase tracking-wider whitespace-nowrap transition-colors border ${isComprando ? 'hover:opacity-80' : 'bg-surface-2 text-muted border-subtle hover:bg-surface-2'}`} style={isComprando ? { backgroundColor: 'rgba(16,185,129,0.12)', color: 'var(--primary)', borderColor: 'rgba(16,185,129,0.25)' } : undefined}>{isComprando ? 'Comprar' : 'Ignorar'}</button></td>
+                            <td className="py-3 px-2 sm:px-3 text-right"><button onClick={() => updateManual(at.id, { status_manual: at.acao !== 'COMPRAR' })} className={`w-full px-2 h-7 rounded-md text-[10px] font-semibold whitespace-nowrap transition-colors border ${isComprando ? 'hover:opacity-80' : 'bg-surface-2 text-muted border-subtle hover:bg-surface-2'}`} style={isComprando ? { backgroundColor: 'rgba(16,185,129,0.12)', color: 'var(--primary)', borderColor: 'rgba(16,185,129,0.25)' } : undefined}>{isComprando ? 'Comprar' : 'Ignorar'}</button></td>
                           </tr>
                         );
                       })}
@@ -955,7 +1112,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 const SectionShell = ({ id, numero, titulo, descricao, disabled = false, hint, hideOnPrint = false, children }: { id: string; numero?: number; titulo: string; descricao?: string; disabled?: boolean; hint?: string; hideOnPrint?: boolean; children: React.ReactNode }) => (
   <section id={id} className={`scroll-mt-24 ${hideOnPrint ? 'print:hidden' : ''}`}>
     <div className="flex items-center gap-2.5 mb-4">
-      {numero != null && <span className="h-6 w-6 shrink-0 rounded-md bg-surface-2 text-faint flex items-center justify-center text-[11px] font-black">{numero}</span>}
+      {numero != null && <span className="h-6 w-6 shrink-0 rounded-md bg-surface-2 text-faint flex items-center justify-center text-[11px] font-bold">{numero}</span>}
       <div className="min-w-0">
         <h3 className={sectionTitleCls}>{titulo}</h3>
         {descricao && <p className="text-[12px] text-muted mt-0.5">{descricao}</p>}
@@ -1035,7 +1192,7 @@ const SecaoNav = ({ secoes, enabledMap, variante }: { secoes: { id: string; labe
           const en = enabledMap[s.id]; const isActive = active === s.id;
           return (
             <button key={s.id} type="button" disabled={!en} onClick={() => en && go(s.id)}
-              className={`shrink-0 px-3 h-8 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14] border-transparent' : en ? 'bg-surface-2 text-muted border-subtle' : 'bg-surface-2 text-faint/50 border-subtle cursor-not-allowed'}`}>
+              className={`shrink-0 px-3 h-8 rounded-full text-[11px] font-semibold transition-colors border ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14] border-transparent' : en ? 'bg-surface-2 text-muted border-subtle' : 'bg-surface-2 text-faint/50 border-subtle cursor-not-allowed'}`}>
               {i + 1}. {s.label}
             </button>
           );
@@ -1050,8 +1207,8 @@ const SecaoNav = ({ secoes, enabledMap, variante }: { secoes: { id: string; labe
         const en = enabledMap[s.id]; const isActive = active === s.id;
         return (
           <button key={s.id} type="button" disabled={!en} onClick={() => en && go(s.id)}
-            className={`text-left px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors flex items-center gap-2.5 ${isActive ? 'bg-[color:var(--primary-soft)] text-[color:var(--primary)]' : en ? 'text-muted hover:bg-surface-2' : 'text-faint/40 cursor-not-allowed'}`}>
-            <span className={`h-5 w-5 shrink-0 rounded-md flex items-center justify-center text-[10px] font-black ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14]' : 'bg-surface-2 text-faint'}`}>{i + 1}</span>
+            className={`text-left px-3 py-2 rounded-lg text-[12px] font-semibold transition-colors flex items-center gap-2.5 ${isActive ? 'bg-[color:var(--primary-soft)] text-[color:var(--primary)]' : en ? 'text-muted hover:bg-surface-2' : 'text-faint/40 cursor-not-allowed'}`}>
+            <span className={`h-5 w-5 shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14]' : 'bg-surface-2 text-faint'}`}>{i + 1}</span>
             {s.label}
           </button>
         );
@@ -1063,7 +1220,7 @@ const SecaoNav = ({ secoes, enabledMap, variante }: { secoes: { id: string; labe
 const SelectorAtivo = ({ onSelect, placeholder, ativos }: any) => {
   const [inp, setInp] = useState(''); const [show, setShow] = useState(false);
   const fil = (ativos || []).filter((a: any) => a.nome?.toLowerCase().includes(inp.toLowerCase()));
-  return (<div className="relative"><div className="relative group"><input type="text" placeholder={placeholder} value={inp} onChange={e => { setInp(e.target.value); setShow(true); }} onFocus={() => setShow(true)} className="w-full h-10 pl-10 pr-4 bg-surface-2 border border-subtle rounded-[8px] text-[12px] font-bold text-main outline-none focus:bg-surface focus:border-[color:var(--primary)] focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-sm" /><Search size={14} className="absolute left-4 top-3 text-faint" /><button type="button" disabled={!inp} onClick={() => { onSelect(inp); setInp(''); setShow(false); }} className="absolute right-2 top-2 h-6 w-6 flex items-center justify-center bg-[color:var(--primary)] text-[#0b0e14] rounded-[4px] hover:opacity-90 disabled:opacity-20 transition-all"><Plus size={12} strokeWidth={3} /></button></div>{show && inp && (<div className="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-subtle rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">{fil.map((a: any) => (<button key={a.id} type="button" onClick={() => { onSelect(a.id); setInp(''); setShow(false); }} className="w-full p-3 text-left text-[11px] font-bold text-main uppercase hover:bg-surface-2 flex justify-between items-center transition-colors">{a.nome}</button>))}</div>)}{show && <div className="fixed inset-0 z-40" onClick={() => setShow(false)} />}</div>);
+  return (<div className="relative"><div className="relative group"><input type="text" placeholder={placeholder} value={inp} onChange={e => { setInp(e.target.value); setShow(true); }} onFocus={() => setShow(true)} className="w-full h-10 pl-10 pr-4 bg-surface-2 border border-subtle rounded-lg text-[12px] font-semibold text-main outline-none focus:bg-surface focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[rgba(16,185,129,0.2)] transition-all shadow-sm" /><Search size={14} className="absolute left-4 top-3 text-faint" /><button type="button" disabled={!inp} onClick={() => { onSelect(inp); setInp(''); setShow(false); }} className="absolute right-2 top-2 h-6 w-6 flex items-center justify-center bg-[color:var(--primary)] text-[#0b0e14] rounded-md hover:opacity-90 disabled:opacity-20 transition-all"><Plus size={12} /></button></div>{show && inp && (<div className="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-subtle rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">{fil.map((a: any) => (<button key={a.id} type="button" onClick={() => { onSelect(a.id); setInp(''); setShow(false); }} className="w-full p-3 text-left text-[12px] font-semibold text-main hover:bg-surface-2 flex justify-between items-center transition-colors">{a.nome}</button>))}</div>)}{show && <div className="fixed inset-0 z-40" onClick={() => setShow(false)} />}</div>);
 };
 
 export default RebalanceamentoInvestimentos;

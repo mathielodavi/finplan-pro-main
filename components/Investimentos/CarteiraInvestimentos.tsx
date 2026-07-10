@@ -161,9 +161,6 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
     setEditing({ ...editing, distribuicao_objetivos: d });
   };
 
-  const labelStyle = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5 ml-1";
-  const inputStyle = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-[12px] text-main outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-emerald-500 transition-all shadow-sm";
-
   const fLabel = "block text-[11px] font-semibold text-muted mb-1.5";
   const fInput = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-lg font-semibold text-[13px] text-main outline-none focus:border-primary transition-colors";
   const fSection = "text-[11px] font-semibold text-faint uppercase tracking-wider";
@@ -174,11 +171,11 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
         {/* Indicadores */}
         <div className="flex items-center gap-4 shrink-0">
           <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-faint uppercase tracking-wider mb-0.5">Independência</span>
+            <span className="text-[11px] font-semibold text-faint uppercase tracking-wider mb-0.5">Independência</span>
             <p className="text-[14px] font-bold text-main tracking-tight leading-none">{formatarMoeda(stats.patrimonioIndependencia)}</p>
           </div>
           <div className="flex flex-col border-l border-subtle pl-4">
-            <span className="text-[10px] font-bold text-faint uppercase tracking-wider mb-0.5">Custódia Total</span>
+            <span className="text-[11px] font-semibold text-faint uppercase tracking-wider mb-0.5">Custódia Total</span>
             <p className="text-[14px] font-bold text-muted tracking-tight leading-none">{formatarMoeda(stats.totalCustodia)}</p>
           </div>
         </div>
@@ -188,21 +185,21 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
 
         {/* Filtros e Ações */}
         <div className="flex items-center gap-2">
-          <div className="flex bg-surface-2 p-1 rounded-[8px]">
+          <div className="flex bg-surface-2 p-1 rounded-lg">
             {['todos', 'reserva', 'projeto', 'independencia'].map(obj => (
               <button
                 key={obj}
                 onClick={() => setFiltroObjetivo(obj)}
-                className={`px-2.5 h-7 flex items-center justify-center rounded-[6px] text-[10px] font-bold uppercase tracking-wider transition-all ${filtroObjetivo === obj ? 'bg-surface text-emerald-600 shadow-sm' : 'text-faint hover:text-muted'}`}
+                className={`px-2.5 h-7 flex items-center justify-center rounded-md text-[11px] font-semibold transition-all ${filtroObjetivo === obj ? 'bg-surface text-[color:var(--primary)] shadow-sm' : 'text-faint hover:text-muted'}`}
               >
                 {obj === 'todos' ? 'Todos' : obj === 'independencia' ? 'Indep.' : obj}
               </button>
             ))}
           </div>
-          <button onClick={() => setFiltroDesvio(!filtroDesvio)} title="Filtrar por desvio de meta" className={`h-9 w-9 flex items-center justify-center rounded-[8px] border ${filtroDesvio ? 'bg-emerald-600 text-white border-emerald-700 shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'bg-surface-2 text-faint border-subtle hover:bg-surface-2'}`}><Filter size={15} /></button>
-          <button onClick={() => setFiltroForaTese(!filtroForaTese)} title="Mostrar apenas não recomendados / fora da faixa" className={`h-9 w-9 flex items-center justify-center rounded-[8px] border ${filtroForaTese ? 'text-white border-transparent shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'bg-surface-2 text-faint border-subtle hover:bg-surface-2'}`} style={filtroForaTese ? { backgroundColor: 'var(--danger)' } : undefined}><XCircle size={15} /></button>
-          <button onClick={() => setModalImport(true)} className="h-9 w-9 flex items-center justify-center bg-surface-2 text-faint hover:text-muted rounded-[8px] border border-subtle hover:bg-surface-2"><FileSpreadsheet size={15} /></button>
-          <button onClick={() => { setEditing({ nome: '', ticker: '', origem: 'bolsa', status: 'Manter', valor_atual: 0, tipo_ativo: classesNormalizadas[0], distribuicao_objetivos: [{ tipo: 'independencia', percentual: 100 }] }); setModalOpen(true); }} className="h-9 px-3 bg-emerald-600 text-white rounded-[8px] font-bold text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:bg-emerald-700 transition-all"><Plus size={14} /> Ativo</button>
+          <button onClick={() => setFiltroDesvio(!filtroDesvio)} title="Filtrar por desvio de meta" className={`h-9 w-9 flex items-center justify-center rounded-lg border ${filtroDesvio ? 'bg-[color:var(--primary)] text-[#0b0e14] border-transparent shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'bg-surface-2 text-faint border-subtle hover:bg-surface-2'}`}><Filter size={15} /></button>
+          <button onClick={() => setFiltroForaTese(!filtroForaTese)} title="Mostrar apenas não recomendados / fora da faixa" className={`h-9 w-9 flex items-center justify-center rounded-lg border ${filtroForaTese ? 'text-white border-transparent shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'bg-surface-2 text-faint border-subtle hover:bg-surface-2'}`} style={filtroForaTese ? { backgroundColor: 'var(--danger)' } : undefined}><XCircle size={15} /></button>
+          <button onClick={() => setModalImport(true)} className="h-9 w-9 flex items-center justify-center bg-surface-2 text-faint hover:text-muted rounded-lg border border-subtle hover:bg-surface-2"><FileSpreadsheet size={15} /></button>
+          <button onClick={() => { setEditing({ nome: '', ticker: '', origem: 'bolsa', status: 'Manter', valor_atual: 0, tipo_ativo: classesNormalizadas[0], distribuicao_objetivos: [{ tipo: 'independencia', percentual: 100 }] }); setModalOpen(true); }} className="h-9 px-3 bg-[color:var(--primary)] text-[#0b0e14] rounded-lg font-semibold text-[12px] flex items-center gap-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 transition-all"><Plus size={14} /> Ativo</button>
         </div>
       </div>
 
@@ -229,12 +226,12 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                   </colgroup>
                   <thead>
                     <tr className="bg-surface-2 border-b border-subtle">
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase text-faint tracking-wider">Ativo</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-center">Controle</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-center">Status</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-center">Aloc. Classe</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-center">Desvio Meta</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase text-faint tracking-wider text-right">Saldo {filtroObjetivo !== 'todos' ? 'Objetivo' : 'Total'}</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider">Ativo</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Controle</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Status</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Aloc. Classe</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Desvio Meta</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-right">Saldo {filtroObjetivo !== 'todos' ? 'Objetivo' : 'Total'}</th>
                       <th className="px-4 py-3 text-right"></th>
                     </tr>
                   </thead>

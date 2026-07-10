@@ -13,7 +13,7 @@ interface FormState {
 
 const formInicial = (): FormState => ({ data_historico: new Date().toISOString().split('T')[0], valor: '0', aporte: '0' });
 
-const fLabel = 'block text-[10px] font-semibold text-faint mb-1';
+const fLabel = 'block text-[11px] font-semibold text-faint mb-1';
 const fInput = 'w-full px-2.5 h-8 bg-surface border border-subtle rounded-lg font-semibold text-[12px] text-main outline-none focus:border-primary transition-colors';
 
 const HistoricoAportes = ({ clienteId }: { clienteId: string }) => {
@@ -104,7 +104,7 @@ const HistoricoAportes = ({ clienteId }: { clienteId: string }) => {
       <div className="flex items-center justify-between px-5 py-4 border-b border-subtle">
         <div className="flex items-center gap-2">
           <History size={16} className="text-faint" />
-          <h3 className="text-[13px] font-semibold text-main">Histórico de Aportes</h3>
+          <h3 className="text-[14px] font-semibold text-main">Histórico de Aportes</h3>
         </div>
         {editingId === null && (
           <button onClick={iniciarNovo} className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">
@@ -120,10 +120,10 @@ const HistoricoAportes = ({ clienteId }: { clienteId: string }) => {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-surface-2 border-b border-subtle">
-                <th className="py-2.5 px-3 text-[10px] font-semibold text-faint uppercase tracking-wider">Mês</th>
-                <th className="py-2.5 px-3 text-[10px] font-semibold text-faint uppercase tracking-wider text-right">Patrimônio (Indep.)</th>
-                <th className="py-2.5 px-3 text-[10px] font-semibold text-faint uppercase tracking-wider text-right">Aporte do período</th>
-                <th className="py-2.5 px-3 text-[10px] font-semibold text-faint uppercase tracking-wider text-right">Ações</th>
+                <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider">Mês</th>
+                <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Patrimônio (Indep.)</th>
+                <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Aporte do período</th>
+                <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-subtle text-[12px]">

@@ -3,8 +3,9 @@ import html2canvas from 'html2canvas';
 
 /**
  * Captura um elemento do DOM e gera um PDF A4 (multi-página) para download, preservando o layout
- * exato renderizado na tela. Usado para o Relatório de Aporte (segue o layout da tela de Revisão),
- * substituindo a geração programática antiga.
+ * exato renderizado na tela. Fatia o canvas na altura da página SEM respeitar limites de conteúdo
+ * — linhas de tabela podem ser cortadas ao meio. Prefira `baixarElementoComoPDFPaginado` quando o
+ * elemento marcar seus blocos com `data-pdf-block`.
  *
  * `bgHex` preenche o fundo de cada página (evita faixas brancas no tema escuro).
  */
@@ -39,6 +40,83 @@ export async function baixarElementoComoPDF(el: HTMLElement, filename: string, b
     pdf.rect(0, 0, pageW, pageH, 'F');
     pdf.addImage(imgData, 'PNG', 0, position, imgW, imgH);
     heightLeft -= pageH;
+  }
+
+  pdf.save(filename);
+}
+
+/**
+ * Gera o PDF A4 paginando por BLOCOS: cada descendente marcado com `data-pdf-block` é capturado
+ * como uma imagem independente e os blocos são empilhados página a página — um bloco que não
+ * cabe no espaço restante desce inteiro para a página seguinte, em vez de ser cortado ao meio.
+ *
+ * Um bloco maior que uma página inteira (ex.: tabela com dezenas de linhas) é a única situação
+ * em que ainda há fatiamento — inevitável sem re-renderizar a tabela, e sinalizado aqui como
+ * fallback proposital.
+ *
+ * Sem nenhum `data-pdf-block` no elemento, cai no comportamento antigo (captura única).
+ */
+export async function baixarElementoComoPDFPaginado(el: HTMLElement, filename: string, bgHex = '#151823') {
+  const blocos = Array.from(el.querySelectorAll<HTMLElement>('[data-pdf-block]'));
+  if (blocos.length === 0) return baixarElementoComoPDF(el, filename, bgHex);
+
+  const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margem = 8;   // mm — respiro nas bordas da página
+  const espacoEntreBlocos = 4; // mm
+  const larguraUtil = pageW - margem * 2;
+  const alturaUtil = pageH - margem * 2;
+
+  const rgb = hexToRgb(bgHex);
+  const pintarFundo = () => {
+    pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+    pdf.rect(0, 0, pageW, pageH, 'F');
+  };
+
+  pintarFundo();
+  let y = margem;
+
+  for (const bloco of blocos) {
+    const canvas = await html2canvas(bloco, {
+      scale: 2,
+      backgroundColor: bgHex,
+      useCORS: true,
+      logging: false,
+    });
+    const imgData = canvas.toDataURL('image/png');
+    const h = (canvas.height * larguraUtil) / canvas.width;
+
+    if (h <= alturaUtil) {
+      // Bloco cabe em uma página: se não couber no espaço restante, desce inteiro para a próxima.
+      if (y + h > pageH - margem) {
+        pdf.addPage();
+        pintarFundo();
+        y = margem;
+      }
+      pdf.addImage(imgData, 'PNG', margem, y, larguraUtil, h);
+      y += h + espacoEntreBlocos;
+    } else {
+      // Fallback: bloco maior que uma página — fatia em páginas dedicadas.
+      if (y > margem) {
+        pdf.addPage();
+        pintarFundo();
+      }
+      let restante = h;
+      let deslocamento = 0;
+      while (restante > 0) {
+        pdf.addImage(imgData, 'PNG', margem, margem - deslocamento, larguraUtil, h);
+        restante -= alturaUtil;
+        deslocamento += alturaUtil;
+        if (restante > 0) {
+          pdf.addPage();
+          pintarFundo();
+        }
+      }
+      pdf.addPage();
+      pintarFundo();
+      y = margem;
+    }
   }
 
   pdf.save(filename);
