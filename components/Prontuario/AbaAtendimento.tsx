@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { acompanhamentoService } from '../../services/acompanhamentoService';
 import { configService } from '../../services/configuracoesService';
+import { inadimplenciaService } from '../../services/inadimplenciaService';
 import Modal from '../Modal';
 import Accordion from '../UI/Accordion';
-import { CheckCircle2, ListChecks, Plus, Trash2, Activity, AlertCircle, Circle, Copy } from 'lucide-react';
+import { CheckCircle2, ListChecks, Plus, Trash2, Activity, AlertCircle, Circle, Copy, PauseCircle } from 'lucide-react';
 
 interface AbaAtendimentoProps {
   clienteId: string;
@@ -13,6 +14,7 @@ interface AbaAtendimentoProps {
 const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
   const [itens, setItens] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pausadoInadimplencia, setPausadoInadimplencia] = useState(false);
   const [modalManual, setModalManual] = useState(false);
   const [modalModelo, setModalModelo] = useState(false);
   const [modelos, setModelos] = useState<any[]>([]);
@@ -26,8 +28,12 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const it = await acompanhamentoService.getItensCliente(clienteId);
+      const [it, estado] = await Promise.all([
+        acompanhamentoService.getItensCliente(clienteId),
+        inadimplenciaService.getEstadoCliente(clienteId).catch(() => ({ inadimplenteAgora: false, desde: null })),
+      ]);
       setItens(it || []);
+      setPausadoInadimplencia(estado.inadimplenteAgora);
     } catch (err) {
       console.error("Erro ao carregar checklist:", err);
     } finally {
@@ -146,6 +152,14 @@ const AbaAtendimento: React.FC<AbaAtendimentoProps> = ({ clienteId }) => {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {pausadoInadimplencia && (
+        <div className="flex items-start gap-2.5 rounded-xl border p-3" style={{ backgroundColor: 'rgba(251,191,36,0.10)', borderColor: 'rgba(251,191,36,0.25)' }}>
+          <PauseCircle size={16} className="text-[color:var(--warning)] shrink-0 mt-0.5" />
+          <p className="text-[12px] text-muted">
+            <span className="font-semibold" style={{ color: 'var(--warning)' }}>Atendimento pausado por inadimplência.</span> A cadência de execução está congelada — regularize o contrato (aba Estratégia) para retomar.
+          </p>
+        </div>
+      )}
       {/* Header KPI Minimalista */}
       <div className="bg-surface-3 p-6 rounded-[12px] text-white shadow-[var(--shadow-card)] flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden">
         <div className="relative z-10 text-center sm:text-left">

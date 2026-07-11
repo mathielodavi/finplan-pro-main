@@ -10,6 +10,7 @@ import { categorizarAgendaCliente } from '../utils/agendaUtils';
 import { montarLinkWhatsApp, montarMensagemAgenda } from '../utils/whatsappUtils';
 import { encerrarContratoPlanejamento } from '../services/contratoService';
 import { calendarioService } from '../services/calendarioService';
+import { inadimplenciaService, ResumoInadimplencia } from '../services/inadimplenciaService';
 import { useProntuarioNav } from '../context/ProntuarioNavContext';
 
 import Badge from '../components/UI/Badge';
@@ -87,7 +88,8 @@ const Dashboard: React.FC = () => {
   const [vencidos, setVencidos] = useState<any[]>([]);
   const [temCalendarioAtivo, setTemCalendarioAtivo] = useState(false);
 
-  const [filterAgenda, setFilterAgenda] = useState<'all' | 'late' | 'upcoming' | 'pending'>('all');
+  const [filterAgenda, setFilterAgenda] = useState<'all' | 'late' | 'upcoming' | 'pending' | 'inadimplente'>('all');
+  const [inadimplenciaMap, setInadimplenciaMap] = useState<Map<string, ResumoInadimplencia>>(new Map());
   const [filterRenovacao, setFilterRenovacao] = useState<'all' | 'critical' | 'attention' | 'safe' | 'expired'>('all');
   const [filterGeo, setFilterGeo] = useState<'all' | 'ativos' | 'inativos'>('all');
   const [pageAgenda, setPageAgenda] = useState(1);
@@ -182,6 +184,9 @@ const Dashboard: React.FC = () => {
     calendarioService.getConexao()
       .then(c => setTemCalendarioAtivo(!!c?.ativo))
       .catch(() => setTemCalendarioAtivo(false));
+    inadimplenciaService.getResumoPorCliente()
+      .then(setInadimplenciaMap)
+      .catch(() => {});
   }, []);
 
   // Publica as abas da Visão Geral no header (Navbar), como no prontuário
@@ -201,6 +206,7 @@ const Dashboard: React.FC = () => {
     const porCliente = clientesAtivos.map((cli: any) => {
       const reunioesDoCli = todasReunioes.filter((r: any) => r.cliente_id === cli.id);
       const { categoria, reuniao: reuniaoExibida, qtdAtrasadas, atencaoHoje } = categorizarAgendaCliente(reunioesDoCli, agora);
+      const inad = inadimplenciaMap.get(cli.id);
 
       return {
         id: `cli-${cli.id}`,
@@ -218,10 +224,14 @@ const Dashboard: React.FC = () => {
         data_sort: reuniaoExibida ? new Date(reuniaoExibida.data_reuniao) : new Date(0),
         qtd_atrasadas: qtdAtrasadas,
         isAtrasada: categoria === 'late',
+        inadimplente: !!inad?.inadimplenteAgora,
+        diasInadimplente: inad?.diasAtuais || 0,
         status: categoria === 'late' ? 'atrasada' : categoria === 'upcoming' ? 'agendada' : 'pendente',
       };
     });
 
+    // Filtro de inadimplentes: clientes pausados por pendência de pagamento (sem cancelamento).
+    if (filterAgenda === 'inadimplente') return porCliente.filter(c => c.inadimplente).sort((a, b) => b.diasInadimplente - a.diasInadimplente);
     if (filterAgenda === 'late') return porCliente.filter(c => c.categoria === 'late').sort((a, b) => a.data_sort.getTime() - b.data_sort.getTime());
     if (filterAgenda === 'upcoming') return porCliente.filter(c => c.categoria === 'upcoming').sort((a, b) => a.data_sort.getTime() - b.data_sort.getTime());
     if (filterAgenda === 'pending') return porCliente.filter(c => c.categoria === 'pending');
@@ -231,7 +241,7 @@ const Dashboard: React.FC = () => {
       ...porCliente.filter(c => c.categoria === 'upcoming').sort((a, b) => a.data_sort.getTime() - b.data_sort.getTime()),
       ...porCliente.filter(c => c.categoria === 'pending'),
     ];
-  }, [kpis, filterAgenda]);
+  }, [kpis, filterAgenda, inadimplenciaMap]);
 
   const paginatedAgenda = agendaHibrida.slice((pageAgenda - 1) * ITEMS_PER_PAGE, pageAgenda * ITEMS_PER_PAGE);
 
@@ -475,9 +485,9 @@ const Dashboard: React.FC = () => {
                 <span className="text-[11px] text-faint hidden sm:inline">Compromissos e check-ins</span>
               </div>
               <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
-                {['all', 'late', 'upcoming', 'pending'].map((f) => (
+                {['all', 'late', 'upcoming', 'pending', 'inadimplente'].map((f) => (
                   <button key={f} onClick={() => { setFilterAgenda(f as any); setPageAgenda(1); }} className={segBtn(filterAgenda === f)}>
-                    {f === 'all' ? 'Tudo' : f === 'late' ? 'Atraso' : f === 'upcoming' ? 'Próximas' : 'Check-in'}
+                    {f === 'all' ? 'Tudo' : f === 'late' ? 'Atraso' : f === 'upcoming' ? 'Próximas' : f === 'pending' ? 'Check-in' : 'Inadimplentes'}
                   </button>
                 ))}
               </div>
@@ -500,7 +510,7 @@ const Dashboard: React.FC = () => {
                         onClick={() => setEditingAgendaModal(r)} title={r.categoria === 'pending' ? 'Agendar Check-in' : 'Ver detalhes e editar'}>
                         {r.cliente_nome}
                       </p>
-                      <div className="flex items-center gap-1.5 mt-1">
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         {r.categoria === 'pending' ? (
                           <span className="text-[11px] text-faint">
                             Sem reunião{temCalendarioAtivo && !r.em_agenda_externa ? ' · não encontrada no calendário' : ''}
@@ -510,6 +520,11 @@ const Dashboard: React.FC = () => {
                         )}
                         {r.categoria === 'late' && r.qtd_atrasadas > 1 && (
                           <span className="text-[11px] text-faint">· {r.qtd_atrasadas} em atraso</span>
+                        )}
+                        {r.inadimplente && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: 'var(--danger)', backgroundColor: 'rgba(248,113,113,0.14)' }}>
+                            Inadimplente há {r.diasInadimplente}d
+                          </span>
                         )}
                       </div>
                     </div>

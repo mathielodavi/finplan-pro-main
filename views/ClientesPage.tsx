@@ -8,6 +8,7 @@ import { investimentoService } from '../services/investimentoService';
 import { reuniaoService } from '../services/reuniaoService';
 import { dividasService } from '../services/dividasService';
 import { protecaoService } from '../services/protecaoService';
+import { inadimplenciaService, ResumoInadimplencia } from '../services/inadimplenciaService';
 import { calcularTermometro } from '../utils/termometroUtils';
 import { categorizarAgendaCliente } from '../utils/agendaUtils';
 import ListaClientes from '../components/ListaClientes';
@@ -24,6 +25,7 @@ const ClientesPage: React.FC = () => {
   const [reunioes, setReunioes] = useState<any[]>([]);
   const [saldoDevedorPorCliente, setSaldoDevedorPorCliente] = useState<Map<string, number>>(new Map());
   const [scoresProtecaoPorCliente, setScoresProtecaoPorCliente] = useState<Map<string, number>>(new Map());
+  const [inadimplenciaPorCliente, setInadimplenciaPorCliente] = useState<Map<string, ResumoInadimplencia>>(new Map());
   const [origens, setOrigens] = useState<{ id: string; nome: string }[]>([]);
   const [loadingExtras, setLoadingExtras] = useState(false);
 
@@ -36,13 +38,14 @@ const ClientesPage: React.FC = () => {
     setLoadingExtras(true);
     try {
       // Carregamento paralelo para agilidade
-      const [_, cData, aData, rData, saldoDevedor, scoresProtecao, origensData] = await Promise.all([
+      const [_, cData, aData, rData, saldoDevedor, scoresProtecao, inadimplencia, origensData] = await Promise.all([
         refreshClientes(),
         obterTodosContratos(),
         investimentoService.getAtivos(''), // Busca todos os ativos acessíveis
         reuniaoService.getPorCliente(''), // Busca todas as reuniões acessíveis
         dividasService.getSaldoDevedorPorCliente(),
         protecaoService.getScoresPorCliente(),
+        inadimplenciaService.getResumoPorCliente(),
         obterOrigens()
       ]);
       setContratos(cData || []);
@@ -50,6 +53,7 @@ const ClientesPage: React.FC = () => {
       setReunioes(rData || []);
       setSaldoDevedorPorCliente(saldoDevedor);
       setScoresProtecaoPorCliente(scoresProtecao);
+      setInadimplenciaPorCliente(inadimplencia);
       setOrigens(origensData || []);
     } catch (err) {
       console.error("Erro ao sincronizar dados da carteira:", err);
@@ -108,18 +112,25 @@ const ClientesPage: React.FC = () => {
       const saldoDevedor = (c.id ? saldoDevedorPorCliente.get(c.id) : 0) || 0;
       const percentualProtecao = (c.id ? scoresProtecaoPorCliente.get(c.id) : 0) ?? 0;
 
+      // 5. Inadimplência — enquanto pausado, "Próxima Ação" congela (não conta reunião atrasada)
+      const inadimplencia = (c.id ? inadimplenciaPorCliente.get(c.id) : undefined);
+      const proximaAcaoFinal = inadimplencia?.inadimplenteAgora
+        ? { categoria: 'pausado' as const, reuniao: null, qtdAtrasadas: 0, atencaoHoje: false }
+        : proximaAcao;
+
       return {
         ...c,
         origem: c.origem_id ? origensMap.get(c.origem_id) : undefined,
         patrimonio_real: patrimonioCalculado,
         patrimonio_liquido: patrimonioCalculado - saldoDevedor,
         termometro,
-        proximaAcao,
+        proximaAcao: proximaAcaoFinal,
         temPlanoAtivo: idsComPlanejamento.has(c.id),
-        percentualProtecao
+        percentualProtecao,
+        inadimplencia
       };
     });
-  }, [clientes, ativos, reunioes, idsComPlanejamento, saldoDevedorPorCliente, scoresProtecaoPorCliente, origensMap]);
+  }, [clientes, ativos, reunioes, idsComPlanejamento, saldoDevedorPorCliente, scoresProtecaoPorCliente, inadimplenciaPorCliente, origensMap]);
 
   const clientesFiltrados = clientesProcessados.filter(c => {
     const matchBusca = c.nome.toLowerCase().includes(termoBusca.toLowerCase());

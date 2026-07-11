@@ -16,6 +16,10 @@ export interface Contrato {
   /** Data em que o cliente ficou inadimplente. Se anterior ao cancelamento, o corte
    *  de parcelas respeita esta data, sem aplicar a carência (prazo de recebimento). */
   data_inadimplencia?: string | null;
+  /** Início da pausa por inadimplência em vigor (espelho do episódio aberto). Null = não pausado. */
+  pausado_em?: string | null;
+  /** Dias acumulados que a vigência/parcelas foram empurradas por pausas de inadimplência. */
+  dias_prorrogados?: number;
   status: ContratoStatus;
   forma_pagamento: FormaPagamento;
   prazo_meses: number;
