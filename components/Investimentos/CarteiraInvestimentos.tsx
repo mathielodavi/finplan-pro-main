@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { investimentoService } from '../../services/investimentoService';
 import { configService } from '../../services/configuracoesService';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
+import { cambioService, MOEDAS_SUPORTADAS, MoedaCodigo } from '../../services/cambioService';
 import { formatarMoeda, formatarCNPJ } from '../../utils/formatadores';
 import Modal from '../Modal';
 import SidePanel from '../UI/SidePanel';
@@ -23,6 +24,9 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
   const [projetosCliente, setProjetosCliente] = useState<any[]>([]);
   const [carteiraRec, setCarteiraRec] = useState<any[]>([]);
   const [teses, setTeses] = useState<any[]>([]);
+  // Cotação da moeda estrangeira selecionada no form de ativo (busca automática — ver useEffect abaixo)
+  const [cotacaoInfo, setCotacaoInfo] = useState<{ moeda: MoedaCodigo; valor: number } | null>(null);
+  const [buscandoCotacao, setBuscandoCotacao] = useState(false);
 
   useEffect(() => {
     const fetchMetadata = async () => {
@@ -43,6 +47,41 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
     };
     fetchMetadata();
   }, [clienteId]);
+
+  // Busca automática da cotação quando o ativo em edição é declarado em moeda estrangeira —
+  // mesmo padrão de "consulta silenciosa" do cotacaoService/selicService: nunca bloqueia o form,
+  // só preenche o valor convertido quando a cotação chega.
+  useEffect(() => {
+    const moeda = editing?.moeda_origem as string | undefined;
+    if (!modalOpen || !moeda || moeda === 'BRL') { setCotacaoInfo(null); return; }
+    let cancelado = false;
+    setBuscandoCotacao(true);
+    const moedaCod = moeda as MoedaCodigo;
+    cambioService.getCotacao(moedaCod)
+      .then(valor => { if (!cancelado) setCotacaoInfo({ moeda: moedaCod, valor }); })
+      .finally(() => { if (!cancelado) setBuscandoCotacao(false); });
+    return () => { cancelado = true; };
+  }, [modalOpen, editing?.moeda_origem]);
+
+  // Reaplica a conversão quando a cotação chega ou quando o usuário altera o valor na moeda
+  // de origem — o "Saldo atual líquido (R$)" segue editável manualmente por cima disso.
+  const aplicarConversao = (valorOriginal: number, cotacao: number) => {
+    setEditing((prev: any) => ({
+      ...prev,
+      valor_original: valorOriginal,
+      valor_atual: Math.round(valorOriginal * cotacao * 100) / 100,
+      cotacao_conversao: cotacao,
+    }));
+  };
+
+  // Se o usuário já tinha digitado o valor na moeda de origem antes da cotação chegar, converte
+  // assim que ela ficar disponível (sem exigir uma segunda interação).
+  useEffect(() => {
+    if (!cotacaoInfo || cotacaoInfo.moeda !== editing?.moeda_origem) return;
+    if (!editing?.valor_original) return;
+    aplicarConversao(Number(editing.valor_original), cotacaoInfo.valor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cotacaoInfo]);
 
   const stats = useMemo(() => {
     const totalCustodia = ativos.reduce((acc: number, cur: any) => acc + (cur.valor_atual || 0), 0);
@@ -126,6 +165,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
       if (!grupos[classe]) grupos[classe] = [];
       grupos[classe].push(a);
     });
+    Object.values(grupos).forEach(lista => lista.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR')));
     return grupos;
   }, [ativosFiltrados]);
 
@@ -134,11 +174,15 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
     const totalPerc = (editing.distribuicao_objetivos || []).reduce((acc: number, cur: any) => acc + Number(cur.percentual), 0);
     if (Math.abs(totalPerc - 100) > 0.1) return alert("A soma das distribuições por objetivo deve ser exatamente 100%.");
 
-    const { pesoNaClasse, desvio, temIndependencia, statusControle, metaAlvo, ...payloadParaBanco } = editing;
+    // aporte_periodo é transiente (não é coluna de ativos) — declarado pelo consultor só para
+    // alimentar o histórico mensal de patrimônio/rentabilidade deste ativo especificamente.
+    const { pesoNaClasse, desvio, temIndependencia, statusControle, metaAlvo, aporte_periodo, ...payloadParaBanco } = editing;
+    const aporteRealizado = Number(aporte_periodo) || 0;
     try {
       await investimentoService.salvarAtivo({ ...payloadParaBanco, cliente_id: clienteId });
-      // Atualiza o snapshot mensal do patrimônio de independência (upsert mensal)
-      await investimentoService.snapshotPatrimonioIndependencia(clienteId).catch(() => {});
+      // Atualiza o snapshot mensal do patrimônio (upsert mensal) — o aporte declarado neste ativo
+      // acumula com o de outras edições do mesmo mês, sem depender de uma edição única.
+      await investimentoService.snapshotPatrimonioIndependencia(clienteId, aporteRealizado).catch(() => {});
       setModalOpen(false);
       onRefresh();
     } catch (err) { alert("Falha ao sincronizar dados."); }
@@ -199,7 +243,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
           <button onClick={() => setFiltroDesvio(!filtroDesvio)} title="Filtrar por desvio de meta" className={`h-9 w-9 flex items-center justify-center rounded-lg border ${filtroDesvio ? 'bg-[color:var(--primary)] text-[#0b0e14] border-transparent shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'bg-surface-2 text-faint border-subtle hover:bg-surface-2'}`}><Filter size={15} /></button>
           <button onClick={() => setFiltroForaTese(!filtroForaTese)} title="Mostrar apenas não recomendados / fora da faixa" className={`h-9 w-9 flex items-center justify-center rounded-lg border ${filtroForaTese ? 'text-white border-transparent shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'bg-surface-2 text-faint border-subtle hover:bg-surface-2'}`} style={filtroForaTese ? { backgroundColor: 'var(--danger)' } : undefined}><XCircle size={15} /></button>
           <button onClick={() => setModalImport(true)} className="h-9 w-9 flex items-center justify-center bg-surface-2 text-faint hover:text-muted rounded-lg border border-subtle hover:bg-surface-2"><FileSpreadsheet size={15} /></button>
-          <button onClick={() => { setEditing({ nome: '', ticker: '', origem: 'bolsa', status: 'Manter', valor_atual: 0, tipo_ativo: classesNormalizadas[0], distribuicao_objetivos: [{ tipo: 'independencia', percentual: 100 }] }); setModalOpen(true); }} className="h-9 px-3 bg-[color:var(--primary)] text-[#0b0e14] rounded-lg font-semibold text-[12px] flex items-center gap-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 transition-all"><Plus size={14} /> Ativo</button>
+          <button onClick={() => { setEditing({ nome: '', ticker: '', origem: 'bolsa', status: 'Manter', valor_atual: 0, moeda_origem: 'BRL', tipo_ativo: classesNormalizadas[0], distribuicao_objetivos: [{ tipo: 'independencia', percentual: 100 }] }); setModalOpen(true); }} className="h-9 px-3 bg-[color:var(--primary)] text-[#0b0e14] rounded-lg font-semibold text-[12px] flex items-center gap-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] hover:opacity-90 transition-all"><Plus size={14} /> Ativo</button>
         </div>
       </div>
 
@@ -238,7 +282,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                   <tbody className="divide-y divide-subtle text-sm">
                     {ativosClasse.map((a: any) => (
                       <tr key={a.id} className="hover:bg-surface-2/50 transition-colors group">
-                        <td className="px-4 py-3"><p className="font-bold text-main uppercase text-[12px] tracking-tight truncate">{a.nome}</p><span className="text-[10px] font-bold text-[color:var(--info)] uppercase">{a.origem === 'fundo' ? formatarCNPJ(a.cnpj || '') : a.origem === 'previdencia_privada' ? `${formatarCNPJ(a.cnpj || '')} · ${a.tipo_previdencia || 'PREV.'}` : (a.ticker || a.tipo_especifico || 'CUSTÓDIA')}</span></td>
+                        <td className="px-4 py-3"><p className="font-bold text-main uppercase text-[12px] tracking-tight truncate">{a.nome}{a.moeda_origem && a.moeda_origem !== 'BRL' && <span className="ml-1.5 text-[9px] font-semibold text-faint normal-case align-middle">({a.moeda_origem})</span>}</p><span className="text-[10px] font-bold text-[color:var(--info)] uppercase">{a.origem === 'fundo' ? formatarCNPJ(a.cnpj || '') : a.origem === 'previdencia_privada' ? `${formatarCNPJ(a.cnpj || '')} · ${a.tipo_previdencia || 'PREV.'}` : (a.ticker || a.tipo_especifico || 'CUSTÓDIA')}</span></td>
                         <td className="px-4 py-3 text-center"><div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wider ${a.statusControle === 'Ok' ? 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]' : a.statusControle === 'Fora da estratégia' ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : a.statusControle === 'Fora da faixa' ? 'text-[color:var(--warning)] bg-[rgba(251,191,36,0.12)] border-[rgba(251,191,36,0.25)]' : 'bg-surface-2 text-faint border-subtle'}`}>{a.statusControle === 'Ok' ? <CheckCircle2 size={10} /> : a.statusControle === 'Não recomendado' ? <MinusCircle size={10} /> : <XCircle size={10} />}<span className="truncate">{a.statusControle}</span></div></td>
                         <td className="px-4 py-3 text-center"><Badge variant={a.status === 'Vender' ? 'danger' : 'success'} size="sm">{a.status === 'Vender' ? `Vender → ${DESTINOS_VENDA.find(d => d.key === a.destino_venda)?.label || 'Livre'}` : 'Manter'}</Badge></td>
                         <td className="px-4 py-3 text-center"><span className={`text-[12px] font-bold tracking-tight ${a.temIndependencia ? 'text-main' : 'text-faint'}`}>{a.pesoNaClasse.toFixed(1)}%</span></td>
@@ -352,9 +396,63 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                 </div>
               </div>
             )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={fLabel}>Moeda de origem</label>
+                <select
+                  value={editing?.moeda_origem || 'BRL'}
+                  onChange={e => {
+                    const moeda = e.target.value;
+                    if (moeda === 'BRL') { setEditing({ ...editing, moeda_origem: 'BRL', valor_original: null, cotacao_conversao: null }); }
+                    else setEditing({ ...editing, moeda_origem: moeda });
+                  }}
+                  className={fInput}
+                >
+                  <option value="BRL">Real (BRL)</option>
+                  {MOEDAS_SUPORTADAS.map(m => <option key={m.codigo} value={m.codigo}>{m.nome} ({m.codigo})</option>)}
+                </select>
+              </div>
+              {editing?.moeda_origem && editing.moeda_origem !== 'BRL' && (
+                <div>
+                  <label className={fLabel}>Valor na moeda de origem</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editing?.valor_original ?? ''}
+                    onChange={e => {
+                      const valor = parseFloat(e.target.value) || 0;
+                      if (cotacaoInfo && cotacaoInfo.moeda === editing.moeda_origem) aplicarConversao(valor, cotacaoInfo.valor);
+                      else setEditing({ ...editing, valor_original: valor });
+                    }}
+                    className={fInput}
+                  />
+                </div>
+              )}
+            </div>
+            {editing?.moeda_origem && editing.moeda_origem !== 'BRL' && (
+              <p className="text-[10px] text-faint -mt-1">
+                {buscandoCotacao && !cotacaoInfo ? 'Buscando cotação...' : cotacaoInfo && cotacaoInfo.moeda === editing.moeda_origem
+                  ? `1 ${cotacaoInfo.moeda} = ${formatarMoeda(cotacaoInfo.valor)} · conversão aplicada automaticamente ao saldo abaixo (pode ajustar manualmente)`
+                  : 'Cotação indisponível — informe o saldo em reais manualmente.'}
+              </p>
+            )}
             <div>
               <label className={fLabel}>Saldo atual líquido (R$)</label>
               <input type="number" step="0.01" required value={editing?.valor_atual || ''} onChange={e => setEditing({ ...editing, valor_atual: parseFloat(e.target.value) || 0 })} className={fInput} />
+            </div>
+            <div>
+              <label className={fLabel}>Aporte ou retirada neste ativo este mês (opcional)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editing?.aporte_periodo ?? ''}
+                onChange={e => setEditing({ ...editing, aporte_periodo: e.target.value })}
+                className={fInput}
+                placeholder="0,00"
+              />
+              <p className="text-[10px] text-faint mt-1.5">
+                Se parte da mudança de saldo veio de dinheiro que você colocou ou tirou (não de valorização/desvalorização de mercado), informe aqui — evita que a rentabilidade da carteira confunda aporte com retorno. Use negativo para retirada.
+              </p>
             </div>
           </section>
 
