@@ -1,10 +1,24 @@
 import { supabase } from './supabaseClient';
 import { financeiroService, Parcela } from './financeiroService';
 import { extrairArquivo } from '../utils/extracaoConciliacao';
-import { gerarSugestoes, normalizarChaveAprendizado, ClienteResumo, SugestaoMatch } from '../utils/matchingConciliacao';
+import { gerarSugestoes, normalizarChaveAprendizado, ClienteResumo } from '../utils/matchingConciliacao';
+import { LinhaExtraida } from '../utils/extracaoConciliacao';
 import { toLocalDateString } from '../utils/formatadores';
 
 export type Frente = 'planejamento' | 'extra';
+
+/** Uma parcela alvo de uma linha extraída, com o valor a ser baixado nela (rateio de Dividir/Agregar). */
+export interface AlvoBaixa {
+    parcelaId: string;
+    valorAlocado: number;
+}
+
+/** Item pronto para consolidação: a linha extraída, o cliente e suas parcelas-alvo (1 ou N). */
+export interface LinhaConfirmacao {
+    linha: LinhaExtraida;
+    clienteId: string;
+    alvos: AlvoBaixa[];
+}
 
 /** Aceita "dd/mm/aaaa" (comum em planilhas/PDFs BR) ou ISO; cai para hoje se não reconhecer. */
 const converterDataOriginalParaISO = (dataOriginal?: string): string => {
@@ -68,25 +82,34 @@ export const conciliacaoOcrService = {
      * contrato ilimitado já existente) e grava/reforça as associações confirmadas na tabela de
      * aprendizado, além de um registro de auditoria da importação.
      */
-    async confirmarConciliacao(sugestoes: SugestaoMatch[], frente: Frente, nomeArquivo: string): Promise<{ confirmadas: number }> {
+    async confirmarConciliacao(itens: LinhaConfirmacao[], frente: Frente, nomeArquivo: string): Promise<{ confirmadas: number }> {
         const { data: { user } } = await supabase.auth.getUser();
-        const aceitas = sugestoes.filter(s => s.parcelaId && s.clienteId);
+        const aceitas = itens.filter(i => i.clienteId && i.alvos.some(a => a.parcelaId));
 
-        for (const s of aceitas) {
-            const dataPagamento = converterDataOriginalParaISO(s.linha.dataOriginal);
-            await financeiroService.registrarPagamento(s.parcelaId!, s.linha.valor, dataPagamento);
+        let parcelasBaixadas = 0;
+
+        for (const item of aceitas) {
+            const dataPagamento = converterDataOriginalParaISO(item.linha.dataOriginal);
+
+            // Uma linha pode baixar 1 parcela (1:1), dividir o recebimento entre 2 ou
+            // agregar N parcelas — cada alvo recebe seu valor rateado.
+            for (const alvo of item.alvos) {
+                if (!alvo.parcelaId) continue;
+                await financeiroService.registrarPagamento(alvo.parcelaId, alvo.valorAlocado, dataPagamento);
+                parcelasBaixadas++;
+            }
 
             const chavesPorTipo: { chave: string; tipo: 'email' | 'documento' | 'nome_normalizado' }[] = [];
-            if (s.linha.emailOriginal) chavesPorTipo.push({ chave: normalizarChaveAprendizado(s.linha.emailOriginal), tipo: 'email' });
-            if (s.linha.documentoOriginal) chavesPorTipo.push({ chave: normalizarChaveAprendizado(s.linha.documentoOriginal), tipo: 'documento' });
-            chavesPorTipo.push({ chave: normalizarChaveAprendizado(s.linha.nomeOriginal), tipo: 'nome_normalizado' });
+            if (item.linha.emailOriginal) chavesPorTipo.push({ chave: normalizarChaveAprendizado(item.linha.emailOriginal), tipo: 'email' });
+            if (item.linha.documentoOriginal) chavesPorTipo.push({ chave: normalizarChaveAprendizado(item.linha.documentoOriginal), tipo: 'documento' });
+            chavesPorTipo.push({ chave: normalizarChaveAprendizado(item.linha.nomeOriginal), tipo: 'nome_normalizado' });
 
             for (const { chave, tipo } of chavesPorTipo) {
                 await supabase.from('conciliacao_aprendizado').upsert(
                     {
                         chave_identificacao: chave,
                         tipo_chave: tipo,
-                        cliente_id: s.clienteId,
+                        cliente_id: item.clienteId,
                         frente,
                         confirmado_por: user?.id,
                     },
@@ -99,10 +122,39 @@ export const conciliacaoOcrService = {
             usuario_id: user?.id,
             frente,
             nome_arquivo: nomeArquivo,
-            total_linhas: sugestoes.length,
-            total_confirmadas: aceitas.length,
+            total_linhas: itens.length,
+            total_confirmadas: parcelasBaixadas,
         });
 
-        return { confirmadas: aceitas.length };
+        return { confirmadas: parcelasBaixadas };
+    },
+
+    /**
+     * "Replicar": corrige o valor esperado das parcelas SEGUINTES em aberto do mesmo contrato,
+     * a partir do valor líquido (pós-repasse) apontado na conciliação — elimina ruído de cálculo/regra
+     * para que as próximas conciliações batam limpo. Reconstrói o bruto (`valor_previsto`) pelo repasse
+     * do contrato. Só afeta parcelas pendentes/atrasadas com vencimento POSTERIOR à parcela de referência.
+     */
+    async replicarValorLiquido(contratoId: string, aposVencimento: string, liquidoAlvo: number): Promise<{ atualizadas: number }> {
+        const { data: contrato, error: contratoErr } = await supabase
+            .from('contratos')
+            .select('repasse_percentual')
+            .eq('id', contratoId)
+            .single();
+        if (contratoErr) throw contratoErr;
+
+        const repasse = (contrato?.repasse_percentual ?? 100) / 100;
+        const brutoCorrigido = repasse > 0 ? liquidoAlvo / repasse : liquidoAlvo;
+
+        const { data, error } = await supabase
+            .from('financeiro_parcelas')
+            .update({ valor_previsto: brutoCorrigido })
+            .eq('contrato_id', contratoId)
+            .in('status', ['pendente', 'atrasado'])
+            .gt('data_vencimento', aposVencimento)
+            .select('id');
+        if (error) throw error;
+
+        return { atualizadas: data?.length || 0 };
     },
 };
