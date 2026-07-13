@@ -82,6 +82,17 @@ export const toLocalDateString = (date: Date): string => {
 };
 
 /**
+ * Nº de dias corridos desde `dataStr` até hoje (idade da informação). Null se a data for inválida.
+ * Usado para "atualizado há Nd" e o alerta de defasagem (>30 dias) da carteira recomendada.
+ */
+export const diasDesde = (dataStr: string | null | undefined): number | null => {
+  if (!dataStr) return null;
+  const d = new Date(dataStr);
+  if (isNaN(d.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+};
+
+/**
  * Converte um timestamp ISO para o formato aceito por <input type="datetime-local">
  * (YYYY-MM-DDTHH:mm), respeitando o fuso de Brasília — mesmo padrão usado em
  * components/Prontuario/AbaReunioes.tsx.

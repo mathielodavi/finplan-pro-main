@@ -5,7 +5,7 @@ import { obterClientePorId, atualizarCliente } from '../../services/clienteServi
 import { configService } from '../../services/configuracoesService';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import { cotacaoService } from '../../services/cotacaoService';
-import { formatarMoeda, formatarData } from '../../utils/formatadores';
+import { formatarMoeda, formatarData, diasDesde } from '../../utils/formatadores';
 import {
   CheckCircle2, ShieldCheck, Target,
   Bird, Plus, Trash2, Search,
@@ -296,6 +296,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   };
 
   const totalVendas = useMemo(() => (Object.values(vendas) as VendaItem[]).reduce((acc, v) => acc + v.valor, 0), [vendas]);
+
+  // Defasagem da carteira recomendada: algum ativo da tese/faixa aplicada com atualização > 30 dias.
+  const carteiraDefasada = useMemo(() => {
+    if (!faixaAplicada || !teseId) return false;
+    return (carteiraRec || []).some((r: any) =>
+      r.estrategia_id === teseId && r.faixa_id === faixaAplicada.id && (diasDesde(r.atualizado_em) === null || (diasDesde(r.atualizado_em) as number) > 30)
+    );
+  }, [carteiraRec, faixaAplicada, teseId]);
 
   // ─── Plano de independência (para o relatório) — mesma matemática do Resumo Geral ───────────
   const patrimonioFinanceiroTotal = useMemo(
@@ -1028,6 +1036,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
           <SectionShell id="sec-tatico" numero={4} hideOnPrint titulo="Simulador Tático" descricao="Ajuste preço de mercado e aporte efetivo por ativo" disabled={!secEnabled['sec-tatico']} hint="Conclua a alocação manual para liberar o simulador">
             <div className="space-y-4">
+          {carteiraDefasada && (
+            <div className="flex items-start gap-2.5 rounded-xl border p-3" style={{ backgroundColor: 'rgba(251,191,36,0.10)', borderColor: 'rgba(251,191,36,0.25)' }}>
+              <AlertCircle size={16} className="text-[color:var(--warning)] shrink-0 mt-0.5" />
+              <p className="text-[12px] text-muted">
+                <span className="font-semibold" style={{ color: 'var(--warning)' }}>Carteira recomendada defasada.</span> Há ativos desta tese/faixa com atualização há mais de 30 dias — revise a Carteira Recomendada antes de aplicar o aporte.
+              </p>
+            </div>
+          )}
           <div className={`${cardCls} flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-4`}>
             <div>
               <span className={kpiLabel}>Aporte IF total</span>
