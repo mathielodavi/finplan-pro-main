@@ -4,6 +4,7 @@ import { Upload, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import Button from '../UI/Button';
+import { toast } from '../../utils/toast';
 
 interface ImportacaoCarteiraProps {
   onSuccess: () => void;
@@ -40,7 +41,7 @@ const ImportacaoCarteira: React.FC<ImportacaoCarteiraProps> = ({ onSuccess }) =>
       };
       reader.readAsArrayBuffer(file);
     } catch (err) {
-      alert("Erro ao ler planilha. Verifique as colunas.");
+      toast.error("Erro ao ler planilha. Verifique as colunas.");
     } finally {
       setLoading(false);
     }

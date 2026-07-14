@@ -7,6 +7,7 @@ import Modal from '../Modal';
 import Confirmacao from '../Confirmacao';
 import { Calendar, CheckCircle2, XCircle, Clock, Search, MessageSquare, History, Edit3, Trash2, CalendarCheck, FileText, PauseCircle } from 'lucide-react';
 import Badge from '../UI/Badge';
+import { toast } from '../../utils/toast';
 
 interface AbaReunioesProps {
   clienteId: string;
@@ -75,7 +76,7 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
 
   const handleSalvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rawDate) return alert("A data é obrigatória.");
+    if (!rawDate) { toast.info("A data é obrigatória."); return; }
     
     setLoading(true);
     try {
@@ -104,7 +105,7 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
       onRefresh();
       setModalOpen(false);
     } catch (err: any) {
-      alert("Erro ao salvar: " + (err.message || "Tente novamente."));
+      toast.error("Erro ao salvar: " + (err.message || "Tente novamente."));
     } finally {
       setLoading(false);
     }
@@ -125,7 +126,7 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
         });
         onRefresh();
       } catch (err) {
-        alert("Erro ao atualizar status.");
+        toast.error("Erro ao atualizar status.");
       } finally {
         setAcaoEmCurso(null);
       }
@@ -140,7 +141,7 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
       setExcluirTarget(null);
       onRefresh();
     } catch (err) {
-      alert("Erro ao excluir.");
+      toast.error("Erro ao excluir.");
     } finally {
       setExcluindo(false);
     }

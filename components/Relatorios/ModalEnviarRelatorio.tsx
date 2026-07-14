@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import Modal from '../Modal';
 import { relatorioService } from '../../services/relatorioService';
 import { Relatorio } from '../../types/relatorio';
+import { toast } from '../../utils/toast';
 
 interface ModalEnviarRelatorioProps {
   isOpen: boolean;
@@ -28,10 +29,10 @@ const ModalEnviarRelatorio: React.FC<ModalEnviarRelatorioProps> = ({ isOpen, onC
         data_envio: new Date().toISOString(),
         assunto
       });
-      alert('E-mail enviado com sucesso!');
+      toast.success('E-mail enviado com sucesso!');
       onClose();
     } catch (err) {
-      alert('Erro ao enviar e-mail.');
+      toast.error('Erro ao enviar e-mail.');
     } finally {
       setEnviando(false);
     }

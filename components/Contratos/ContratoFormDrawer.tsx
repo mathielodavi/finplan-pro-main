@@ -7,6 +7,7 @@ import SidePanel from '../UI/SidePanel';
 import CampoMoeda from '../UI/CampoMoeda';
 import Badge from '../UI/Badge';
 import { FileText, Plus, Clock, CheckCircle2, Calendar, ArrowRight, ArrowLeft, Zap } from 'lucide-react';
+import { toast } from '../../utils/toast';
 
 interface ContratoFormDrawerProps {
   open: boolean;
@@ -225,7 +226,7 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
       setSaveSuccess(true);
       setTimeout(() => { onClose(); onSaved(); }, 1500);
     } catch (err: any) {
-      alert(`Erro: ${err.message}`);
+      toast.error(`Erro: ${err.message}`);
     } finally { setIsSubmitting(false); }
   };
 

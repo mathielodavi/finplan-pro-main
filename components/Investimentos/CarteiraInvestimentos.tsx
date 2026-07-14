@@ -12,6 +12,8 @@ import Accordion from '../UI/Accordion';
 import ImportacaoAtivos from './ImportacaoAtivos';
 import { Edit3, Trash2, ArrowUpRight, ArrowDownRight, Filter, FileSpreadsheet, Plus, ChevronRight, Target, ShieldCheck, PieChart, AlertCircle, Info, CheckCircle2, XCircle, MinusCircle, Bird } from 'lucide-react';
 import { DESTINOS_VENDA } from '../../utils/destinosVenda';
+import { toast } from '../../utils/toast';
+import Confirmacao from '../Confirmacao';
 
 const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) => {
   const [modalOpen, setModalOpen] = useState(false);
@@ -27,6 +29,8 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
   // Cotação da moeda estrangeira selecionada no form de ativo (busca automática — ver useEffect abaixo)
   const [cotacaoInfo, setCotacaoInfo] = useState<{ moeda: MoedaCodigo; valor: number } | null>(null);
   const [buscandoCotacao, setBuscandoCotacao] = useState(false);
+  const [ativoParaExcluir, setAtivoParaExcluir] = useState<any>(null);
+  const [excluindoAtivo, setExcluindoAtivo] = useState(false);
 
   useEffect(() => {
     const fetchMetadata = async () => {
@@ -177,7 +181,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const totalPerc = (editing.distribuicao_objetivos || []).reduce((acc: number, cur: any) => acc + Number(cur.percentual), 0);
-    if (Math.abs(totalPerc - 100) > 0.1) return alert("A soma das distribuições por objetivo deve ser exatamente 100%.");
+    if (Math.abs(totalPerc - 100) > 0.1) { toast.info("A soma das distribuições por objetivo deve ser exatamente 100%."); return; }
 
     // aporte_periodo é transiente (não é coluna de ativos) — declarado pelo consultor só para
     // alimentar o histórico mensal de patrimônio/rentabilidade deste ativo especificamente.
@@ -190,7 +194,18 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
       await investimentoService.snapshotPatrimonioIndependencia(clienteId, aporteRealizado).catch(() => {});
       setModalOpen(false);
       onRefresh();
-    } catch (err) { alert("Falha ao sincronizar dados."); }
+    } catch (err) { toast.error("Falha ao sincronizar dados."); }
+  };
+
+  const handleExcluirAtivo = async () => {
+    if (!ativoParaExcluir) return;
+    setExcluindoAtivo(true);
+    try {
+      await investimentoService.deletarAtivo(ativoParaExcluir.id);
+      setAtivoParaExcluir(null);
+      onRefresh();
+    } catch (err) { toast.error("Erro ao excluir ativo."); }
+    finally { setExcluindoAtivo(false); }
   };
 
   const addObjetivoRow = () => {
@@ -306,7 +321,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                         <td className="px-4 py-3 text-center"><span className={`text-[12px] font-bold tracking-tight ${a.temIndependencia ? 'text-main' : 'text-faint'}`}>{a.pesoNaClasse.toFixed(1)}%</span></td>
                         <td className="px-4 py-3 text-center">{a.temIndependencia && a.metaAlvo > 0 ? (<div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${Math.abs(a.desvio) <= 2 ? 'bg-surface-2 text-faint border-subtle' : a.desvio > 2 ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]'}`}>{a.desvio > 2 ? <ArrowUpRight size={10} /> : a.desvio < -2 ? <ArrowDownRight size={10} /> : null}<span className="text-[10px] font-bold uppercase tracking-wider">{Math.abs(a.desvio) <= 2 ? 'OK' : `${a.desvio > 0 ? '+' : ''}${a.desvio.toFixed(1)}%`}</span></div>) : (<div className="h-0.5 w-3 bg-surface-3 rounded-full mx-auto" />)}</td>
                         <td className="px-4 py-3 text-right font-bold text-main tracking-tighter text-[13px]">{formatarMoeda(a.valor_atual)}</td>
-                        <td className="px-4 py-3 text-right"><div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all"><button onClick={() => { setEditing(a); setModalOpen(true); }} className="p-1.5 text-faint hover:text-[color:var(--info)] rounded-lg transition-colors"><Edit3 size={14} /></button><button onClick={() => { if (window.confirm('Excluir ativo?')) { investimentoService.deletarAtivo(a.id).then(onRefresh); } }} className="p-1.5 text-faint hover:text-[color:var(--danger)] rounded-lg transition-colors"><Trash2 size={14} /></button></div></td>
+                        <td className="px-4 py-3 text-right"><div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all"><button onClick={() => { setEditing(a); setModalOpen(true); }} className="p-1.5 text-faint hover:text-[color:var(--info)] rounded-lg transition-colors"><Edit3 size={14} /></button><button onClick={() => setAtivoParaExcluir(a)} className="p-1.5 text-faint hover:text-[color:var(--danger)] rounded-lg transition-colors"><Trash2 size={14} /></button></div></td>
                       </tr>
                     ))}
                   </tbody>
@@ -525,6 +540,15 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
       </SidePanel>
 
       <Modal isOpen={modalImport} onClose={() => setModalImport(false)} title="Importação Estratégica"><ImportacaoAtivos clienteId={clienteId} onSuccess={() => { setModalImport(false); onRefresh(); }} /></Modal>
+
+      <Confirmacao
+        isOpen={!!ativoParaExcluir}
+        onClose={() => setAtivoParaExcluir(null)}
+        onConfirm={handleExcluirAtivo}
+        title="Excluir ativo"
+        message={`Excluir "${ativoParaExcluir?.nome || 'o ativo'}" da carteira? Esta ação não pode ser desfeita.`}
+        loading={excluindoAtivo}
+      />
     </div>
   );
 };

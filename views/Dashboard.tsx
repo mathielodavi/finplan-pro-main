@@ -12,6 +12,7 @@ import { encerrarContratoPlanejamento } from '../services/contratoService';
 import { calendarioService } from '../services/calendarioService';
 import { inadimplenciaService, ResumoInadimplencia } from '../services/inadimplenciaService';
 import { useProntuarioNav } from '../context/ProntuarioNavContext';
+import { toast } from '../utils/toast';
 
 import Badge from '../components/UI/Badge';
 import SidePanel from '../components/UI/SidePanel';
@@ -136,7 +137,7 @@ const Dashboard: React.FC = () => {
       loadData();
     } catch (err) {
       console.error('Erro ao salvar reunião da agenda:', err);
-      alert('Erro ao salvar agendamento.');
+      toast.error('Erro ao salvar agendamento.');
     } finally {
       setSavingAgenda(false);
     }
@@ -275,7 +276,7 @@ const Dashboard: React.FC = () => {
       setAvisoRenovacao(`Não renovação confirmada para ${nome}. Cliente marcado como inativo.`);
       await loadData();
     } catch (e: any) {
-      alert(`Erro ao confirmar não renovação: ${e.message}`);
+      toast.error(`Erro ao confirmar não renovação: ${e.message}`);
     } finally {
       setProcessandoRenovacao(false);
     }
