@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Landmark, TrendingUp, Search, Briefcase, Edit3, Trash2, CheckCircle2, Clock } from 'lucide-react';
+import { Landmark, TrendingUp, Search, Briefcase, Edit3, Trash2, CheckCircle2, Clock, Layers } from 'lucide-react';
 import Badge from '../UI/Badge';
 import Confirmacao from '../Confirmacao';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
@@ -12,8 +12,10 @@ interface TabelaCarteiraProps {
    onRefresh: () => void;
 }
 
-/** Chave de identidade do ativo (mesma de ConsultaCarteira): ticker → cnpj → nome normalizado. */
-const chaveAtivo = (a: any) => (a.ticker || a.cnpj || normalizarTexto(a.nome_ativo || '')).toString();
+/** Chave do ativo (agrupa TODAS as variações — tickers/CNPJs diferentes do mesmo ativo): nome normalizado. */
+const chaveAtivo = (a: any) => normalizarTexto(a.nome_ativo || '');
+/** Identidade de uma variação dentro do ativo. */
+const chaveVariacao = (a: any) => (a.ticker || a.cnpj || a.tipo || '').trim() || a.id;
 
 const OrigemIcon = ({ origem }: { origem: string }) => (
    <div className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-surface-2 border border-subtle text-faint">
@@ -45,49 +47,94 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
       (filtroEstrategia === 'Todas' || c.estrategias_base?.nome === filtroEstrategia) &&
       (filtroFaixa === 'Todas' || c.estrategias_faixas?.nome === filtroFaixa);
 
-   // Agrupa as linhas (colocações) por ativo, já aplicando busca (por ativo) e filtros (por colocação).
+   // Agrupa TODAS as linhas do ativo (por variação de ticker/cnpj) e, dentro dele, agrupa as
+   // colocações por estratégia × faixa — alocação compartilhada entre as variações presentes nela.
    const grupos = useMemo(() => {
-      const map = new Map<string, any>();
+      const todasLinhasPorChave = new Map<string, any[]>();
+      ativos.forEach(a => {
+         const k = chaveAtivo(a);
+         if (!todasLinhasPorChave.has(k)) todasLinhasPorChave.set(k, []);
+         todasLinhasPorChave.get(k)!.push(a);
+      });
+
+      const linhasFiltradasPorChave = new Map<string, any[]>();
       ativos.forEach(a => {
          const matchBusca = (a.nome_ativo || '').toLowerCase().includes(busca.toLowerCase()) ||
-            (a.ticker && a.ticker.toLowerCase().includes(busca.toLowerCase()));
+            (a.ticker && a.ticker.toLowerCase().includes(busca.toLowerCase())) ||
+            (a.cnpj && a.cnpj.toLowerCase().includes(busca.toLowerCase()));
          if (!matchBusca || !colMatchFiltro(a)) return;
          const k = chaveAtivo(a);
-         if (!map.has(k)) {
-            map.set(k, {
-               chave: k,
-               nome_ativo: a.nome_ativo,
-               origem_ativo: a.origem_ativo,
-               ticker: a.ticker,
-               cnpj: a.cnpj,
-               tipo: a.tipo,
-               asset_classe_nome: a.asset_classe_nome,
-               instituicoes: a.instituicoes,
-               variacoes_fundo: a.variacoes_fundo,
-               observacoes: a.observacoes,
-               colocacoes: [] as any[],
-               todosIds: [] as string[],
+         if (!linhasFiltradasPorChave.has(k)) linhasFiltradasPorChave.set(k, []);
+         linhasFiltradasPorChave.get(k)!.push(a);
+      });
+
+      const agruparVariacoes = (linhas: any[]) => {
+         const map = new Map<string, any>();
+         linhas.forEach(l => {
+            const vk = chaveVariacao(l);
+            if (!map.has(vk)) map.set(vk, { ticker: l.ticker, cnpj: l.cnpj, tipo: l.tipo, variacoes_fundo: l.variacoes_fundo });
+         });
+         return Array.from(map.values());
+      };
+
+      const agruparColocacoes = (linhas: any[]) => {
+         const map = new Map<string, any>();
+         linhas.forEach(l => {
+            const ck = `${l.estrategia_id}|${l.faixa_id}`;
+            if (!map.has(ck)) {
+               map.set(ck, {
+                  key: ck,
+                  estrategia_nome: l.estrategias_base?.nome,
+                  faixa_nome: l.estrategias_faixas?.nome,
+                  alocacao: l.alocacao,
+                  linhas: [] as any[],
+               });
+            }
+            map.get(ck).linhas.push(l);
+         });
+         return Array.from(map.values()).map((c: any) => {
+            // Idade da colocação = a mais antiga entre suas variações; se QUALQUER variação não
+            // tem data, trata como "sem data" (mais conservador — reflete o pior caso do grupo).
+            let semData = false;
+            let maisAntigo: string | undefined;
+            c.linhas.forEach((l: any) => {
+               if (!l.atualizado_em) { semData = true; return; }
+               if (!maisAntigo || l.atualizado_em < maisAntigo) maisAntigo = l.atualizado_em;
             });
-         }
-         map.get(k).colocacoes.push(a);
+            return {
+               ...c,
+               ids: c.linhas.map((l: any) => l.id),
+               variacoes: agruparVariacoes(c.linhas),
+               atualizadoMaisAntigo: semData ? undefined : maisAntigo,
+            };
+         });
+      };
+
+      const arr = Array.from(linhasFiltradasPorChave.entries()).map(([k, linhasFiltradas]) => {
+         const primeira = linhasFiltradas[0];
+         const todasLinhas = todasLinhasPorChave.get(k) || [];
+         return {
+            chave: k,
+            nome_ativo: primeira.nome_ativo,
+            origem_ativo: primeira.origem_ativo,
+            asset_classe_nome: primeira.asset_classe_nome,
+            instituicoes: primeira.instituicoes,
+            observacoes: primeira.observacoes,
+            todasLinhas,
+            todosIds: todasLinhas.map((l: any) => l.id),
+            totalVariacoes: agruparVariacoes(todasLinhas).length,
+            colocacoes: agruparColocacoes(linhasFiltradas),
+         };
       });
-      // Guarda TODOS os ids do ativo (independente de filtro) para a exclusão total.
-      const idsPorChave = new Map<string, string[]>();
-      ativos.forEach(a => {
-         const k = chaveAtivo(a);
-         if (!idsPorChave.has(k)) idsPorChave.set(k, []);
-         idsPorChave.get(k)!.push(a.id);
-      });
-      const arr = Array.from(map.values());
-      arr.forEach(g => { g.todosIds = idsPorChave.get(g.chave) || []; });
       return arr.sort((x, y) => (x.nome_ativo || '').localeCompare(y.nome_ativo || '', 'pt-BR'));
    }, [ativos, busca, filtroEstrategia, filtroFaixa]);
 
    const filtrandoColocacoes = filtroEstrategia !== 'Todas' || filtroFaixa !== 'Todas';
 
-   const handleOk = async (id: string) => {
-      setOkId(id);
-      try { await carteiraRecomendadaService.marcarAtualizado(id); onRefresh(); }
+   const handleOk = async (ids: string[]) => {
+      const chave = ids.join(',');
+      setOkId(chave);
+      try { await Promise.all(ids.map(id => carteiraRecomendadaService.marcarAtualizado(id))); onRefresh(); }
       catch { alert('Erro ao marcar como atualizado.'); }
       finally { setOkId(null); }
    };
@@ -95,7 +142,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
    const handleRemover = async () => {
       if (!removerAlvo) return;
       setRemovendo(true);
-      try { await carteiraRecomendadaService.deletarAtivoRecomendado(removerAlvo.id); setRemoverAlvo(null); onRefresh(); }
+      try { await carteiraRecomendadaService.deletarGrupoAtivo(removerAlvo.ids); setRemoverAlvo(null); onRefresh(); }
       catch { alert('Erro ao remover colocação.'); }
       finally { setRemovendo(false); }
    };
@@ -118,6 +165,8 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
          </span>
       );
    };
+
+   const rotuloVariacao = (v: any) => v.variacoes_fundo || v.ticker || v.cnpj || v.tipo || '—';
 
    return (
       <div className="space-y-6 animate-fade-in">
@@ -150,7 +199,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
          </div>
 
          {filtrandoColocacoes && (
-            <p className="text-[11px] text-faint -mt-2">Mostrando apenas as colocações que batem com os filtros. "Editar" abre o ativo com todas as suas colocações.</p>
+            <p className="text-[11px] text-faint -mt-2">Mostrando apenas as colocações que batem com os filtros. "Editar" abre o ativo com todas as suas colocações e variações.</p>
          )}
 
          <div className="space-y-3">
@@ -164,28 +213,40 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
                            <p className="font-semibold text-main text-[13px] tracking-tight leading-none mb-1 truncate">{g.nome_ativo}</p>
                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded uppercase tracking-wider">{g.asset_classe_nome || '—'}</span>
-                              <span className="text-[10px] text-faint font-medium">{g.ticker || g.cnpj || g.tipo || 'Custódia'}</span>
-                              {g.todosIds.length > 1 && <span className="text-[10px] text-faint font-medium">· {g.todosIds.length} colocações</span>}
+                              {g.totalVariacoes > 1 ? (
+                                 <span className="inline-flex items-center gap-1 text-[10px] text-faint font-medium"><Layers size={10} /> {g.totalVariacoes} variações</span>
+                              ) : (
+                                 <span className="text-[10px] text-faint font-medium">{g.todasLinhas[0]?.ticker || g.todasLinhas[0]?.cnpj || g.todasLinhas[0]?.tipo || 'Custódia'}</span>
+                              )}
+                              {g.todosIds.length > 1 && <span className="text-[10px] text-faint font-medium">· {g.todosIds.length} linha(s)</span>}
                            </div>
                         </div>
                      </div>
                      <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => onEditGrupo(g as GrupoAtivo)} className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">
+                        <button onClick={() => onEditGrupo({
+                           nome_ativo: g.nome_ativo,
+                           origem_ativo: g.origem_ativo,
+                           asset_classe_nome: g.asset_classe_nome,
+                           instituicoes: g.instituicoes,
+                           observacoes: g.observacoes,
+                           linhas: g.todasLinhas,
+                        })} className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">
                            <Edit3 size={13} /> Editar
                         </button>
-                        <button onClick={() => setRemoverGrupo(g)} title="Excluir o ativo de todas as estratégias e faixas" className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-[color:var(--danger)] font-semibold text-[12px] hover:bg-surface-2 transition-colors">
+                        <button onClick={() => setRemoverGrupo(g)} title="Excluir o ativo (todas as variações e colocações)" className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-[color:var(--danger)] font-semibold text-[12px] hover:bg-surface-2 transition-colors">
                            <Trash2 size={13} /> Excluir ativo
                         </button>
                      </div>
                   </div>
 
-                  {/* Colocações */}
+                  {/* Colocações (estratégia × faixa) — compartilhadas por todas as variações presentes nela */}
                   <div className="overflow-x-auto">
                      <table className="w-full text-left">
                         <thead>
                            <tr className="bg-surface-2 border-b border-subtle">
                               <th className="px-5 py-2 text-[10px] font-semibold uppercase text-faint tracking-wider">Estratégia / Faixa</th>
                               <th className="px-5 py-2 text-[10px] font-semibold uppercase text-faint tracking-wider text-center">Alocação</th>
+                              {g.totalVariacoes > 1 && <th className="px-5 py-2 text-[10px] font-semibold uppercase text-faint tracking-wider">Variações</th>}
                               <th className="px-5 py-2 text-[10px] font-semibold uppercase text-faint tracking-wider">Instituições</th>
                               <th className="px-5 py-2 text-[10px] font-semibold uppercase text-faint tracking-wider">Atualização</th>
                               <th className="px-5 py-2 text-right"></th>
@@ -193,24 +254,31 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
                         </thead>
                         <tbody className="divide-y divide-subtle text-[13px]">
                            {g.colocacoes.map((c: any) => (
-                              <tr key={c.id} className="hover:bg-surface-2/50 transition-colors group">
+                              <tr key={c.key} className="hover:bg-surface-2/50 transition-colors group">
                                  <td className="px-5 py-2.5">
-                                    <p className="font-semibold text-main text-[12px] leading-none mb-0.5">{c.estrategias_base?.nome || '—'}</p>
-                                    <p className="text-[10px] text-faint font-medium">{c.estrategias_faixas?.nome || '—'}</p>
+                                    <p className="font-semibold text-main text-[12px] leading-none mb-0.5">{c.estrategia_nome || '—'}</p>
+                                    <p className="text-[10px] text-faint font-medium">{c.faixa_nome || '—'}</p>
                                  </td>
                                  <td className="px-5 py-2.5 text-center"><span className="text-[13px] font-bold text-main">{c.alocacao}%</span></td>
+                                 {g.totalVariacoes > 1 && (
+                                    <td className="px-5 py-2.5">
+                                       <div className="flex flex-wrap gap-1">
+                                          {c.variacoes.map((v: any, i: number) => <Badge key={i} variant="neutral" size="sm">{rotuloVariacao(v)}</Badge>)}
+                                       </div>
+                                    </td>
+                                 )}
                                  <td className="px-5 py-2.5">
-                                    {c.instituicoes ? (
-                                       <div className="flex flex-wrap gap-1">{c.instituicoes.split(',').filter(Boolean).map((inst: string) => <Badge key={inst} variant="neutral" size="sm">{inst.trim()}</Badge>)}</div>
+                                    {g.instituicoes ? (
+                                       <div className="flex flex-wrap gap-1">{g.instituicoes.split(',').filter(Boolean).map((inst: string) => <Badge key={inst} variant="neutral" size="sm">{inst.trim()}</Badge>)}</div>
                                     ) : <span className="text-[10px] font-semibold text-faint uppercase tracking-wider">Livre</span>}
                                  </td>
-                                 <td className="px-5 py-2.5">{badgeIdade(c.atualizado_em)}</td>
+                                 <td className="px-5 py-2.5">{badgeIdade(c.atualizadoMaisAntigo)}</td>
                                  <td className="px-5 py-2.5 text-right">
                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                       <button onClick={() => handleOk(c.id)} disabled={okId === c.id} title="Confirmar que está atualizado (renova a data)" className="flex items-center gap-1 px-2 h-7 rounded-md text-[11px] font-semibold text-[color:var(--primary)] hover:bg-[rgba(16,185,129,0.12)] transition-colors disabled:opacity-50">
+                                       <button onClick={() => handleOk(c.ids)} disabled={okId === c.ids.join(',')} title="Confirmar que está atualizado (renova a data de todas as variações desta colocação)" className="flex items-center gap-1 px-2 h-7 rounded-md text-[11px] font-semibold text-[color:var(--primary)] hover:bg-[rgba(16,185,129,0.12)] transition-colors disabled:opacity-50">
                                           <CheckCircle2 size={13} /> OK
                                        </button>
-                                       <button onClick={() => setRemoverAlvo(c)} title="Remover esta colocação" className="p-1.5 text-faint hover:text-[color:var(--danger)] rounded-md transition-colors"><Trash2 size={14} /></button>
+                                       <button onClick={() => setRemoverAlvo(c)} title="Remover esta colocação (todas as variações)" className="p-1.5 text-faint hover:text-[color:var(--danger)] rounded-md transition-colors"><Trash2 size={14} /></button>
                                     </div>
                                  </td>
                               </tr>
@@ -230,7 +298,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
             onClose={() => setRemoverAlvo(null)}
             onConfirm={handleRemover}
             title="Remover colocação"
-            message={`Remover ${removerAlvo?.nome_ativo || 'o ativo'} da estratégia "${removerAlvo?.estrategias_base?.nome || '—'}" / faixa "${removerAlvo?.estrategias_faixas?.nome || '—'}"? As demais colocações do ativo permanecem.`}
+            message={`Remover a estratégia "${removerAlvo?.estrategia_nome || '—'}" / faixa "${removerAlvo?.faixa_nome || '—'}" (${removerAlvo?.ids?.length || 0} variação(ões))? As demais colocações do ativo permanecem.`}
             loading={removendo}
          />
 
@@ -239,7 +307,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
             onClose={() => setRemoverGrupo(null)}
             onConfirm={handleRemoverGrupo}
             title="Excluir ativo"
-            message={`Excluir "${removerGrupo?.nome_ativo || 'o ativo'}" de TODAS as estratégias e faixas (${removerGrupo?.todosIds?.length || 0} colocação(ões))? Esta ação não pode ser desfeita.`}
+            message={`Excluir "${removerGrupo?.nome_ativo || 'o ativo'}" de TODAS as estratégias, faixas e variações (${removerGrupo?.todosIds?.length || 0} linha(s))? Esta ação não pode ser desfeita.`}
             loading={removendo}
          />
       </div>

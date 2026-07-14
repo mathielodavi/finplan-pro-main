@@ -70,11 +70,21 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
             const { sugestoes, clientes: clientesCarregados, parcelasPorCliente: mapa } = await conciliacaoOcrService.processarArquivos(arquivos, frente);
             setClientes(clientesCarregados);
             setParcelasPorCliente(mapa);
-            setLinhas(sugestoes.map(s => ({
+            const editaveis = sugestoes.map(s => ({
                 ...s,
                 ignorada: !s.parcelaId,
                 alvos: s.parcelaId ? [{ parcelaId: s.parcelaId, valorAlocado: s.linha.valor }] : [],
-            })));
+            }));
+            // Reordena por cliente (A-Z) para facilitar a conferência quando há mais de um
+            // recebimento do mesmo cliente no arquivo — ficam agrupados lado a lado. Linhas sem
+            // cliente identificado vão para o fim.
+            editaveis.sort((a, b) => {
+                if (!a.clienteNome && !b.clienteNome) return 0;
+                if (!a.clienteNome) return 1;
+                if (!b.clienteNome) return -1;
+                return a.clienteNome.localeCompare(b.clienteNome, 'pt-BR');
+            });
+            setLinhas(editaveis);
             setEtapa('confirmacao');
         } catch (err: any) {
             setErro(err?.message || 'Erro ao processar o(s) arquivo(s). Verifique o formato.');

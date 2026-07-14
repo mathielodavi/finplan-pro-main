@@ -314,9 +314,15 @@ export const investimentoService = {
 
   calcularDistribuicaoDetalhadaAtivos(ativosCliente: any[], recomendados: any[], distribuicaoClasses: any[], config: any, patrimonioTotal: number, overrides?: any) {
     const ativosIndep = (ativosCliente || []).filter(a => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'independencia'));
-    
+
+    // O cliente já possui ESTA variação específica (por ticker/cnpj) — nome_ativo não desambigua
+    // porque é compartilhado por todas as variações do mesmo ativo (ex.: ETF FIXA11/IDKA11).
+    const possuiVariacao = (rec: any) => ativosIndep.some(ac =>
+      (rec.ticker && ac.ticker === rec.ticker) || (rec.cnpj && ac.cnpj === rec.cnpj)
+    );
+
     return distribuicaoClasses.map(classeDist => {
-      const ativosTese = recomendados.filter(r => {
+      const candidatos = recomendados.filter(r => {
         const matchClasse = normalizarTexto(r.asset_classe_nome) === normalizarTexto(classeDist.classe);
         const matchTese = r.estrategia_id === config.teseId;
         const matchFaixa = r.faixa_id === config.faixaId;
@@ -326,6 +332,21 @@ export const investimentoService = {
           matchBanco = bancosAtivo.some((b: string) => config.bancos.map((cb:any) => normalizarTexto(cb)).includes(b));
         }
         return matchClasse && matchTese && matchFaixa && matchBanco;
+      });
+
+      // Ativos com variações (mesmo nome_ativo, tickers/cnpjs diferentes): se o cliente já possui
+      // alguma variação na carteira, só ELA é oferecida para alocação (as demais somem da simulação).
+      // Sem posse de nenhuma variação, o único validador continua sendo a posse de conta na instituição.
+      const gruposPorNome = new Map<string, any[]>();
+      candidatos.forEach(r => {
+        const k = normalizarTexto(r.nome_ativo);
+        if (!gruposPorNome.has(k)) gruposPorNome.set(k, []);
+        gruposPorNome.get(k)!.push(r);
+      });
+      const ativosTese = Array.from(gruposPorNome.values()).flatMap(variacoesGrupo => {
+        if (variacoesGrupo.length <= 1) return variacoesGrupo;
+        const possuidas = variacoesGrupo.filter(possuiVariacao);
+        return possuidas.length > 0 ? possuidas : variacoesGrupo;
       });
 
       const processadosPre = ativosTese.map(rec => {
