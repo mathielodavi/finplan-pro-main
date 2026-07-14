@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import AuthLayout from '../components/AuthLayout';
+import { toast } from '../utils/toast';
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
@@ -50,7 +51,7 @@ const Register: React.FC = () => {
 
     try {
       await register(email, password, name);
-      alert('Conta criada! Verifique seu e-mail para confirmar a ativação e liberar seu acesso.');
+      toast.success('Conta criada! Verifique seu e-mail para confirmar a ativação e liberar seu acesso.');
       navigate('/login');
     } catch (err: any) {
       // Erro tratado pelo hook

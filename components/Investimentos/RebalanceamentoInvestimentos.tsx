@@ -23,6 +23,7 @@ import { protecaoService } from '../../services/protecaoService';
 import { calcularIdade } from '../../utils/calculosFinanceiros';
 import { projetarIndependencia, calcularPrazoERentabilidade, calcularAporteNecessario } from '../../utils/independenciaUtils';
 import { HistoricoPatrimonio, PremissasIndependencia } from '../../services/investimentoService';
+import { toast } from '../../utils/toast';
 
 interface AlocacaoManual {
   id: string;
@@ -446,7 +447,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       const temIndep = indepEfetivos.length > 0;
 
       if (!temReserva && !temProjetos && !temIndep) {
-        alert("Preencha ao menos um valor de 'Aporte Efetivo' antes de finalizar.");
+        toast.info("Preencha ao menos um valor de 'Aporte Efetivo' antes de finalizar.");
         setFinishing(false); return;
       }
 
@@ -479,7 +480,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       await investimentoService.snapshotPatrimonioIndependencia(clienteId, aporte).catch(() => {});
       setSuccess(true);
     } catch (err: any) {
-      alert("Erro técnico ao salvar: " + (err.message || "Erro desconhecido"));
+      toast.error("Erro técnico ao salvar: " + (err.message || "Erro desconhecido"));
     } finally { setFinishing(false); }
   };
 
@@ -491,7 +492,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       const nomeArq = `Relatorio_Aporte_${(cliente?.nome || 'cliente').replace(/\s+/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
       await baixarElementoComoPDFPaginado(relatorioRef.current, nomeArq);
     } catch (err: any) {
-      alert('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
+      toast.error('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
     } finally {
       setBaixandoPdf(false);
     }
@@ -792,7 +793,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
             <button
-              onClick={() => ultimoRebal ? setModo('revisao') : alert('Nenhum histórico disponível.')}
+              onClick={() => ultimoRebal ? setModo('revisao') : toast.info('Nenhum histórico disponível.')}
               disabled={!ultimoRebal}
               className="h-10 px-4 inline-flex items-center gap-2 rounded-lg border border-subtle bg-surface-2 text-muted text-[12px] font-semibold hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >

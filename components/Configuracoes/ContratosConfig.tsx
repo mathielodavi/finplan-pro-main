@@ -8,6 +8,7 @@ import InputMoeda from '../UI/InputMoeda';
 import InputPercentual from '../UI/InputPercentual';
 import Tabs from '../UI/Tabs';
 import Confirmacao from '../Confirmacao';
+import { toast } from '../../utils/toast';
 import { Edit3, Trash2, Plus, FileText, Calendar, Clock, Zap, ShieldCheck, Info, RotateCcw } from 'lucide-react';
 
 // Estilo compartilhado entre FormPlanejamento e FormExtra (campos sem InputMoeda/Percentual, ex: texto/select/dias).
@@ -46,7 +47,7 @@ const ContratosConfig: React.FC = () => {
       await loadData();
       setDeleteTarget(null);
     } catch (err) {
-      alert("Erro ao excluir padrão. Verifique se existem vínculos ativos.");
+      toast.error("Erro ao excluir padrão. Verifique se existem vínculos ativos.");
     } finally {
       setIsDeleting(false);
     }

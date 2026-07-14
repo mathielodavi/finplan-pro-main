@@ -4,6 +4,7 @@ import { investimentoService, HistoricoPatrimonio } from '../../services/investi
 import { formatarMoeda } from '../../utils/formatadores';
 import Confirmacao from '../Confirmacao';
 import { History, Plus, Edit3, Trash2, Check, X } from 'lucide-react';
+import { toast } from '../../utils/toast';
 
 interface FormState {
   data_historico: string;
@@ -66,9 +67,9 @@ const HistoricoAportes = ({ clienteId }: { clienteId: string }) => {
       cancelar();
     } catch (err: any) {
       if (err?.code === '23505') {
-        alert('Já existe um lançamento para esse mês. Edite o lançamento existente em vez de criar outro.');
+        toast.info('Já existe um lançamento para esse mês. Edite o lançamento existente em vez de criar outro.');
       } else {
-        alert('Erro ao salvar histórico: ' + (err?.message || 'erro desconhecido'));
+        toast.error('Erro ao salvar histórico: ' + (err?.message || 'erro desconhecido'));
       }
     } finally { setSaving(false); }
   };
@@ -81,7 +82,7 @@ const HistoricoAportes = ({ clienteId }: { clienteId: string }) => {
       setDeleteTarget(null);
       await load();
     } catch (err: any) {
-      alert('Erro ao excluir: ' + (err?.message || 'erro desconhecido'));
+      toast.error('Erro ao excluir: ' + (err?.message || 'erro desconhecido'));
     } finally { setDeleting(false); }
   };
 

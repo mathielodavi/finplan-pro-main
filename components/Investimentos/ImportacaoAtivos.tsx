@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Upload, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import { importacaoService } from '../../services/importacaoService';
+import { toast } from '../../utils/toast';
 
 interface ImportacaoAtivosProps {
   clienteId: string;
@@ -30,7 +31,7 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
         onSuccess();
       }, 1500);
     } catch (err) {
-      alert('Erro ao processar arquivo. Verifique o formato.');
+      toast.error('Erro ao processar arquivo. Verifique o formato.');
     } finally {
       setLoading(false);
     }

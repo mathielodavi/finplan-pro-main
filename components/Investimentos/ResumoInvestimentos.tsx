@@ -16,6 +16,7 @@ import SidePanel from '../UI/SidePanel';
 import Button from '../UI/Button';
 import ObjetivoFormDrawer from './ObjetivoFormDrawer';
 import { ShieldCheck, Target, Settings, SlidersHorizontal, Plus, TrendingUp, Clock, Bird } from 'lucide-react';
+import { toast } from '../../utils/toast';
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const formatarPercentual = (v: number) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
@@ -272,7 +273,7 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
          setSimulacao(null);
          setDrawerPremissas(false);
          onRefresh();
-      } catch { alert('Erro ao salvar premissas.'); }
+      } catch { toast.error('Erro ao salvar premissas.'); }
       finally { setSavingPrem(false); }
    };
 

@@ -17,6 +17,7 @@ import ModalFormConsorcio from './ModalFormConsorcio';
 import PanelDetalheCredito from './PanelDetalheCredito';
 import PanelDetalheConsorcio from './PanelDetalheConsorcio';
 import Confirmacao from '../Confirmacao';
+import { toast } from '../../utils/toast';
 
 interface Props {
     clienteId: string;
@@ -95,7 +96,7 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
             setEditingCredito(null);
             loadDados();
         } catch (err) {
-            alert('Erro ao salvar crédito');
+            toast.error('Erro ao salvar crédito');
         }
     };
 
@@ -110,7 +111,7 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
             setEditingConsorcio(null);
             loadDados();
         } catch (err) {
-            alert('Erro ao salvar consórcio');
+            toast.error('Erro ao salvar consórcio');
         }
     };
 
@@ -131,7 +132,7 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
             setExcluirAlvo(null);
             loadDados();
         } catch {
-            alert('Erro ao excluir.');
+            toast.error('Erro ao excluir.');
         } finally {
             setExcluindoDivida(false);
         }

@@ -8,6 +8,7 @@ import { formatarMoeda, formatarData } from '../../utils/formatadores';
 import { Parcela } from '../../services/financeiroService';
 import { ClienteResumo, SugestaoMatch } from '../../utils/matchingConciliacao';
 import { conciliacaoOcrService, Frente, AlvoBaixa, LinhaConfirmacao } from '../../services/conciliacaoOcrService';
+import { toast } from '../../utils/toast';
 
 interface Props {
     open: boolean;
@@ -205,9 +206,9 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
                 return novo;
             });
             setReplicarAlvo(null);
-            alert(`Valor líquido replicado para ${atualizadas} parcela(s) seguinte(s) em aberto do contrato.`);
+            toast.success(`Valor líquido replicado para ${atualizadas} parcela(s) seguinte(s) em aberto do contrato.`);
         } catch {
-            alert('Erro ao replicar o valor para as parcelas seguintes.');
+            toast.error('Erro ao replicar o valor para as parcelas seguintes.');
         } finally {
             setReplicando(false);
         }
@@ -224,9 +225,9 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
             const totalValor = itens.reduce((acc, i) => acc + i.alvos.reduce((s, a) => s + a.valorAlocado, 0), 0);
             fechar();
             onConcluido();
-            alert(`Conciliação concluída: ${confirmadas} parcela(s) baixada(s), totalizando ${formatarMoeda(totalValor)}.`);
+            toast.success(`Conciliação concluída: ${confirmadas} parcela(s) baixada(s), totalizando ${formatarMoeda(totalValor)}.`);
         } catch (err) {
-            alert('Erro ao confirmar a conciliação.');
+            toast.error('Erro ao confirmar a conciliação.');
         } finally {
             setConfirmando(false);
         }

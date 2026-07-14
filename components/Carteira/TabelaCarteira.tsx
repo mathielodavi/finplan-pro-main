@@ -5,6 +5,7 @@ import Confirmacao from '../Confirmacao';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import { normalizarTexto, diasDesde } from '../../utils/formatadores';
 import { GrupoAtivo } from './AtivoRecomendadoDrawer';
+import { toast } from '../../utils/toast';
 
 interface TabelaCarteiraProps {
    ativos: any[];
@@ -135,7 +136,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
       const chave = ids.join(',');
       setOkId(chave);
       try { await Promise.all(ids.map(id => carteiraRecomendadaService.marcarAtualizado(id))); onRefresh(); }
-      catch { alert('Erro ao marcar como atualizado.'); }
+      catch { toast.error('Erro ao marcar como atualizado.'); }
       finally { setOkId(null); }
    };
 
@@ -143,7 +144,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
       if (!removerAlvo) return;
       setRemovendo(true);
       try { await carteiraRecomendadaService.deletarGrupoAtivo(removerAlvo.ids); setRemoverAlvo(null); onRefresh(); }
-      catch { alert('Erro ao remover colocação.'); }
+      catch { toast.error('Erro ao remover colocação.'); }
       finally { setRemovendo(false); }
    };
 
@@ -151,7 +152,7 @@ const TabelaCarteira: React.FC<TabelaCarteiraProps> = ({ ativos, onEditGrupo, on
       if (!removerGrupo) return;
       setRemovendo(true);
       try { await carteiraRecomendadaService.deletarGrupoAtivo(removerGrupo.todosIds); setRemoverGrupo(null); onRefresh(); }
-      catch { alert('Erro ao excluir ativo.'); }
+      catch { toast.error('Erro ao excluir ativo.'); }
       finally { setRemovendo(false); }
    };
 

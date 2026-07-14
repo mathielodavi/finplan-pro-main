@@ -20,6 +20,7 @@ import Button from '../UI/Button';
 import Confirmacao from '../Confirmacao';
 import ContratoFormDrawer from '../Contratos/ContratoFormDrawer';
 import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, Wallet, CreditCard, HeartPulse, ListChecks, AlertCircle, Ban, PauseCircle } from 'lucide-react';
+import { toast } from '../../utils/toast';
 
 interface AbaResumoProps {
   cliente: Cliente;
@@ -154,7 +155,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       setModalExtrato(false);
       fetchData();
     } catch (err: any) {
-      alert(`Erro ao cancelar contrato: ${err.message}`);
+      toast.error(`Erro ao cancelar contrato: ${err.message}`);
     } finally { setIsSubmitting(false); }
   };
 
@@ -172,7 +173,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       setModalExtrato(false);
       fetchData();
     } catch (err: any) {
-      alert(`Erro ao pausar contrato: ${err.message}`);
+      toast.error(`Erro ao pausar contrato: ${err.message}`);
     } finally { setIsSubmitting(false); }
   };
 
@@ -190,7 +191,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       setModalExtrato(false);
       fetchData();
     } catch (err: any) {
-      alert(`Erro ao regularizar contrato: ${err.message}`);
+      toast.error(`Erro ao regularizar contrato: ${err.message}`);
     } finally { setIsSubmitting(false); }
   };
 
@@ -205,7 +206,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       setParcelasContrato(data || []);
       setBaixaTarget(null);
       fetchData();
-    } catch (err) { alert("Erro ao baixar parcela."); }
+    } catch (err) { toast.error("Erro ao baixar parcela."); }
     finally { setBaixando(false); }
   };
 
@@ -218,7 +219,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         status_atendimento: roteiro?.nome || ''
       });
       onUpdate();
-    } catch (err) { alert("Erro ao vincular metodologia."); }
+    } catch (err) { toast.error("Erro ao vincular metodologia."); }
   };
 
   const totalLiquidoEsperadoContrato = useMemo(() => {
@@ -722,7 +723,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
             setModalExcluirConfirm(false);
             setModalExtrato(false);
             fetchData();
-          } catch (err) { alert("Erro ao deletar."); }
+          } catch (err) { toast.error("Erro ao deletar."); }
           finally { setRemovendo(false); }
         }}
         title="Remover Acordo"

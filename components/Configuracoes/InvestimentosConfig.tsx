@@ -9,6 +9,7 @@ import Confirmacao from '../Confirmacao';
 import Tabs from '../UI/Tabs';
 import { Landmark, Plus, Trash2, Edit3, Palette, Target, Layers, Infinity, Percent } from 'lucide-react';
 import { formatarMoeda } from '../../utils/formatadores';
+import { toast } from '../../utils/toast';
 
 const campoInputStyle = "w-full px-3 h-9 bg-surface-2 rounded-[8px] border border-subtle font-bold outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-[12px]";
 const campoLabelStyle = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
@@ -48,7 +49,7 @@ const InvestimentosConfig: React.FC = () => {
       await loadData();
       setDeleteTarget(null);
     } catch (err: any) {
-      alert("Erro ao excluir: " + err.message);
+      toast.error("Erro ao excluir: " + err.message);
     } finally {
       setIsDeleting(false);
     }
@@ -200,7 +201,7 @@ const ParametrosForm: React.FC = () => {
       await protecaoService.salvarParametros(params);
       setSaved(true);
     } catch (err: any) {
-      alert('Erro ao salvar parâmetros: ' + err.message);
+      toast.error('Erro ao salvar parâmetros: ' + err.message);
     } finally {
       setSaving(false);
     }

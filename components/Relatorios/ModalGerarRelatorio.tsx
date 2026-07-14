@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import Modal from '../Modal';
 import { gerarPDFRelatorio } from '../../utils/pdfGenerator';
 import { relatorioService } from '../../services/relatorioService';
+import { toast } from '../../utils/toast';
 
 const SECOES_OPCOES = [
   { id: 'resumo', label: 'Resumo Executivo' },
@@ -57,7 +58,7 @@ const ModalGerarRelatorio: React.FC<ModalGerarRelatorioProps> = ({
       onGenerated();
       onClose();
     } catch (err) {
-      alert('Erro ao gerar relatório');
+      toast.error('Erro ao gerar relatório');
     } finally {
       setGerando(false);
     }

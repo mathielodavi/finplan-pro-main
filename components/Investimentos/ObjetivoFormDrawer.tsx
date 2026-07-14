@@ -5,6 +5,7 @@ import { formatarMoeda } from '../../utils/formatadores';
 import SidePanel from '../UI/SidePanel';
 import Confirmacao from '../Confirmacao';
 import { Plus, Calendar, Trash2, AlertCircle, CheckCircle2, Wallet } from 'lucide-react';
+import { toast } from '../../utils/toast';
 
 interface Etapa {
   id: string;
@@ -59,7 +60,7 @@ const ObjetivoFormDrawer: React.FC<Props> = ({ open, onClose, editProjeto, setEd
       onSaved();
       onClose();
     } catch {
-      alert('Falha ao salvar objetivo.');
+      toast.error('Falha ao salvar objetivo.');
     } finally {
       setSaving(false);
     }
@@ -74,7 +75,7 @@ const ObjetivoFormDrawer: React.FC<Props> = ({ open, onClose, editProjeto, setEd
       onSaved();
       onClose();
     } catch {
-      alert('Falha ao remover objetivo.');
+      toast.error('Falha ao remover objetivo.');
     } finally {
       setDeleting(false);
     }

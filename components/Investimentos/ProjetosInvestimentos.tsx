@@ -5,6 +5,7 @@ import { formatarMoeda, formatarData } from '../../utils/formatadores';
 import SidePanel from '../UI/SidePanel';
 import Confirmacao from '../Confirmacao';
 import { Plus, Target, Calendar, Trash2, AlertCircle, CheckCircle2, Wallet } from 'lucide-react';
+import { toast } from '../../utils/toast';
 
 interface Etapa {
   id: string;
@@ -73,7 +74,7 @@ const ProjetosInvestimentos = ({ clienteId, ativos = [] }: { clienteId: string, 
       setDeleteTarget(null);
       await load();
     } catch (err) {
-      alert("Falha ao remover objetivo.");
+      toast.error("Falha ao remover objetivo.");
     } finally {
       setDeleting(false);
     }

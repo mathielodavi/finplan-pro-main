@@ -6,6 +6,7 @@ import Button from '../UI/Button';
 import Badge from '../UI/Badge';
 import Confirmacao from '../Confirmacao';
 import { Activity, Plus, Edit3, Trash2, ListChecks, CheckCircle, GripVertical } from 'lucide-react';
+import { toast } from '../../utils/toast';
 
 const campoInputStyle = "w-full px-3 h-9 bg-surface-2 rounded-[8px] border border-subtle font-bold outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-all text-[12px]";
 const campoLabelStyle = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
@@ -39,7 +40,7 @@ const AcompanhamentoConfig: React.FC = () => {
       await loadData();
       setDeleteTarget(null);
     } catch (err: any) {
-      alert("Erro ao excluir roteiro: " + (err.message || "Verifique a conexão."));
+      toast.error("Erro ao excluir roteiro: " + (err.message || "Verifique a conexão."));
     } finally {
       setIsDeleting(false);
     }
@@ -151,7 +152,7 @@ const FormAcompanhamento = ({ item, onSave, onCancel }: any) => {
       await configService.saveAcompanhamento({ id: item?.id, nome, tem_fases: temFases }, fases, itens);
       onSave();
     } catch (err: any) {
-      alert("Erro ao salvar roteiro: " + (err.message || "Verifique a conexão."));
+      toast.error("Erro ao salvar roteiro: " + (err.message || "Verifique a conexão."));
     } finally {
       setLoading(false);
     }

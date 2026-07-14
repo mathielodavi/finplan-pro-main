@@ -6,6 +6,7 @@ import { ClienteProvider } from './context/ClienteContext';
 import { ContratoProvider } from './context/ContratoContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './components/Layout/MainLayout';
+import ToastViewport from './components/UI/ToastViewport';
 
 // Views
 import Login from './views/Login';
@@ -46,6 +47,7 @@ const App: React.FC = () => {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
+            <ToastViewport />
           </div>
         </ContratoProvider>
       </ClienteProvider>

@@ -6,6 +6,7 @@ import { protecaoService } from '../../services/protecaoService';
 import { calcularCoberturaVida, calcularSucessao, calcularTaxaRealMensal } from '../../utils/calculosFinanceiros';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { toast } from '../../utils/toast';
 
 const fmtMoeda = (v: number) => `R$ ${Math.round(v || 0).toLocaleString('pt-BR')}`;
 const fmtDataHoje = () => new Date().toLocaleDateString('pt-BR');
@@ -67,7 +68,7 @@ const PainelResumo: React.FC<Props> = ({ dados, dependentes, parametros, nomeCli
 
 _Levantamento realizado via FinPlan Pro_`;
         navigator.clipboard.writeText(texto);
-        alert('Texto copiado para a área de transferência! Cole no WhatsApp.');
+        toast.success('Texto copiado para a área de transferência! Cole no WhatsApp.');
     };
 
     // ── Gerar PDF para Corretor ────────────────────────────────────────────────
@@ -262,7 +263,7 @@ _Levantamento realizado via FinPlan Pro_`;
                 cobertura_familiar_vida: coberturaVida.coberturaFamiliar,
                 cobertura_sucessao: sucessao.coberturaSucessao,
             });
-            alert('Levantamento salvo com sucesso!');
+            toast.success('Levantamento salvo com sucesso!');
         } catch (err) {
             console.error(err);
         }

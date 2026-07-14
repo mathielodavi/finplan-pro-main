@@ -8,6 +8,7 @@ import Button from '../components/UI/Button';
 import Modal from '../components/Modal';
 import InputMoeda from '../components/UI/InputMoeda';
 import ConciliacaoOcrDrawer from '../components/Conciliacao/ConciliacaoOcrDrawer';
+import { toast } from '../utils/toast';
 import { CheckCircle2, Search, ArrowUpRight, CheckSquare, Square, History, CalendarDays, Calendar, AlertTriangle, Filter, ChevronLeft, ChevronRight, ScanLine } from 'lucide-react';
 
 const ConciliacaoPage: React.FC = () => {
@@ -122,11 +123,11 @@ const ConciliacaoPage: React.FC = () => {
       await Promise.all(promises);
 
       setIsConfirmModalOpen(false);
-      alert(`Sucesso! ${selecionadas.length} parcelas foram conciliadas.`);
+      toast.success(`Sucesso! ${selecionadas.length} parcelas foram conciliadas.`);
       await carregarDados();
     } catch (err: any) {
       console.error("Erro no processamento de lote:", err);
-      alert("Houve um erro ao processar a baixa.");
+      toast.error("Houve um erro ao processar a baixa.");
     } finally {
       setProcessing(false);
     }
@@ -373,7 +374,7 @@ const ConciliacaoPage: React.FC = () => {
                                       await financeiroService.registrarPagamento(p.id, valoresLiquidos[p.id], datasRecebimento[p.id]);
                                       await carregarDados();
                                     } catch (e) {
-                                      alert("Erro ao baixar parcela.");
+                                      toast.error("Erro ao baixar parcela.");
                                     }
                                   }}
                                   className="text-[#0b0e14] font-bold text-[10px] uppercase tracking-wider bg-primary hover:opacity-90 px-3 h-8 rounded-[8px] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)] ml-auto"

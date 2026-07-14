@@ -14,6 +14,7 @@ import AcordeoProtecaoProfissional from './AcordeoProtecaoProfissional';
 import RelatorioProtecaoDoc from './RelatorioProtecaoDoc';
 import { supabase } from '../../services/supabaseClient';
 import { baixarElementoComoPDFPaginado } from '../../utils/pdfFromElement';
+import { toast } from '../../utils/toast';
 
 const fmtMoeda = (v: number) => `R$ ${Math.round(v || 0).toLocaleString('pt-BR')}`;
 const fmtDataHoje = () => new Date().toLocaleDateString('pt-BR');
@@ -184,7 +185,7 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
 
 Planejador: ${planejadorEmail || '—'}`;
         navigator.clipboard.writeText(texto);
-        alert('Texto copiado para a área de transferência!');
+        toast.success('Texto copiado para a área de transferência!');
     };
 
     // ─── PDF (Levantamento de Necessidade de Proteção) ──────────────────────────
@@ -199,7 +200,7 @@ Planejador: ${planejadorEmail || '—'}`;
             const nomeArquivo = `levantamento-protecao-${nomeCliente_.replace(/\s/g, '-').toLowerCase()}-${fmtDataHoje().replace(/\//g, '-')}.pdf`;
             await baixarElementoComoPDFPaginado(relatorioRef.current, nomeArquivo);
         } catch (err: any) {
-            alert('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
+            toast.error('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
         } finally {
             setGerandoPdf(false);
         }
