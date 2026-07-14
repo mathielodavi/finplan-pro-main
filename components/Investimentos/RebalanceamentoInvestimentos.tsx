@@ -450,7 +450,12 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
         setFinishing(false); return;
       }
 
-      // await investimentoService.processarAporteFinal(clienteId, ativos, reservaAlloc, projetosAlloc, indepEfetivos, projetos);
+      // Consolida na carteira real: aportes/compras somam a um ativo já existente (por ticker/cnpj/nome)
+      // ou criam um novo registro; vendas mantidas até aqui (sem cancelamento do consultor) retiram o
+      // ativo integralmente da carteira.
+      await investimentoService.processarAporteFinal(clienteId, ativos, reservaAlloc, projetosAlloc, indepEfetivos, projetos);
+      const idsVendidos = Object.keys(vendas);
+      await investimentoService.processarVendasEfetivas(idsVendidos);
 
       // Processar vendas no histórico
       const vendasEfetivas = (Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
@@ -459,7 +464,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           nome: `[VENDA→${venda.destino.toUpperCase()}] ${at?.nome || id}`,
           valor_distribuido: -venda.valor,
           valor_anterior: at?.valor_atual || 0,
-          valor_novo: (at?.valor_atual || 0) - venda.valor
+          valor_novo: 0
         };
       });
 
@@ -897,13 +902,13 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
         </div>
       </div>
 
-      {/* Nav horizontal (mobile) */}
-      <SecaoNav secoes={SECOES} enabledMap={secEnabled} variante="mobile" />
+      {/* Nav horizontal (mobile) — "Gerar Relatório" junto ao menu de etapas */}
+      <SecaoNav secoes={SECOES} enabledMap={secEnabled} variante="mobile" podeFinalizar={podeFinalizar} onGerarRelatorio={() => setModo('relatorio')} />
 
       <div className="lg:grid lg:grid-cols-[180px_1fr] lg:gap-8">
-        <SecaoNav secoes={SECOES} enabledMap={secEnabled} variante="lateral" />
+        <SecaoNav secoes={SECOES} enabledMap={secEnabled} variante="lateral" podeFinalizar={podeFinalizar} onGerarRelatorio={() => setModo('relatorio')} />
 
-        <div className="space-y-10 pb-32 min-w-0">
+        <div className="space-y-10 pb-10 min-w-0">
           <SectionShell id="sec-capital" numero={1} hideOnPrint titulo="Capital Disponível" descricao="Defina o valor do aporte e confirme as vendas sinalizadas">
           <div className="space-y-4">
             <div className={`${cardCls} space-y-4`}>
@@ -1104,20 +1109,6 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           </SectionShell>
         </div>
       </div>
-
-      {/* Rodapé fixo — leva à tela de relatório (revisão) para baixar o PDF e finalizar */}
-      <div className="print:hidden sticky bottom-0 z-30 -mx-2 sm:-mx-4 mt-2 px-2 sm:px-4 py-3 bg-surface/85 backdrop-blur-sm border-t border-subtle">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
-          {!podeFinalizar && <span className="text-[11px] font-semibold text-faint self-center sm:mr-auto">Preencha capital, estratégia e ao menos um aporte/alocação</span>}
-          <button
-            onClick={() => setModo('relatorio')}
-            disabled={!podeFinalizar}
-            className="h-11 px-6 inline-flex items-center justify-center gap-2 bg-[color:var(--primary)] text-[#0b0e14] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.05)] text-[12px] font-semibold hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Gerar Relatório <FileText size={16} />
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
@@ -1163,8 +1154,9 @@ const findScrollParent = (el: HTMLElement | null): HTMLElement | null => {
 
 // Navegação entre seções com scroll-spy. 'lateral' = sticky no desktop; 'mobile' = barra horizontal.
 // Usa um listener de scroll (não IntersectionObserver, que não acompanha de forma confiável o
-// contêiner aninhado overflow-y-auto deste layout) para destacar a seção atual.
-const SecaoNav = ({ secoes, enabledMap, variante }: { secoes: { id: string; label: string }[]; enabledMap: Record<string, boolean>; variante: 'lateral' | 'mobile' }) => {
+// contêiner aninhado overflow-y-auto deste layout) para destacar a seção atual. Carrega também o
+// botão "Gerar Relatório" — junto ao menu de etapas em vez de uma faixa fixa no rodapé.
+const SecaoNav = ({ secoes, enabledMap, variante, podeFinalizar, onGerarRelatorio }: { secoes: { id: string; label: string }[]; enabledMap: Record<string, boolean>; variante: 'lateral' | 'mobile'; podeFinalizar: boolean; onGerarRelatorio: () => void }) => {
   const [active, setActive] = useState(secoes[0].id);
   useEffect(() => {
     const container = findScrollParent(document.getElementById(secoes[0].id));
@@ -1203,17 +1195,24 @@ const SecaoNav = ({ secoes, enabledMap, variante }: { secoes: { id: string; labe
 
   if (variante === 'mobile') {
     return (
-      <nav className="lg:hidden print:hidden flex gap-2 overflow-x-auto pb-3 mb-2 -mx-2 px-2">
-        {secoes.map((s, i) => {
-          const en = enabledMap[s.id]; const isActive = active === s.id;
-          return (
-            <button key={s.id} type="button" disabled={!en} onClick={() => en && go(s.id)}
-              className={`shrink-0 px-3 h-8 rounded-full text-[11px] font-semibold transition-colors border ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14] border-transparent' : en ? 'bg-surface-2 text-muted border-subtle' : 'bg-surface-2 text-faint/50 border-subtle cursor-not-allowed'}`}>
-              {i + 1}. {s.label}
-            </button>
-          );
-        })}
-      </nav>
+      <div className="lg:hidden print:hidden flex items-center gap-2 pb-3 mb-2">
+        <nav className="flex gap-2 overflow-x-auto flex-1 min-w-0 -mx-2 px-2">
+          {secoes.map((s, i) => {
+            const en = enabledMap[s.id]; const isActive = active === s.id;
+            return (
+              <button key={s.id} type="button" disabled={!en} onClick={() => en && go(s.id)}
+                className={`shrink-0 px-3 h-8 rounded-full text-[11px] font-semibold transition-colors border ${isActive ? 'bg-[color:var(--primary)] text-[#0b0e14] border-transparent' : en ? 'bg-surface-2 text-muted border-subtle' : 'bg-surface-2 text-faint/50 border-subtle cursor-not-allowed'}`}>
+                {i + 1}. {s.label}
+              </button>
+            );
+          })}
+        </nav>
+        <button type="button" onClick={onGerarRelatorio} disabled={!podeFinalizar}
+          title={!podeFinalizar ? 'Preencha capital, estratégia e ao menos um aporte/alocação' : undefined}
+          className="shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-full text-[11px] font-semibold bg-[color:var(--primary)] text-[#0b0e14] hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+          Relatório <FileText size={13} />
+        </button>
+      </div>
     );
   }
 
@@ -1229,6 +1228,13 @@ const SecaoNav = ({ secoes, enabledMap, variante }: { secoes: { id: string; labe
           </button>
         );
       })}
+      <div className="mt-3 pt-3 border-t border-subtle">
+        <button type="button" onClick={onGerarRelatorio} disabled={!podeFinalizar}
+          className="w-full flex items-center justify-center gap-2 px-3 h-9 rounded-lg text-[12px] font-semibold bg-[color:var(--primary)] text-[#0b0e14] hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+          Gerar Relatório <FileText size={14} />
+        </button>
+        {!podeFinalizar && <p className="mt-2 text-[10px] font-semibold text-faint leading-snug">Preencha capital, estratégia e ao menos um aporte/alocação</p>}
+      </div>
     </nav>
   );
 };

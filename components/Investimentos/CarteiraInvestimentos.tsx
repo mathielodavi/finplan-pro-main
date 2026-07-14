@@ -4,7 +4,7 @@ import { investimentoService } from '../../services/investimentoService';
 import { configService } from '../../services/configuracoesService';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import { cambioService, MOEDAS_SUPORTADAS, MoedaCodigo } from '../../services/cambioService';
-import { formatarMoeda, formatarCNPJ } from '../../utils/formatadores';
+import { formatarMoeda, formatarCNPJ, formatarData, diasDesde } from '../../utils/formatadores';
 import Modal from '../Modal';
 import SidePanel from '../UI/SidePanel';
 import Badge from '../UI/Badge';
@@ -138,7 +138,12 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
     });
 
     const desviosCriticos = ativosProcessados.filter((a: any) => a.temIndependencia && Math.abs(a.desvio) > 5).length;
-    return { totalCustodia, patrimonioIndependencia, ativosProcessados, desviosCriticos };
+
+    // Ativo com atualização mais recente (atualizado_em) — reflete o quão "fresca" está a carteira.
+    const dataAtualizacaoMaisRecente = ativos.reduce((max: string | undefined, cur: any) =>
+      (cur.atualizado_em && (!max || cur.atualizado_em > max)) ? cur.atualizado_em : max, undefined as string | undefined);
+
+    return { totalCustodia, patrimonioIndependencia, ativosProcessados, desviosCriticos, dataAtualizacaoMaisRecente };
   }, [ativos, carteiraRec, teses, cliente]);
 
   const ativosExibidos = stats.ativosProcessados
@@ -221,6 +226,19 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
           <div className="flex flex-col border-l border-subtle pl-4">
             <span className="text-[11px] font-semibold text-faint uppercase tracking-wider mb-0.5">Custódia Total</span>
             <p className="text-[14px] font-bold text-muted tracking-tight leading-none">{formatarMoeda(stats.totalCustodia)}</p>
+          </div>
+          <div className="flex flex-col border-l border-subtle pl-4">
+            <span className="text-[11px] font-semibold text-faint uppercase tracking-wider mb-0.5">Atualizado em</span>
+            {stats.dataAtualizacaoMaisRecente ? (
+              <p className="text-[14px] font-bold text-muted tracking-tight leading-none">
+                {formatarData(stats.dataAtualizacaoMaisRecente)}
+                <span className="text-[11px] font-semibold text-faint ml-1.5">
+                  {diasDesde(stats.dataAtualizacaoMaisRecente) === 0 ? '(hoje)' : `(há ${diasDesde(stats.dataAtualizacaoMaisRecente)}d)`}
+                </span>
+              </p>
+            ) : (
+              <p className="text-[14px] font-bold text-faint tracking-tight leading-none">—</p>
+            )}
           </div>
         </div>
 

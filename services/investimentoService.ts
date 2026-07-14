@@ -85,11 +85,13 @@ export const investimentoService = {
 
   async salvarAtivo(ativo: any) {
     const { data: { user } } = await supabase.auth.getUser();
-    const payload = { 
-      ...ativo, 
+    const payload = {
+      ...ativo,
       status: ativo.status || 'Manter',
-      consultor_id: user?.id, 
-      empresa_id: user?.user_metadata?.empresa_id || user?.id 
+      consultor_id: user?.id,
+      empresa_id: user?.user_metadata?.empresa_id || user?.id,
+      // A coluna não tem trigger de banco — carimba aqui para refletir a edição manual.
+      atualizado_em: new Date().toISOString(),
     };
     const { data, error } = ativo.id 
       ? await supabase.from('ativos').update(payload).eq('id', ativo.id).select()
@@ -423,20 +425,21 @@ export const investimentoService = {
       );
 
       if (match) {
-        const { error } = await supabase.from('ativos').update({ valor_atual: (match.valor_atual || 0) + valor }).eq('id', match.id);
+        const { error } = await supabase.from('ativos').update({ valor_atual: (match.valor_atual || 0) + valor, atualizado_em: new Date().toISOString() }).eq('id', match.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('ativos').insert([{ 
-          cliente_id: clienteId, 
-          consultor_id: user.id, 
-          empresa_id: targetId, 
-          nome, 
-          valor_atual: valor, 
-          ticker: identifiers.ticker, 
-          cnpj: identifiers.cnpj, 
-          tipo_ativo: identifiers.tipo || 'Outros', 
-          distribuicao_objetivos: objetivos, 
-          status: 'Manter'
+        const { error } = await supabase.from('ativos').insert([{
+          cliente_id: clienteId,
+          consultor_id: user.id,
+          empresa_id: targetId,
+          nome,
+          valor_atual: valor,
+          ticker: identifiers.ticker,
+          cnpj: identifiers.cnpj,
+          tipo_ativo: identifiers.tipo || 'Outros',
+          distribuicao_objetivos: objetivos,
+          status: 'Manter',
+          atualizado_em: new Date().toISOString(),
         }]);
         if (error) throw error;
       }
@@ -447,5 +450,16 @@ export const investimentoService = {
     for (const i of (independenciaAlloc || [])) await upsertAporte(i.nome, i.valor_efetivo, [{ tipo: 'independencia', percentual: 100 }], { ticker: i.ticker, cnpj: i.cnpj, tipo: i.tipo });
 
     return true;
+  },
+
+  /**
+   * Consolida as vendas confirmadas no Simulador Tático: um ativo mantido para venda (sem
+   * cancelamento do consultor) é retirado da carteira — a venda sinalizada é sempre do valor
+   * integral do ativo (não há venda parcial neste fluxo).
+   */
+  async processarVendasEfetivas(idsVendidos: string[]) {
+    if (!idsVendidos || idsVendidos.length === 0) return;
+    const { error } = await supabase.from('ativos').delete().in('id', idsVendidos);
+    if (error) throw error;
   }
 };
