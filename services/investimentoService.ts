@@ -85,11 +85,13 @@ export const investimentoService = {
 
   async salvarAtivo(ativo: any) {
     const { data: { user } } = await supabase.auth.getUser();
-    const payload = { 
-      ...ativo, 
+    const payload = {
+      ...ativo,
       status: ativo.status || 'Manter',
-      consultor_id: user?.id, 
-      empresa_id: user?.user_metadata?.empresa_id || user?.id 
+      consultor_id: user?.id,
+      empresa_id: user?.user_metadata?.empresa_id || user?.id,
+      // A coluna não tem trigger de banco — carimba aqui para refletir a edição manual.
+      atualizado_em: new Date().toISOString(),
     };
     const { data, error } = ativo.id 
       ? await supabase.from('ativos').update(payload).eq('id', ativo.id).select()
@@ -314,9 +316,15 @@ export const investimentoService = {
 
   calcularDistribuicaoDetalhadaAtivos(ativosCliente: any[], recomendados: any[], distribuicaoClasses: any[], config: any, patrimonioTotal: number, overrides?: any) {
     const ativosIndep = (ativosCliente || []).filter(a => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'independencia'));
-    
+
+    // O cliente já possui ESTA variação específica (por ticker/cnpj) — nome_ativo não desambigua
+    // porque é compartilhado por todas as variações do mesmo ativo (ex.: ETF FIXA11/IDKA11).
+    const possuiVariacao = (rec: any) => ativosIndep.some(ac =>
+      (rec.ticker && ac.ticker === rec.ticker) || (rec.cnpj && ac.cnpj === rec.cnpj)
+    );
+
     return distribuicaoClasses.map(classeDist => {
-      const ativosTese = recomendados.filter(r => {
+      const candidatos = recomendados.filter(r => {
         const matchClasse = normalizarTexto(r.asset_classe_nome) === normalizarTexto(classeDist.classe);
         const matchTese = r.estrategia_id === config.teseId;
         const matchFaixa = r.faixa_id === config.faixaId;
@@ -326,6 +334,21 @@ export const investimentoService = {
           matchBanco = bancosAtivo.some((b: string) => config.bancos.map((cb:any) => normalizarTexto(cb)).includes(b));
         }
         return matchClasse && matchTese && matchFaixa && matchBanco;
+      });
+
+      // Ativos com variações (mesmo nome_ativo, tickers/cnpjs diferentes): se o cliente já possui
+      // alguma variação na carteira, só ELA é oferecida para alocação (as demais somem da simulação).
+      // Sem posse de nenhuma variação, o único validador continua sendo a posse de conta na instituição.
+      const gruposPorNome = new Map<string, any[]>();
+      candidatos.forEach(r => {
+        const k = normalizarTexto(r.nome_ativo);
+        if (!gruposPorNome.has(k)) gruposPorNome.set(k, []);
+        gruposPorNome.get(k)!.push(r);
+      });
+      const ativosTese = Array.from(gruposPorNome.values()).flatMap(variacoesGrupo => {
+        if (variacoesGrupo.length <= 1) return variacoesGrupo;
+        const possuidas = variacoesGrupo.filter(possuiVariacao);
+        return possuidas.length > 0 ? possuidas : variacoesGrupo;
       });
 
       const processadosPre = ativosTese.map(rec => {
@@ -402,20 +425,21 @@ export const investimentoService = {
       );
 
       if (match) {
-        const { error } = await supabase.from('ativos').update({ valor_atual: (match.valor_atual || 0) + valor }).eq('id', match.id);
+        const { error } = await supabase.from('ativos').update({ valor_atual: (match.valor_atual || 0) + valor, atualizado_em: new Date().toISOString() }).eq('id', match.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('ativos').insert([{ 
-          cliente_id: clienteId, 
-          consultor_id: user.id, 
-          empresa_id: targetId, 
-          nome, 
-          valor_atual: valor, 
-          ticker: identifiers.ticker, 
-          cnpj: identifiers.cnpj, 
-          tipo_ativo: identifiers.tipo || 'Outros', 
-          distribuicao_objetivos: objetivos, 
-          status: 'Manter'
+        const { error } = await supabase.from('ativos').insert([{
+          cliente_id: clienteId,
+          consultor_id: user.id,
+          empresa_id: targetId,
+          nome,
+          valor_atual: valor,
+          ticker: identifiers.ticker,
+          cnpj: identifiers.cnpj,
+          tipo_ativo: identifiers.tipo || 'Outros',
+          distribuicao_objetivos: objetivos,
+          status: 'Manter',
+          atualizado_em: new Date().toISOString(),
         }]);
         if (error) throw error;
       }
@@ -426,5 +450,16 @@ export const investimentoService = {
     for (const i of (independenciaAlloc || [])) await upsertAporte(i.nome, i.valor_efetivo, [{ tipo: 'independencia', percentual: 100 }], { ticker: i.ticker, cnpj: i.cnpj, tipo: i.tipo });
 
     return true;
+  },
+
+  /**
+   * Consolida as vendas confirmadas no Simulador Tático: um ativo mantido para venda (sem
+   * cancelamento do consultor) é retirado da carteira — a venda sinalizada é sempre do valor
+   * integral do ativo (não há venda parcial neste fluxo).
+   */
+  async processarVendasEfetivas(idsVendidos: string[]) {
+    if (!idsVendidos || idsVendidos.length === 0) return;
+    const { error } = await supabase.from('ativos').delete().in('id', idsVendidos);
+    if (error) throw error;
   }
 };

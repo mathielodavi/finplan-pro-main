@@ -18,6 +18,7 @@ export interface AtivoRecomendado {
   instituicoes?: string;
   observacoes?: string;
   empresa_id: string;
+  atualizado_em?: string;
 }
 
 /**
@@ -134,7 +135,9 @@ export const carteiraRecomendadaService = {
         alocacao: parseFloat(row.alocacao) || 0,
         asset_classe_nome: String(row.asset || ''),
         instituicoes: String(row.instituicao || ''),
-        observacoes: String(row.observacoes || '')
+        observacoes: String(row.observacoes || ''),
+        // Linhas importadas nascem "atualizadas hoje" (a importação é uma atualização em massa).
+        atualizado_em: new Date().toISOString()
       });
     }
 
@@ -154,5 +157,46 @@ export const carteiraRecomendadaService = {
     }
 
     return resultados;
+  },
+
+  /**
+   * Insere (sem id) ou atualiza (com id) uma colocação da carteira recomendada — uma linha
+   * (estratégia × faixa × ativo). Sempre carimba `atualizado_em = now()`.
+   */
+  async salvarAtivoRecomendado(row: Partial<AtivoRecomendado>) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Não autenticado');
+    const empresaId = user.user_metadata?.empresa_id || user.id;
+
+    const { id, estrategias_base, estrategias_faixas, ...rest } = row as any;
+    const payload = { ...rest, empresa_id: empresaId, atualizado_em: new Date().toISOString() };
+
+    const { data, error } = id
+      ? await supabase.from('carteiras_recomendadas').update(payload).eq('id', id).select().single()
+      : await supabase.from('carteiras_recomendadas').insert([payload]).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  /** Remove uma colocação (linha) da carteira recomendada. */
+  async deletarAtivoRecomendado(id: string) {
+    const { error } = await supabase.from('carteiras_recomendadas').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  /** Remove um ativo de TODAS as estratégias/faixas de uma vez (várias colocações). */
+  async deletarGrupoAtivo(ids: string[]) {
+    if (!ids.length) return;
+    const { error } = await supabase.from('carteiras_recomendadas').delete().in('id', ids);
+    if (error) throw error;
+  },
+
+  /** "Check de OK": só renova a data de atualização daquela colocação, sem alterar dados. */
+  async marcarAtualizado(id: string) {
+    const { error } = await supabase
+      .from('carteiras_recomendadas')
+      .update({ atualizado_em: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
   }
 };

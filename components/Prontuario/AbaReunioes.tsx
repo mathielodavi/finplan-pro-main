@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { reuniaoService, Reuniao } from '../../services/reuniaoService';
+import { inadimplenciaService } from '../../services/inadimplenciaService';
 import { formatarData } from '../../utils/formatadores';
 import Modal from '../Modal';
 import Confirmacao from '../Confirmacao';
-import { Calendar, CheckCircle2, XCircle, Clock, Search, MessageSquare, History, Edit3, Trash2, CalendarCheck, FileText } from 'lucide-react';
+import { Calendar, CheckCircle2, XCircle, Clock, Search, MessageSquare, History, Edit3, Trash2, CalendarCheck, FileText, PauseCircle } from 'lucide-react';
 import Badge from '../UI/Badge';
 
 interface AbaReunioesProps {
@@ -22,6 +23,15 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
   const [excluirTarget, setExcluirTarget] = useState<string | null>(null);
   const [excluindo, setExcluindo] = useState(false);
   const [busca, setBusca] = useState('');
+  const [pausadoInadimplencia, setPausadoInadimplencia] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    inadimplenciaService.getEstadoCliente(clienteId)
+      .then(e => { if (ativo) setPausadoInadimplencia(e.inadimplenteAgora); })
+      .catch(() => {});
+    return () => { ativo = false; };
+  }, [clienteId]);
 
   /**
    * Converte uma string ISO ou Date para o formato YYYY-MM-DDTHH:mm
@@ -150,6 +160,14 @@ const AbaReunioes: React.FC<AbaReunioesProps> = ({ clienteId, reunioes, onRefres
 
   return (
     <div className="space-y-10 animate-fade-in">
+      {pausadoInadimplencia && (
+        <div className="flex items-start gap-2.5 rounded-xl border p-3" style={{ backgroundColor: 'rgba(251,191,36,0.10)', borderColor: 'rgba(251,191,36,0.25)' }}>
+          <PauseCircle size={16} className="text-[color:var(--warning)] shrink-0 mt-0.5" />
+          <p className="text-[12px] text-muted">
+            <span className="font-semibold" style={{ color: 'var(--warning)' }}>Atendimento pausado por inadimplência.</span> A cadência de reuniões não é cobrada enquanto o contrato estiver pausado — regularize na aba Estratégia para retomar.
+          </p>
+        </div>
+      )}
       {/* Próximas Reuniões */}
       <section className="space-y-4">
         <div className="flex justify-between items-center bg-surface p-4 rounded-xl shadow-[0px_1px_2px_0px_rgba(0,0,0,0.05)] border border-subtle">

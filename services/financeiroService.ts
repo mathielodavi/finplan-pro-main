@@ -9,7 +9,7 @@ export interface Parcela {
   valor_pago?: number;
   data_vencimento: string;
   data_pagamento?: string;
-  status: 'pendente' | 'pago' | 'atrasado' | 'cancelado';
+  status: 'pendente' | 'pago' | 'atrasado' | 'cancelado' | 'pausado';
   clientes?: { nome: string };
   contratos?: {
     descricao: string;
@@ -31,7 +31,8 @@ export const financeiroService = {
         clientes (nome),
         contratos (descricao, tipo, repasse_percentual, prazo_recebimento_dias)
       `)
-      .neq('status', 'cancelado');
+      // 'pausado' = parcela congelada por inadimplência; sai do radar de recebíveis até regularizar.
+      .not('status', 'in', '("cancelado","pausado")');
 
     if (status === 'pendente') {
       query = query.in('status', ['pendente', 'atrasado']);
@@ -259,7 +260,7 @@ export const financeiroService = {
       .select('*, contratos(repasse_percentual)')
       .gte('data_vencimento', inicioMes)
       .lte('data_vencimento', dataRef)
-      .neq('status', 'cancelado');
+      .not('status', 'in', '("cancelado","pausado")');
 
     if (error) throw error;
 

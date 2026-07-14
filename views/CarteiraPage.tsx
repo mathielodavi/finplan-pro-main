@@ -6,6 +6,7 @@ import Button from '../components/UI/Button';
 import SidePanel from '../components/UI/SidePanel';
 import ImportacaoCarteira from '../components/Carteira/ImportacaoCarteira';
 import TabelaCarteira from '../components/Carteira/TabelaCarteira';
+import AtivoRecomendadoDrawer, { GrupoAtivo } from '../components/Carteira/AtivoRecomendadoDrawer';
 import ConsultaCarteira from '../components/Carteira/ConsultaCarteira';
 import { FileSpreadsheet, Download, Plus, PieChart, Search, LayoutList } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -21,6 +22,8 @@ const CarteiraPage: React.FC = () => {
   const [ativos, setAtivos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerImport, setDrawerImport] = useState(false);
+  const [drawerAtivo, setDrawerAtivo] = useState(false);
+  const [grupoEdit, setGrupoEdit] = useState<GrupoAtivo | null>(null);
 
   // Publica as abas da Carteira no header (Navbar) — layout padrão de navegação
   // por abas em telas com múltiplas visões (ver DESIGN.MD §8).
@@ -29,15 +32,17 @@ const CarteiraPage: React.FC = () => {
     return () => setNav(null);
   }, [activeTab, setNav]);
 
-  const carregarDados = async () => {
-    setLoading(true);
+  // `silent` = recarga sem trocar para o spinner de página inteira — mantém a TabelaCarteira
+  // montada (preserva busca/filtros) após editar/excluir/marcar OK um ativo.
+  const carregarDados = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await carteiraRecomendadaService.listarAtivos();
       setAtivos(data || []);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -92,12 +97,20 @@ const CarteiraPage: React.FC = () => {
             Baixar Modelo
           </Button>
           <Button
-            variant="primary"
+            variant="outline"
             onClick={() => setDrawerImport(true)}
-            leftIcon={<Plus size={14} />}
+            leftIcon={<FileSpreadsheet size={14} />}
             className="flex-1 lg:flex-none h-9 px-4 font-bold uppercase text-[10px] tracking-wider"
           >
             Importar Nova
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => { setGrupoEdit(null); setDrawerAtivo(true); }}
+            leftIcon={<Plus size={14} />}
+            className="flex-1 lg:flex-none h-9 px-4 font-bold uppercase text-[10px] tracking-wider"
+          >
+            Novo Ativo
           </Button>
         </div>
       </header>
@@ -115,7 +128,11 @@ const CarteiraPage: React.FC = () => {
             <p className="text-faint text-[11px] mt-2 font-bold uppercase tracking-wider">Importe a planilha modelo para começar a usar a inteligência de alocação.</p>
           </div>
         ) : (
-          <TabelaCarteira ativos={ativos} />
+          <TabelaCarteira
+            ativos={ativos}
+            onEditGrupo={(g) => { setGrupoEdit(g); setDrawerAtivo(true); }}
+            onRefresh={() => carregarDados(true)}
+          />
         )
       ) : (
         <ConsultaCarteira />
@@ -129,6 +146,13 @@ const CarteiraPage: React.FC = () => {
       >
         <ImportacaoCarteira onSuccess={() => { setDrawerImport(false); carregarDados(); }} />
       </SidePanel>
+
+      <AtivoRecomendadoDrawer
+        open={drawerAtivo}
+        onClose={() => setDrawerAtivo(false)}
+        grupoInicial={grupoEdit}
+        onSaved={() => carregarDados(true)}
+      />
     </div>
   );
 };

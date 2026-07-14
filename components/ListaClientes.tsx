@@ -4,7 +4,7 @@ import { Cliente, deletarCliente } from '../services/clienteService';
 import { formatarMoeda, formatarData } from '../utils/formatadores';
 import Confirmacao from './Confirmacao';
 import Tooltip from './UI/Tooltip';
-import { Eye, Edit3, Trash2, Inbox, AlertCircle, Clock, CalendarX } from 'lucide-react';
+import { Eye, Edit3, Trash2, Inbox, AlertCircle, Clock, CalendarX, PauseCircle } from 'lucide-react';
 import Badge from './UI/Badge';
 
 interface ListaClientesProps {
@@ -18,6 +18,7 @@ const PROXIMA_ACAO_CONFIG: Record<string, { icon: React.ReactNode; color: string
   late: { icon: <AlertCircle size={14} />, color: 'var(--danger)', bg: 'rgba(248,113,113,0.14)' },
   upcoming: { icon: <Clock size={14} />, color: 'var(--primary)', bg: 'rgba(16,185,129,0.14)' },
   pending: { icon: <CalendarX size={14} />, color: 'var(--warning)', bg: 'rgba(251,191,36,0.14)' },
+  pausado: { icon: <PauseCircle size={14} />, color: 'var(--warning)', bg: 'rgba(251,191,36,0.14)' },
 };
 
 const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView, onRefresh }) => {
@@ -56,8 +57,17 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
 
   const corProtecao = (pct: number) => pct >= 70 ? 'var(--primary)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)';
 
+  const descricaoInadimplencia = (inad: any) => {
+    if (!inad) return '';
+    const partes = [`${inad.episodios} episódio(s)`];
+    if (inad.diasMedios !== null && inad.diasMedios !== undefined) partes.push(`tempo médio ${inad.diasMedios}d`);
+    if (inad.inadimplenteAgora) partes.push(`pausado há ${inad.diasAtuais}d`);
+    return partes.join(' · ');
+  };
+
   const descricaoProximaAcao = (c: any) => {
     const acao = c.proximaAcao;
+    if (acao?.categoria === 'pausado') return `Atendimento pausado por inadimplência${c.inadimplencia ? ` — ${descricaoInadimplencia(c.inadimplencia)}` : ''}`;
     if (!acao) return 'Sem dados de agenda';
     if (acao.categoria === 'late') {
       const diffDays = acao.reuniao ? Math.max(0, Math.floor((Date.now() - new Date(acao.reuniao.data_reuniao).getTime()) / 86400000)) : 0;
@@ -107,9 +117,16 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
                         <span className="font-semibold text-main text-[13px] block leading-none">
                           {c.nome}
                         </span>
-                        {!c.temPlanoAtivo && (
-                          <Badge variant="warning" size="sm" className="mt-1">Sem plano ativo</Badge>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                          {c.inadimplencia?.inadimplenteAgora && (
+                            <Tooltip text={descricaoInadimplencia(c.inadimplencia)}>
+                              <Badge variant="danger" size="sm">Inadimplente</Badge>
+                            </Tooltip>
+                          )}
+                          {!c.temPlanoAtivo && (
+                            <Badge variant="warning" size="sm">Sem plano ativo</Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>

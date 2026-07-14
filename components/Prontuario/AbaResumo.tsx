@@ -9,6 +9,7 @@ import { investimentoService } from '../../services/investimentoService';
 import { dividasService } from '../../services/dividasService';
 import { protecaoService } from '../../services/protecaoService';
 import { acompanhamentoService } from '../../services/acompanhamentoService';
+import { inadimplenciaService, EpisodioInadimplencia } from '../../services/inadimplenciaService';
 import { formatarMoeda, formatarData } from '../../utils/formatadores';
 import { calcularTermometro } from '../../utils/termometroUtils';
 import { categorizarAgendaCliente } from '../../utils/agendaUtils';
@@ -18,7 +19,7 @@ import Badge from '../UI/Badge';
 import Button from '../UI/Button';
 import Confirmacao from '../Confirmacao';
 import ContratoFormDrawer from '../Contratos/ContratoFormDrawer';
-import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, Wallet, CreditCard, HeartPulse, ListChecks, AlertCircle, Ban } from 'lucide-react';
+import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, Wallet, CreditCard, HeartPulse, ListChecks, AlertCircle, Ban, PauseCircle } from 'lucide-react';
 
 interface AbaResumoProps {
   cliente: Cliente;
@@ -49,6 +50,12 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const [cancelando, setCancelando] = useState(false);
   const [cancelData, setCancelData] = useState({ data_cancelamento: '', data_inadimplencia: '' });
   const [removendo, setRemovendo] = useState(false);
+  // Pausa por inadimplência
+  const [episodios, setEpisodios] = useState<EpisodioInadimplencia[]>([]);
+  const [pausando, setPausando] = useState(false);
+  const [pausaData, setPausaData] = useState({ data_inicio: '', motivo: '' });
+  const [regularizando, setRegularizando] = useState(false);
+  const [regularizaData, setRegularizaData] = useState('');
   const [baixaTarget, setBaixaTarget] = useState<Parcela | null>(null);
   const [baixando, setBaixando] = useState(false);
 
@@ -57,7 +64,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cData, rData, roteiros, ativos, creditos, consorcios, score, itensChecklist] = await Promise.all([
+      const [cData, rData, roteiros, ativos, creditos, consorcios, score, itensChecklist, episData] = await Promise.all([
         obterContratosPorCliente(cliente.id!),
         reuniaoService.getPorCliente(cliente.id!),
         configService.getAcompanhamentos(),
@@ -65,8 +72,10 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         dividasService.getCreditos(cliente.id!),
         dividasService.getConsorcios(cliente.id!),
         protecaoService.getScoreCliente(cliente.id!),
-        acompanhamentoService.getItensCliente(cliente.id!)
+        acompanhamentoService.getItensCliente(cliente.id!),
+        inadimplenciaService.getEpisodios(cliente.id!)
       ]);
+      setEpisodios(episData || []);
 
       // Patrimônio investido (soma dos ativos) e saldo devedor (créditos + consórcios)
       setPatrimonioInvestido((ativos || []).reduce((acc: number, a: any) => acc + (a.valor_atual || 0), 0));
@@ -119,6 +128,8 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
     setLoadingParcelas(true);
     setModalExtrato(true);
     setCancelando(false);
+    setPausando(false);
+    setRegularizando(false);
     try {
       const data = await financeiroService.obterParcelasPorContrato(contrato.id);
       setParcelasContrato(data || []);
@@ -144,6 +155,42 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
       fetchData();
     } catch (err: any) {
       alert(`Erro ao cancelar contrato: ${err.message}`);
+    } finally { setIsSubmitting(false); }
+  };
+
+  const abrirPausa = () => {
+    setPausaData({ data_inicio: new Date().toISOString().split('T')[0], motivo: '' });
+    setPausando(true);
+  };
+
+  const handlePausar = async () => {
+    if (!contratoSelecionado || !pausaData.data_inicio) return;
+    setIsSubmitting(true);
+    try {
+      await inadimplenciaService.pausarContrato(contratoSelecionado.id, pausaData.data_inicio, pausaData.motivo || undefined);
+      setPausando(false);
+      setModalExtrato(false);
+      fetchData();
+    } catch (err: any) {
+      alert(`Erro ao pausar contrato: ${err.message}`);
+    } finally { setIsSubmitting(false); }
+  };
+
+  const abrirRegularizacao = () => {
+    setRegularizaData(new Date().toISOString().split('T')[0]);
+    setRegularizando(true);
+  };
+
+  const handleRegularizar = async () => {
+    if (!contratoSelecionado || !regularizaData) return;
+    setIsSubmitting(true);
+    try {
+      await inadimplenciaService.regularizarContrato(contratoSelecionado.id, regularizaData);
+      setRegularizando(false);
+      setModalExtrato(false);
+      fetchData();
+    } catch (err: any) {
+      alert(`Erro ao regularizar contrato: ${err.message}`);
     } finally { setIsSubmitting(false); }
   };
 
@@ -196,8 +243,20 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const checklistPct = checklist.total > 0 ? Math.round((checklist.concluidos / checklist.total) * 100) : 0;
   const endividamentoRatio = patrimonioInvestido > 0 ? saldoDevedor / patrimonioInvestido : 0;
 
+  // ─── Inadimplência (por contrato, agregado no cliente) ──────────────────
+  const contratosPausados = contratos.filter((c: any) => c.pausado_em);
+  const inadimplenteAgora = contratosPausados.length > 0;
+  const episodiosFechados = episodios.filter(e => e.data_fim);
+  const diasMediosInadimplencia = episodiosFechados.length > 0
+    ? Math.round(episodiosFechados.reduce((acc, e) => acc + Math.max(0, Math.round((new Date(e.data_fim! + 'T00:00:00').getTime() - new Date(e.data_inicio + 'T00:00:00').getTime()) / 86400000)), 0) / episodiosFechados.length)
+    : null;
+  const diasInadimplenteAtual = inadimplenteAgora
+    ? Math.max(0, Math.round((Date.now() - new Date(contratosPausados[0].pausado_em + 'T00:00:00').getTime()) / 86400000))
+    : 0;
+
   const irPara = (tab: string) => nav?.setActiveTab(tab);
   const pontosAtencao: { label: string; tab: string; sev: 'danger' | 'warning' }[] = [];
+  if (inadimplenteAgora) pontosAtencao.push({ label: `Contrato pausado por inadimplência há ${diasInadimplenteAtual}d`, tab: 'resumo', sev: 'danger' });
   if (!temPlanoAtivo) pontosAtencao.push({ label: 'Sem contrato de planejamento ativo', tab: 'resumo', sev: 'warning' });
   if (protecaoScore < 40) pontosAtencao.push({ label: `Proteção frágil (${Math.round(protecaoScore)}%)`, tab: 'protecao', sev: 'danger' });
   else if (protecaoScore < 70) pontosAtencao.push({ label: `Proteção parcial (${Math.round(protecaoScore)}%)`, tab: 'protecao', sev: 'warning' });
@@ -235,7 +294,9 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
           </div>
         </td>
         <td className="px-4 py-3 text-center">
-          <Badge variant={c.status === 'ativo' || c.status === 'concluido' ? 'success' : 'danger'} size="sm">{c.status}</Badge>
+          {c.pausado_em
+            ? <Badge variant="warning" size="sm">pausado</Badge>
+            : <Badge variant={c.status === 'ativo' || c.status === 'concluido' ? 'success' : 'danger'} size="sm">{c.status}</Badge>}
         </td>
       </tr>
     );
@@ -353,6 +414,19 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
           </Button>
         </div>
 
+        {/* Recap de inadimplência — recorrência e tempo médio (histórico do cliente) */}
+        {episodios.length > 0 && (
+          <div className="px-4 py-2.5 border-b border-subtle flex flex-wrap items-center gap-x-5 gap-y-1.5 bg-surface-2/40">
+            <div className="flex items-center gap-1.5">
+              <PauseCircle size={13} className="text-[color:var(--warning)]" />
+              <span className="text-[11px] font-semibold text-faint uppercase tracking-wider">Inadimplência</span>
+            </div>
+            <span className="text-[12px] text-muted">Estado: <span className="font-semibold" style={{ color: inadimplenteAgora ? 'var(--danger)' : 'var(--primary)' }}>{inadimplenteAgora ? `pausado há ${diasInadimplenteAtual}d` : 'regularizado'}</span></span>
+            <span className="text-[12px] text-muted">Episódios: <span className="font-semibold text-main">{episodios.length}</span></span>
+            <span className="text-[12px] text-muted">Tempo médio: <span className="font-semibold text-main">{diasMediosInadimplencia !== null ? `${diasMediosInadimplencia}d` : '—'}</span></span>
+          </div>
+        )}
+
         {vigentes.length === 0 ? (
           <div className="py-10 text-center text-faint font-medium text-[12px]">Nenhum contrato ativo.</div>
         ) : (
@@ -429,11 +503,20 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         subtitle={contratoSelecionado?.descricao}
         widthClass="max-w-2xl"
         footer={
-          contratoSelecionado && !cancelando && (
-            <div className="flex gap-2">
+          contratoSelecionado && !cancelando && !pausando && !regularizando && (
+            <div className="flex flex-wrap gap-2">
               <button onClick={() => handleEditContrato(contratoSelecionado)} className="flex-1 h-9 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center justify-center gap-1.5">
                 <Edit3 size={14} /> Ajustar
               </button>
+              {contratoSelecionado.status !== 'cancelado' && contratoSelecionado.status !== 'concluido' && (
+                contratoSelecionado.pausado_em
+                  ? <button onClick={abrirRegularizacao} className="h-9 px-4 rounded-lg border border-subtle text-[color:var(--primary)] font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center gap-1.5">
+                      <CheckCircle2 size={14} /> Regularizar
+                    </button>
+                  : <button onClick={abrirPausa} className="h-9 px-4 rounded-lg border border-subtle text-[color:var(--warning)] font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center gap-1.5">
+                      <PauseCircle size={14} /> Inadimplência
+                    </button>
+              )}
               {contratoSelecionado.status !== 'cancelado' && (
                 <button onClick={abrirCancelamento} className="h-9 px-4 rounded-lg border border-subtle text-[color:var(--warning)] font-semibold text-[12px] hover:bg-surface-2 transition-colors flex items-center gap-1.5">
                   <Ban size={14} /> Cancelar
@@ -489,7 +572,79 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
           </div>
         )}
 
-        {contratoSelecionado && !cancelando && (
+        {/* Pausa por inadimplência */}
+        {contratoSelecionado && pausando && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <PauseCircle size={15} className="text-[color:var(--warning)]" />
+              <h3 className="text-[14px] font-semibold text-main">Pausar por inadimplência</h3>
+            </div>
+            <div>
+              <label className={labelStyle}>Data de início da inadimplência</label>
+              <div className="relative">
+                <Calendar size={14} className="absolute left-3 top-[11px] text-faint" />
+                <input type="date" required value={pausaData.data_inicio}
+                  onChange={e => setPausaData({ ...pausaData, data_inicio: e.target.value })}
+                  className={`${inputStyle} pl-9`} />
+              </div>
+            </div>
+            <div>
+              <label className={labelStyle}>Motivo <span className="text-faint font-normal">(opcional)</span></label>
+              <input type="text" value={pausaData.motivo}
+                onChange={e => setPausaData({ ...pausaData, motivo: e.target.value })}
+                placeholder="Ex.: falha no pagamento da mensalidade"
+                className={inputStyle} />
+            </div>
+            <div className="bg-surface-2 border border-subtle rounded-lg p-3">
+              <p className="text-[11px] text-faint">
+                O contrato congela no tempo: parcelas a vencer a partir desta data saem dos recebíveis e o atendimento pausa.
+                Ao regularizar, os vencimentos futuros são empurrados pelo tempo que ficou pausado.
+              </p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setPausando(false)} className="h-9 px-4 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">Voltar</button>
+              <button type="button" onClick={handlePausar} disabled={isSubmitting || !pausaData.data_inicio}
+                className="flex-1 h-9 rounded-lg text-[#0b0e14] font-semibold text-[12px] transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--warning)' }}>
+                <PauseCircle size={14} /> {isSubmitting ? 'Pausando...' : 'Confirmar pausa'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Regularização */}
+        {contratoSelecionado && regularizando && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={15} className="text-[color:var(--primary)]" />
+              <h3 className="text-[14px] font-semibold text-main">Regularizar inadimplência</h3>
+            </div>
+            <div>
+              <label className={labelStyle}>Data da regularização</label>
+              <div className="relative">
+                <Calendar size={14} className="absolute left-3 top-[11px] text-faint" />
+                <input type="date" required value={regularizaData}
+                  onChange={e => setRegularizaData(e.target.value)}
+                  className={`${inputStyle} pl-9`} />
+              </div>
+              {contratoSelecionado.pausado_em && (
+                <p className="text-[11px] text-faint mt-1.5">
+                  Pausado desde {formatarData(contratoSelecionado.pausado_em)}. Os vencimentos futuros serão empurrados pelo nº de dias pausados.
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setRegularizando(false)} className="h-9 px-4 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">Voltar</button>
+              <button type="button" onClick={handleRegularizar} disabled={isSubmitting || !regularizaData}
+                className="flex-1 h-9 rounded-lg text-[#0b0e14] font-semibold text-[12px] transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: 'var(--primary)' }}>
+                <CheckCircle2 size={14} /> {isSubmitting ? 'Regularizando...' : 'Confirmar regularização'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {contratoSelecionado && !cancelando && !pausando && !regularizando && (
           <div className="space-y-5 animate-fade-in">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-faint">Situação atual</span>
