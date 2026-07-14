@@ -243,6 +243,10 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
 
     const selCls = 'bg-surface-2 border border-subtle text-main font-semibold rounded-[8px] px-2 h-8 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-40';
     const acaoBtn = 'flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold text-muted border border-subtle hover:text-primary hover:border-primary/40 transition-colors disabled:opacity-40 disabled:hover:text-muted disabled:hover:border-subtle';
+    // Extras: um cliente pode ter vários contratos extras simultâneos (seguros, consultorias avulsas...),
+    // então a coluna de contrato ajuda a identificar qual foi relacionado — desnecessária em planejamento
+    // (normalmente 1 contrato por cliente).
+    const gridColsAlvo = frente === 'extra' ? 'grid-cols-[9rem_1fr_6rem_7rem_4rem]' : 'grid-cols-[1fr_6rem_7rem_4rem]';
 
     return (
         <SidePanel
@@ -378,7 +382,8 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
 
                                     {l.clienteId && l.alvos.length > 0 && (
                                         <div className="rounded-lg border border-subtle overflow-hidden">
-                                            <div className="grid grid-cols-[1fr_6rem_7rem_4rem] gap-2 px-2.5 py-1.5 bg-surface-2 text-[9px] font-bold uppercase text-faint tracking-wider">
+                                            <div className={`grid ${gridColsAlvo} gap-2 px-2.5 py-1.5 bg-surface-2 text-[9px] font-bold uppercase text-faint tracking-wider`}>
+                                                {frente === 'extra' && <span>Contrato</span>}
                                                 <span>Vencimento</span>
                                                 <span className="text-right">Esperado líq.</span>
                                                 <span className="text-right">Valor conciliado</span>
@@ -387,7 +392,12 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
                                             {l.alvos.map((alvo, ai) => {
                                                 const parcela = parcelaPorId(l.clienteId, alvo.parcelaId);
                                                 return (
-                                                    <div key={ai} className="grid grid-cols-[1fr_6rem_7rem_4rem] gap-2 px-2.5 py-2 items-center border-t border-subtle">
+                                                    <div key={ai} className={`grid ${gridColsAlvo} gap-2 px-2.5 py-2 items-center border-t border-subtle`}>
+                                                        {frente === 'extra' && (
+                                                            <span className="text-[11px] font-semibold text-main truncate" title={parcela?.contratos?.descricao || ''}>
+                                                                {parcela?.contratos?.descricao || '—'}
+                                                            </span>
+                                                        )}
                                                         <select
                                                             value={alvo.parcelaId}
                                                             onChange={(e) => trocarParcelaAlvo(idx, ai, e.target.value)}
@@ -395,7 +405,9 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
                                                         >
                                                             <option value="">— selecionar —</option>
                                                             {parcelas.map(p => (
-                                                                <option key={p.id} value={p.id}>{formatarData(p.data_vencimento)}</option>
+                                                                <option key={p.id} value={p.id}>
+                                                                    {frente === 'extra' ? `${formatarData(p.data_vencimento)} · ${p.contratos?.descricao || 'sem contrato'}` : formatarData(p.data_vencimento)}
+                                                                </option>
                                                             ))}
                                                         </select>
                                                         <span className="text-right text-[11px] text-muted">
