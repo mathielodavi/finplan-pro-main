@@ -379,7 +379,7 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
                                     {l.clienteId && l.alvos.length > 0 && (
                                         <div className="rounded-lg border border-subtle overflow-hidden">
                                             <div className="grid grid-cols-[1fr_6rem_7rem_4rem] gap-2 px-2.5 py-1.5 bg-surface-2 text-[9px] font-bold uppercase text-faint tracking-wider">
-                                                <span>Vencimento</span>
+                                                <span>{frente === 'extra' ? 'Vencimento/Contrato' : 'Vencimento'}</span>
                                                 <span className="text-right">Esperado líq.</span>
                                                 <span className="text-right">Valor conciliado</span>
                                                 <span className="text-right">Ações</span>
@@ -395,7 +395,9 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
                                                         >
                                                             <option value="">— selecionar —</option>
                                                             {parcelas.map(p => (
-                                                                <option key={p.id} value={p.id}>{formatarData(p.data_vencimento)}</option>
+                                                                <option key={p.id} value={p.id}>
+                                                                    {frente === 'extra' ? `${formatarData(p.data_vencimento)} · ${p.contratos?.descricao || 'sem contrato'}` : formatarData(p.data_vencimento)}
+                                                                </option>
                                                             ))}
                                                         </select>
                                                         <span className="text-right text-[11px] text-muted">
