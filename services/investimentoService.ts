@@ -88,6 +88,11 @@ export const investimentoService = {
     const payload = {
       ...ativo,
       status: ativo.status || 'Manter',
+      // regime_tributario/tipo_previdencia têm CHECK "IS NULL OR IN (...)" — o form envia ''
+      // quando o select fica em "Selecione...", o que viola o constraint (só aceita NULL ou um
+      // dos valores válidos, nunca string vazia).
+      regime_tributario: ativo.regime_tributario || null,
+      tipo_previdencia: ativo.tipo_previdencia || null,
       consultor_id: user?.id,
       empresa_id: user?.user_metadata?.empresa_id || user?.id,
       // A coluna não tem trigger de banco — carimba aqui para refletir a edição manual.
