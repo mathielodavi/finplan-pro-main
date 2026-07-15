@@ -51,7 +51,14 @@ const C = {
   danger: '#f08c8c',
 };
 
-const serif = "Georgia, 'Times New Roman', serif";
+// Sistema tipográfico do relatório: Archivo (variable) para títulos/destaques, Instrument Sans
+// (variable) como fonte padrão do corpo — carregadas via Google Fonts, hospedadas fora do bundle
+// (o documento é renderizado por html2canvas, que lê fontes já carregadas na página via
+// `document.fonts`). ui-monospace fica reservado para números de pontuação de outros relatórios
+// (não há esse elemento aqui, mas o padrão é o mesmo do restante do produto).
+const FONT_DISPLAY = "'Archivo Variable', Archivo, sans-serif";
+const FONT_SANS = "'Instrument Sans Variable', 'Instrument Sans', sans-serif";
+const GOOGLE_FONTS_HREF = 'https://fonts.googleapis.com/css2?family=Archivo:wght@400..900&family=Instrument+Sans:wght@400..700&display=swap';
 
 const PAGE_W = 1050;
 const PAGE_H = 742; // proporção A4 paisagem (297×210)
@@ -75,12 +82,17 @@ const Pagina: React.FC<{ children: React.ReactNode; bg?: string }> = ({ children
   </div>
 );
 
+// Largura máxima de ~50% da página (menos as margens) — o texto nunca cruza a linha central,
+// então continua legível mesmo com o nome do cliente longo, sem disputar espaço com o número.
 const Rodape: React.FC<{ num: string; cliente: string; data: string }> = ({ num, cliente, data }) => (
   <div className="absolute bottom-0 left-0 right-0 flex justify-between items-center" style={{ padding: '0 64px 26px' }}>
-    <span style={{ color: C.faint, fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 600 }}>
+    <span style={{
+      color: C.faint, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600,
+      lineHeight: 1.4, maxWidth: PAGE_W / 2 - 64, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    }}>
       Simulação de Alocação Estratégica · {cliente} · {data}
     </span>
-    <span style={{ color: C.faint, fontSize: 10, fontWeight: 700 }}>{num}</span>
+    <span style={{ color: C.faint, fontSize: 10.5, fontWeight: 700 }}>{num}</span>
   </div>
 );
 
@@ -94,7 +106,7 @@ const DuasColunas: React.FC<{ esquerda: React.ReactNode; direita: React.ReactNod
 );
 
 const TituloColuna: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <h2 style={{ fontFamily: serif, color: C.cream, fontSize: 27, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 24 }}>{children}</h2>
+  <h2 style={{ fontFamily: FONT_DISPLAY, color: C.cream, fontSize: 27, fontWeight: 700, lineHeight: 1.3, letterSpacing: '-0.01em', marginBottom: 24 }}>{children}</h2>
 );
 
 const LabelVerde: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -170,19 +182,19 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
   const cardOrdens = (classe: typeof dados.ordens[0]) => (
     <div key={classe.classe}>
       <div className="flex justify-between items-baseline" style={{ marginBottom: 14 }}>
-        <h3 style={{ fontFamily: serif, color: C.cream, fontSize: 19, fontWeight: 700 }}>{classe.classe}</h3>
+        <h3 style={{ fontFamily: FONT_DISPLAY, color: C.cream, fontSize: 19, fontWeight: 700, lineHeight: 1.35 }}>{classe.classe}</h3>
         <span style={{ color: C.accent, fontSize: 12, fontWeight: 700 }}>{formatarMoeda(classe.fundo)}</span>
       </div>
       <div style={{ backgroundColor: C.panel, border: `1px solid ${C.panelBorder}`, borderRadius: 14, overflow: 'hidden' }}>
         {classe.ativos.map((at, i) => (
-          <div key={i} className="flex justify-between items-center" style={{ padding: '10px 18px', borderTop: i > 0 ? `1px solid ${C.panelBorder}` : 'none' }}>
+          <div key={i} className="flex justify-between items-center" style={{ padding: '11px 18px', borderTop: i > 0 ? `1px solid ${C.panelBorder}` : 'none' }}>
             <div style={{ minWidth: 0, paddingRight: 12 }}>
-              <p style={{ color: C.cream, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250 }}>{at.nome}</p>
-              <p style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{at.codigo || '—'}</p>
+              <p style={{ color: C.cream, fontSize: 11.5, fontWeight: 600, lineHeight: 1.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>{at.nome}</p>
+              <p style={{ color: C.faint, fontSize: 9.5, lineHeight: 1.5, marginTop: 2 }}>{at.codigo || '—'}</p>
             </div>
             <div className="text-right shrink-0">
-              <p style={{ color: C.accent, fontSize: 12, fontWeight: 700 }}>{formatarMoeda(at.aporte)}</p>
-              <p style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{at.cotas > 0 ? `${at.cotas} cota${at.cotas > 1 ? 's' : ''}` : 'valor financeiro'}</p>
+              <p style={{ color: C.accent, fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>{formatarMoeda(at.aporte)}</p>
+              <p style={{ color: C.faint, fontSize: 9.5, lineHeight: 1.5, marginTop: 2 }}>{at.cotas > 0 ? `${at.cotas} cota${at.cotas > 1 ? 's' : ''}` : 'valor financeiro'}</p>
             </div>
           </div>
         ))}
@@ -223,14 +235,16 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
   );
 
   return (
-    <div ref={innerRef} className="flex flex-col items-center gap-6">
+    <div ref={innerRef} className="flex flex-col items-center gap-6" style={{ fontFamily: FONT_SANS }}>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="stylesheet" href={GOOGLE_FONTS_HREF} />
 
       {/* ═══ CAPA ═══ */}
       <Pagina>
         <div className="flex h-full items-center" style={{ padding: '0 64px' }}>
           <div style={{ width: '58%', paddingRight: 48 }}>
             <LabelVerde>Simulação de Alocação Estratégica</LabelVerde>
-            <h1 style={{ fontFamily: serif, color: C.cream, fontSize: 52, fontWeight: 700, lineHeight: 1.12, letterSpacing: '-0.015em', margin: '22px 0 26px' }}>
+            <h1 style={{ fontFamily: FONT_DISPLAY, color: C.cream, fontSize: 52, fontWeight: 700, lineHeight: 1.12, letterSpacing: '-0.015em', margin: '22px 0 26px' }}>
               {dados.clienteNome}
             </h1>
             <p style={{ color: C.faint, fontSize: 14 }}>Emitido em {dados.dataStr}</p>
@@ -266,9 +280,11 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
             <div className="flex flex-col h-full">
               <TituloColuna>Sobre esta simulação</TituloColuna>
               <p style={{ color: C.body, fontSize: 13, lineHeight: 1.75 }}>
-                As projeções e distribuições apresentadas neste relatório referem-se exclusivamente ao uso da
-                carteira recomendada contratada, adequada ao perfil de risco informado por você e aplicada dentro
-                da estratégia de alocação de ativos construída a partir desse perfil.
+                Esta simulação não representa uma indicação pessoal de compra ou venda de ativos, mas sim um cálculo
+                das distribuições dos valores disponíveis para aportes frente às necessidade que a sua alocação
+                personalizada frente a carteira recomendada demandam. Os aportes simulados consideram a soma das
+                necessidades por Reserva de Emergência, Projetos e Independência Financeira, conforme levantados em
+                planejamento.
               </p>
               <p style={{ color: C.body, fontSize: 13, lineHeight: 1.75, marginTop: 14 }}>
                 Os valores simulados não constituem garantia de rentabilidade futura: representam o comportamento
@@ -276,9 +292,9 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
                 estratégia ou novos objetivos alteram os resultados — e devem ser refletidos em uma nova simulação.
               </p>
               <div style={{ marginTop: 'auto', paddingBottom: 8 }}>
-                <p style={{ color: C.faint, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 10 }}>Em parceria com</p>
+                <p style={{ color: C.faint, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 10 }}>Carteira Recomendada utilizada</p>
                 <a href="https://finclass.com" target="_blank" rel="noreferrer" data-pdf-href="https://finclass.com" className="inline-block">
-                  <span style={{ fontFamily: serif, color: C.cream, fontSize: 30, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                  <span style={{ fontFamily: FONT_DISPLAY, color: C.cream, fontSize: 30, fontWeight: 700, letterSpacing: '-0.01em' }}>
                     Finclass<span style={{ color: C.accent }}>.</span>
                   </span>
                 </a>
@@ -336,8 +352,8 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
               <p style={{ color: C.faint, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Alocação · alvo vs carteira</p>
               <div>
                 {dados.barData.map((d, i) => (
-                  <div key={i} style={{ marginBottom: 11 }}>
-                    <div className="flex justify-between" style={{ marginBottom: 4 }}>
+                  <div key={i} style={{ marginBottom: 14 }}>
+                    <div className="flex justify-between" style={{ marginBottom: 9 }}>
                       <span style={{ color: C.cream, fontSize: 11, fontWeight: 600 }}>{d.classe}</span>
                       <span style={{ color: C.faint, fontSize: 10.5 }}>Alvo {d.alvo.toFixed(1)}% · Carteira {d.atual.toFixed(1)}%</span>
                     </div>
@@ -427,13 +443,7 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
       {/* ═══ 04.. — DISTRIBUIÇÃO DE ATIVOS POR CLASSE ═══ */}
       {paginasOrdens.map((dupla, pIdx) => (
         <Pagina key={pIdx}>
-          <div style={{ padding: '56px 64px 0' }}>
-            <div className="flex items-baseline justify-between">
-              <TituloColuna>Distribuição de Ativos por Classe</TituloColuna>
-              <LabelVerde>Ordens de compra</LabelVerde>
-            </div>
-          </div>
-          <div className="flex" style={{ padding: '0 64px', gap: 40 }}>
+          <div className="flex" style={{ padding: '72px 64px 0', gap: 40 }}>
             <div className="w-1/2 space-y-6">{dupla[0] && cardOrdens(dupla[0])}</div>
             <div className="w-1/2 space-y-6">{dupla[1] && cardOrdens(dupla[1])}</div>
           </div>
@@ -444,12 +454,11 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
       {/* ═══ CONTRACAPA (verde, QR codes clicáveis) ═══ */}
       <Pagina bg={C.backCover}>
         <div className="flex flex-col items-center justify-center h-full" style={{ padding: '0 120px', textAlign: 'center' }}>
-          <h2 style={{ fontFamily: serif, color: C.cream, fontSize: 36, fontWeight: 700, lineHeight: 1.2, maxWidth: 640 }}>
+          <h2 style={{ fontFamily: FONT_DISPLAY, color: C.cream, fontSize: 36, fontWeight: 700, lineHeight: 1.2, maxWidth: 640 }}>
             Um bom aporte muda o mês. A estratégia certa muda o plano.
           </h2>
           <p style={{ color: '#d5e4dd', fontSize: 15, lineHeight: 1.7, maxWidth: 560, marginTop: 18 }}>
-            Conhece alguém que aportaria melhor com uma simulação assim? Compartilhe o meu contato —
-            ou fale comigo sobre o próximo movimento da sua carteira.
+            Conhece alguém que precise de um direcionamento assim? Compartilhe o meu contato.
           </p>
           <div className="flex" style={{ gap: 72, marginTop: 44 }}>
             {[

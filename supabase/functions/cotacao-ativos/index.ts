@@ -4,7 +4,9 @@
 // via a funcao SQL restrita public.get_brapi_token() (grant apenas para service_role) -
 // nunca fica exposto no bundle do navegador nem em requisicoes visiveis ao cliente.
 // O plano gratuito da brapi.dev permite 1 ativo por requisicao, entao consultamos
-// ticker por ticker (sequencial, server-side - sem problema de CORS aqui).
+// ticker por ticker (sequencial, server-side - sem problema de CORS aqui). Um pequeno
+// intervalo entre as chamadas evita estourar o rate-limit por minuto da brapi.dev em
+// lotes grandes (simulacoes com muitos ativos "Comprar" ao mesmo tempo).
 // Chamado por services/cotacaoService.ts (RebalanceamentoInvestimentos.tsx) para
 // pre-preencher o preco de mercado no simulador de aporte.
 
@@ -15,6 +17,8 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const esperar = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function buscarUmaCotacao(ticker: string, token: string): Promise<number | null> {
   const url = `https://brapi.dev/api/v2/stocks/quote?symbols=${encodeURIComponent(ticker)}`;
@@ -71,14 +75,18 @@ serve(async (req: Request) => {
     }
 
     const cotacoes: Record<string, number> = {};
-    // Sequencial (nao paralelo) para respeitar limite de requisicoes por minuto do plano gratuito.
-    for (const ticker of listaTickers) {
+    // Sequencial (nao paralelo) para respeitar limite de requisicoes por minuto do plano gratuito,
+    // com um pequeno intervalo entre chamadas para reduzir ainda mais o risco de rate-limit em
+    // lotes grandes (o cliente ja faz retry para os tickers que ainda assim falharem).
+    for (let i = 0; i < listaTickers.length; i++) {
+      const ticker = listaTickers[i];
       try {
         const preco = await buscarUmaCotacao(ticker, token as string);
         if (preco !== null) cotacoes[ticker] = preco;
       } catch (err) {
         console.error(`Erro ao buscar cotacao de ${ticker}:`, err);
       }
+      if (i < listaTickers.length - 1) await esperar(120);
     }
 
     return new Response(

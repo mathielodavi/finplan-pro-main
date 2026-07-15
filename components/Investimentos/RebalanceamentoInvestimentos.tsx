@@ -261,25 +261,49 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     return preco > 0 ? Math.floor(aporteEf / preco) : 0;
   };
 
-  // Cotação automática (edge function cotacao-ativos, via brapi.dev) para ativos de bolsa com
-  // ticker — só preenche o preço de mercado quando o usuário ainda não editou manualmente
-  // aquele ativo, e tenta cada ticker uma única vez por sessão (falha/ticker não encontrado
-  // nunca bloqueia: o campo simplesmente continua disponível para preenchimento manual).
-  const tickersTentadosRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const candidatos = distribuicaoAtivos.flatMap((c: any) => c.ativos || [])
-      .filter((a: any) => a.acao === 'COMPRAR' && a.ticker && manualSettings[a.id]?.preco_mercado === undefined && !tickersTentadosRef.current.has(a.ticker));
-    const tickers = Array.from(new Set(candidatos.map((a: any) => a.ticker)));
-    if (tickers.length === 0) return;
-    tickers.forEach(t => tickersTentadosRef.current.add(t));
+  // Ticker efetivo para a cotação: alguns fundos/ETFs (ex.: "ETF FIXA11 ou ETF IDKA11") foram
+  // cadastrados na Carteira Recomendada com o ticker real gravado no campo `cnpj` (ex.: cnpj
+  // "IDKA11", ticker "" vazio) — um resquício de importação antiga. Sem isso, esses ativos
+  // nunca entravam no lote de cotação (a.ticker vazio), mesmo aparecendo como "Comprar".
+  const tickerEfetivo = (a: any): string => (a.ticker || (a.cnpj && !a.cnpj.includes('/') ? a.cnpj : '')).trim();
 
-    cotacaoService.getCotacoes(tickers).then(cotacoes => {
-      candidatos.forEach((a: any) => {
-        if (cotacoes[a.ticker] && manualSettings[a.id]?.preco_mercado === undefined) {
-          updateManual(a.id, { preco_mercado: cotacoes[a.ticker] });
-        }
-      });
-    }).catch(() => {});
+  // Cotação automática (edge function cotacao-ativos, via brapi.dev) para ativos de bolsa com
+  // ticker — só preenche o preço de mercado quando o usuário ainda não editou manualmente aquele
+  // ativo. Em lotes grandes (muitos ativos "Comprar" na mesma simulação) alguns tickers podem
+  // falhar por rate-limit momentâneo da brapi.dev enquanto outros do mesmo lote são atendidos —
+  // por isso um ticker só é "desistido" após algumas tentativas (retryzinho automático a cada
+  // ~4s), em vez de ficar bloqueado pro resto da sessão na primeira falha.
+  const tentativasRef = useRef<Map<string, number>>(new Map());
+  const MAX_TENTATIVAS_COTACAO = 3;
+  useEffect(() => {
+    let cancelado = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const buscar = () => {
+      const candidatos = distribuicaoAtivos.flatMap((c: any) => c.ativos || [])
+        .filter((a: any) => a.acao === 'COMPRAR' && tickerEfetivo(a) && manualSettings[a.id]?.preco_mercado === undefined
+          && (tentativasRef.current.get(tickerEfetivo(a)) || 0) < MAX_TENTATIVAS_COTACAO);
+      const tickers = Array.from(new Set(candidatos.map((a: any) => tickerEfetivo(a))));
+      if (tickers.length === 0) return;
+      tickers.forEach(t => tentativasRef.current.set(t, (tentativasRef.current.get(t) || 0) + 1));
+
+      cotacaoService.getCotacoes(tickers).then(cotacoes => {
+        if (cancelado) return;
+        let faltouAlgum = false;
+        candidatos.forEach((a: any) => {
+          const tk = tickerEfetivo(a);
+          if (cotacoes[tk] && manualSettings[a.id]?.preco_mercado === undefined) {
+            updateManual(a.id, { preco_mercado: cotacoes[tk] });
+          } else if (!cotacoes[tk]) {
+            faltouAlgum = true;
+          }
+        });
+        if (faltouAlgum) timer = setTimeout(buscar, 4000);
+      }).catch(() => {});
+    };
+
+    buscar();
+    return () => { cancelado = true; if (timer) clearTimeout(timer); };
   }, [distribuicaoAtivos]);
 
 
@@ -506,6 +530,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     setBaixandoPdf(true);
     try {
       const nomeArq = `Simulacao_Alocacao_${(cliente?.nome || 'cliente').replace(/\s+/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+      await document.fonts.ready;
       await baixarPaginasComoPDF(relatorioRef.current, nomeArq);
     } catch (err: any) {
       toast.error('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
