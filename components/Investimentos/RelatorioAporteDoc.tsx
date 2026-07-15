@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { ComposedChart, Area, Line, XAxis, YAxis, ReferenceLine } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, ReferenceLine } from 'recharts';
 import { formatarMoeda } from '../../utils/formatadores';
 
 /**
@@ -45,6 +45,7 @@ const C = {
   body: '#b9bdb7',
   faint: '#878d86',
   accent: '#3ad6a0',
+  warning: '#e0b15c',
   greenCard: '#11493576',
   greenCardBorder: '#1d6b4e',
   backCover: '#175243',
@@ -372,14 +373,14 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
                 <XAxis dataKey="label" tick={{ fill: C.faint, fontSize: 8 }} tickLine={false} axisLine={{ stroke: '#2a2e2a' }} interval="preserveStartEnd" minTickGap={60} />
                 <YAxis tick={{ fill: C.faint, fontSize: 8 }} tickLine={false} axisLine={false} width={44}
                   tickFormatter={(v: number) => (v >= 1000000 ? `${(v / 1000000).toFixed(1)}M` : `${Math.round(v / 1000)}k`)} />
-                <ReferenceLine y={dados.curva[0]?.target || 0} stroke={C.cream} strokeOpacity={0.35} strokeDasharray="4 4" ifOverflow="extendDomain" />
-                <Area type="monotone" dataKey="plano" stroke="#3ad6a066" fill="#3ad6a01f" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                <ReferenceLine y={dados.curva[0]?.target || 0} stroke={C.cream} strokeOpacity={0.55} strokeDasharray="4 4" ifOverflow="extendDomain" />
+                <Line type="monotone" dataKey="plano" stroke={C.warning} strokeWidth={2} dot={false} isAnimationActive={false} />
                 <Line type="monotone" dataKey="real" stroke={C.accent} strokeWidth={2.2} dot={false} connectNulls isAnimationActive={false} />
               </ComposedChart>
               <div className="flex gap-4" style={{ marginTop: 8 }}>
-                <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: '#3ad6a0', opacity: 0.35, display: 'inline-block' }} /> Plano</span>
+                <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: C.warning, display: 'inline-block' }} /> Plano</span>
                 <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: C.accent, display: 'inline-block' }} /> Trajetória real</span>
-                <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 2, backgroundColor: C.cream, opacity: 0.4, display: 'inline-block' }} /> Capital de liberdade</span>
+                <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 2, backgroundColor: C.cream, opacity: 0.55, display: 'inline-block' }} /> Capital de liberdade</span>
               </div>
             </>
           }
