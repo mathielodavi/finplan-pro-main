@@ -164,7 +164,8 @@ function calcularMesesAteIdade(idadeAtual: number | null, idadeAlvo: number): nu
  * Trabalha com: patrimônio inicial (premissas), aporte mensal projetado, taxa real e o
  * patrimônio mensal real (snapshots do histórico).
  *
- * Série "plano": trajetória ideal com as premissas originais (aporte projetado + taxa premissa).
+ * Série "plano": trajetória IDEAL derivada só das premissas — aporte necessário (não o
+ * cadastrado) + taxa premissa, calibrada para cruzar o capital de liberdade na data planejada.
  * Série "real": histórico até hoje; daí em diante, projeção forward a partir do patrimônio atual
  * usando os parâmetros REALIZADOS (`opcoes.realizado`) quando disponíveis — rentabilidade média
  * apurada e aporte médio efetivo — para comparar de fato planejado vs realizado.
@@ -256,7 +257,23 @@ export function projetarIndependencia(
   const limiarPlano = (mes: number) => limiarNoMes(mes);
   const limiarReal = (mes: number) => limiarNoMes(mesesAteHoje + mes); // série real começa em "hoje"
 
-  const { serie: seriePlano, indiceIndependencia: indicePlano, valorIndependencia: valorIndependenciaPlano } = simularTrajetoria(params.patrimonio_inicial, mesesHorizonte, limiarPlano, taxaMensal, params.aporte_mensal, taxaConsumoMensal, rendaLiquidaMensal, permitirNegativos, mapEventosPlano);
+  // Aporte da série "plano": a linha "aposentadoria ideal" representa o PLANO — atingir o capital
+  // de liberdade EXATAMENTE na data planejada. O aporte cadastrado nas premissas pode estar aquém
+  // (ou além) do necessário; usá-lo aqui faria a curva ideal cruzar a meta fora da data planejada
+  // e num valor diferente do capital exibido (aposentar mais tarde exige menos capital, pelo
+  // limiar dinâmico). Por isso o plano usa o aporte IDEAL, derivado das próprias premissas: o
+  // necessário para levar o patrimônio inicial até `patrimonioNecessario` em `totalMesesPlano`,
+  // repondo os saques programados antes da data-alvo. A comparação com o aporte efetivamente
+  // praticado fica a cargo da série "real" (é ela que antecipa/atrasa a independência).
+  const saquesAntesDoAlvo = Array.from(mapEventosPlano.entries())
+    .filter(([mes]) => mes > 0 && mes <= totalMesesPlano)
+    .map(([mes, valor]) => ({ mesesAteSaque: mes, valor }));
+  const aporteNecessarioPlano = calcularAporteNecessario(params.patrimonio_inicial, patrimonioNecessario, totalMesesPlano, params.taxa_real_anual, saquesAntesDoAlvo);
+  // Arredondado para CIMA ao centavo: garante que o cruzamento com o limiar não escorregue um
+  // mês para frente por erro de ponto flutuante (a fórmula fecha a igualdade exata no mês alvo).
+  const aporteIdealMensal = aporteNecessarioPlano !== null ? Math.ceil(aporteNecessarioPlano * 100) / 100 : params.aporte_mensal;
+
+  const { serie: seriePlano, indiceIndependencia: indicePlano, valorIndependencia: valorIndependenciaPlano } = simularTrajetoria(params.patrimonio_inicial, mesesHorizonte, limiarPlano, taxaMensal, aporteIdealMensal, taxaConsumoMensal, rendaLiquidaMensal, permitirNegativos, mapEventosPlano);
   const { serie: serieRealForward, indiceIndependencia: indiceRealForward, valorIndependencia: valorIndependenciaReal } = simularTrajetoria(patrimonioAtual, mesesHorizonte, limiarReal, taxaForwardMensal, aporteForward, taxaConsumoMensal, rendaLiquidaMensal, permitirNegativos, mapEventosReal);
 
   // A série "real" só passa a existir a partir de hoje (antes disso é histórico real, não simulado),
