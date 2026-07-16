@@ -12,6 +12,13 @@ export interface PontoProjecao {
   plano: number;
   /** Patrimônio real (histórico) ou projeção forward a partir de hoje. */
   real: number | null;
+  /**
+   * Patrimônio "de Liberdade": projeção a partir de hoje no ritmo REAL (mesmo aporte/rentabilidade
+   * apurados da série "real"), mas sem se aposentar cedo — só passa a consumir na data planejada
+   * originalmente. Null antes de hoje (é uma hipótese, não histórico) e quando não há idade
+   * cadastrada. Só é relevante exibir quando `liberdadeFinanceiraReal` é true.
+   */
+  liberdade: number | null;
   /** Meta de capital de liberdade (constante). */
   target: number;
 }
@@ -33,7 +40,24 @@ export interface ResultadoProjecao {
   /** Valor do patrimônio no momento da independência de cada série (posiciona os marcadores no gráfico — com o limiar dinâmico, o cruzamento não acontece exatamente sobre a linha da meta planejada). */
   valorIndependenciaPlano: number | null;
   valorIndependenciaReal: number | null;
+  /**
+   * Patrimônio projetado aos 100 anos de idade do cliente pela série "liberdade": ritmo REAL
+   * (aporte/rentabilidade apurados), mas sem antecipar nem postergar a aposentadoria — o consumo
+   * só começa na data planejada originalmente. Null sem idade cadastrada. Ver `LIMIAR_LIBERDADE_FINANCEIRA`
+   * para a leitura "Independência" vs "Liberdade Financeira".
+   */
+  patrimonioSucessaoReal: number | null;
+  /** true quando `patrimonioSucessaoReal` supera `LIMIAR_LIBERDADE_FINANCEIRA` — cliente projeta sobra de patrimônio para sucessão, não só sustento até os 90/100. */
+  liberdadeFinanceiraReal: boolean;
 }
+
+/**
+ * Piso absoluto (R$) acima do qual o excedente projetado aos 100 anos deixa de ser só ruído de
+ * granularidade mensal da simulação — o cruzamento do limiar dinâmico é testado mês a mês, então
+ * quase sempre "passa" um pouco do valor exato mesmo para quem está exatamente em cima do plano —
+ * e passa a representar sucessão de verdade.
+ */
+export const LIMIAR_LIBERDADE_FINANCEIRA = 100_000;
 
 export interface ConsumoPatrimonio {
   /** Idade atual do cliente, em anos (null se não cadastrada — desativa a fase de consumo). */
@@ -95,6 +119,12 @@ interface TrajetoriaSimulada {
  * financeiro TOTAL do cliente (todos os objetivos), não só a fatia de independência. O saque do
  * mês é aplicado ANTES do teste do limiar, para um saque no próprio mês não disparar uma
  * independência que ele mesmo desfaz.
+ *
+ * `mesConsumoFixo` (opcional): quando informado, ignora `limiarIndependencia` inteiramente e
+ * dispara o consumo num mês FIXO (relativo ao início desta série), não quando o patrimônio cruza
+ * o limiar. Usado pela série "liberdade" (ver `projetarIndependencia`): simula o cliente seguindo
+ * o plano à risca — acumulando no ritmo informado até a data planejada, sem se aposentar mais
+ * cedo mesmo que o ritmo permita, nem mais tarde.
  */
 function simularTrajetoria(
   valorInicial: number,
@@ -105,11 +135,15 @@ function simularTrajetoria(
   taxaConsumoMensal: number,
   rendaAlvoMensal: number,
   permitirNegativos: boolean = false,
-  eventosSaque?: Map<number, number>
+  eventosSaque?: Map<number, number>,
+  mesConsumoFixo?: number | null
 ): TrajetoriaSimulada {
+  const deveConsumir = (mes: number, valor: number): boolean =>
+    (mesConsumoFixo !== undefined && mesConsumoFixo !== null) ? mes >= mesConsumoFixo : valor >= limiarIndependencia(mes);
+
   const serie: number[] = [valorInicial];
   let valor = valorInicial;
-  let consumindo = valor >= limiarIndependencia(0);
+  let consumindo = deveConsumir(0, valor);
   let indiceIndependencia: number | null = consumindo ? 0 : null;
   let valorIndependencia: number | null = consumindo ? valorInicial : null;
   for (let m = 1; m <= mesesTotal; m++) {
@@ -124,7 +158,7 @@ function simularTrajetoria(
       valor -= saque;
       if (!permitirNegativos) valor = Math.max(0, valor);
     }
-    if (!consumindo && valor >= limiarIndependencia(m)) {
+    if (!consumindo && deveConsumir(m, valor)) {
       consumindo = true;
       indiceIndependencia = m;
       valorIndependencia = valor;
@@ -203,8 +237,13 @@ export function projetarIndependencia(
   const idadeAtual = consumo?.idadeAtual ?? null;
   // Horizonte de SIMULAÇÃO (gráfico): até os 100 anos — mais largo que os 90 usados para
   // dimensionar a meta, para poder mostrar um patrimônio que ultrapasse a meta além dos 90.
+  // `mesesAteIdade100` é relativo a HOJE (idadeAtual); a série "plano" começa em `data_inicio`,
+  // que é `mesesAteHoje` meses ANTES de hoje — sem somar esse deslocamento, o horizonte fica
+  // curto demais para a série plano ter um ponto nos 100 anos (ela para de simular antes de
+  // chegar lá). A série "real" já está coberta de sobra, pois começa em hoje.
   const mesesAteIdade100 = calcularMesesAteIdade(idadeAtual, 100);
-  const mesesHorizonte = mesesAteIdade100 !== null ? Math.max(totalMesesPlano, mesesAteIdade100) : totalMesesPlano;
+  const mesesAteIdade100Abs = mesesAteIdade100 !== null ? mesesAteHoje + mesesAteIdade100 : null;
+  const mesesHorizonte = mesesAteIdade100Abs !== null ? Math.max(totalMesesPlano, mesesAteIdade100Abs) : totalMesesPlano;
   const taxaAlvoAnual = consumo ? consumo.taxaRentabilizacaoAnual : params.taxa_real_anual;
   const taxaConsumoMensal = consumo ? Math.pow(1 + consumo.taxaRentabilizacaoAnual / 100, 1 / 12) - 1 : taxaMensal;
 
@@ -276,6 +315,15 @@ export function projetarIndependencia(
   const { serie: seriePlano, indiceIndependencia: indicePlano, valorIndependencia: valorIndependenciaPlano } = simularTrajetoria(params.patrimonio_inicial, mesesHorizonte, limiarPlano, taxaMensal, aporteIdealMensal, taxaConsumoMensal, rendaLiquidaMensal, permitirNegativos, mapEventosPlano);
   const { serie: serieRealForward, indiceIndependencia: indiceRealForward, valorIndependencia: valorIndependenciaReal } = simularTrajetoria(patrimonioAtual, mesesHorizonte, limiarReal, taxaForwardMensal, aporteForward, taxaConsumoMensal, rendaLiquidaMensal, permitirNegativos, mapEventosReal);
 
+  // Série "Patrimônio de Liberdade": mesmo ritmo REAL (aporte/rentabilidade apurados) da série
+  // "real", mas sem se aposentar cedo — o consumo só começa na data ORIGINALMENTE planejada
+  // (`totalMesesPlano`), não quando o patrimônio cruza o limiar dinâmico. Isola o efeito de "não
+  // antecipar nem postergar": se o ritmo real está à frente do plano, o excedente continua
+  // rendendo até a data planejada em vez de ser "gasto" como aposentadoria antecipada — é essa
+  // folga extra que pode sobrar como patrimônio de sucessão aos 100 anos.
+  const mesConsumoFixoReal = Math.max(0, totalMesesPlano - mesesAteHoje);
+  const { serie: serieLiberdade } = simularTrajetoria(patrimonioAtual, mesesHorizonte, limiarReal, taxaForwardMensal, aporteForward, taxaConsumoMensal, rendaLiquidaMensal, permitirNegativos, mapEventosReal, mesConsumoFixoReal);
+
   // A série "real" só passa a existir a partir de hoje (antes disso é histórico real, não simulado),
   // então o índice de independência da série "real", que é relativo ao início do forward (hoje),
   // precisa ser deslocado pelo nº de meses entre o início do plano e hoje para virar um índice
@@ -289,6 +337,14 @@ export function projetarIndependencia(
   };
   const dataIndependenciaPlano = indicePlano !== null ? mesParaData(indicePlano) : null;
   const dataIndependenciaReal = indiceRealAbsoluto !== null ? mesParaData(indiceRealAbsoluto) : null;
+
+  // Patrimônio remanescente aos 100 anos (série "liberdade" — data fixa, sem antecipar/postergar):
+  // `mesesAteIdade100` já é relativo a HOJE, mesma base de `serieLiberdade`, que também começa em
+  // hoje — não precisa de deslocamento adicional.
+  const patrimonioSucessaoReal = mesesAteIdade100 !== null
+    ? Math.round(serieLiberdade[Math.min(mesesAteIdade100, serieLiberdade.length - 1)])
+    : null;
+  const liberdadeFinanceiraReal = patrimonioSucessaoReal !== null && patrimonioSucessaoReal >= LIMIAR_LIBERDADE_FINANCEIRA;
 
   const chartData: PontoProjecao[] = [];
 
@@ -310,6 +366,7 @@ export function projetarIndependencia(
   if (indicePlano !== null) indicesAmostra.add(indicePlano);
   if (indiceRealAbsoluto !== null && indiceRealAbsoluto <= mesesHorizonte) indicesAmostra.add(indiceRealAbsoluto);
   if (mesesAteHoje <= mesesHorizonte) indicesAmostra.add(mesesAteHoje);
+  if (mesesAteIdade100Abs !== null && mesesAteIdade100Abs <= mesesHorizonte) indicesAmostra.add(mesesAteIdade100Abs);
   (historico || []).forEach(h => {
     const idx = indiceDoHistorico(new Date(h.data_historico));
     if (idx >= 0 && idx <= mesesHorizonte) indicesAmostra.add(idx);
@@ -326,10 +383,13 @@ export function projetarIndependencia(
 
     // 2. Linha real (histórico até hoje, projeção daí em diante a partir do patrimônio atual)
     let valorReal: number | null = mapHistorico.get(label) ?? null;
+    const mesesForward = Math.max(0, (dataPonto.getFullYear() - hoje.getFullYear()) * 12 + (dataPonto.getMonth() - hoje.getMonth()));
     if (valorReal === null && dataPonto >= hoje) {
-      const mesesForward = Math.max(0, (dataPonto.getFullYear() - hoje.getFullYear()) * 12 + (dataPonto.getMonth() - hoje.getMonth()));
       valorReal = serieRealForward[Math.min(mesesForward, serieRealForward.length - 1)];
     }
+
+    // 3. Linha "liberdade": só existe a partir de hoje (é uma hipótese, não histórico).
+    const valorLiberdade = dataPonto >= hoje ? serieLiberdade[Math.min(mesesForward, serieLiberdade.length - 1)] : null;
 
     chartData.push({
       mes: i,
@@ -338,6 +398,7 @@ export function projetarIndependencia(
       label,
       plano: Math.round(valorPlano),
       real: (valorReal !== null && !isNaN(valorReal)) ? Math.round(valorReal) : null,
+      liberdade: (valorLiberdade !== null && !isNaN(valorLiberdade)) ? Math.round(valorLiberdade) : null,
       target: Math.round(patrimonioNecessario),
     });
   }
@@ -357,6 +418,8 @@ export function projetarIndependencia(
     mesIndependenciaReal: indiceRealAbsoluto !== null && indiceRealAbsoluto <= mesesHorizonte ? indiceRealAbsoluto : null,
     valorIndependenciaPlano,
     valorIndependenciaReal: indiceRealAbsoluto !== null && indiceRealAbsoluto <= mesesHorizonte ? valorIndependenciaReal : null,
+    patrimonioSucessaoReal,
+    liberdadeFinanceiraReal,
   };
 }
 

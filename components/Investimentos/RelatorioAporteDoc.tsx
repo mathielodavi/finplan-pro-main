@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { ComposedChart, Line, XAxis, YAxis, ReferenceLine } from 'recharts';
+import { ComposedChart, Line, Area, XAxis, YAxis, ReferenceLine } from 'recharts';
 import { formatarMoeda } from '../../utils/formatadores';
 
 /**
@@ -25,8 +25,12 @@ export interface DadosRelatorioAporte {
   aporteMetaMensal: number | null;
   /** meses (real − planejado): positivo = atraso, negativo = antecipação, null = indisponível */
   deltaPrazoMeses: number | null;
+  /** Patrimônio projetado aos 100 anos seguindo o plano à risca (data planejada, sem antecipar/postergar) — null sem idade cadastrada. */
+  patrimonioSucessao: number | null;
+  /** true quando `patrimonioSucessao` supera o piso de materialidade (ver LIMIAR_LIBERDADE_FINANCEIRA em independenciaUtils) — projeta sobra de patrimônio para sucessão, não só sustento. */
+  liberdadeFinanceira: boolean;
   barData: { classe: string; alvo: number; atual: number; cor: string }[];
-  curva: { label: string; plano: number; real: number | null; target: number }[];
+  curva: { label: string; plano: number; real: number | null; liberdade: number | null; target: number }[];
   reserva: { alvo: number; acumulado: number; aportarEm: { nome: string; valor: number }[] };
   projetos: { nome: string; alvo: number; acumulado: number }[];
   projetosAportarEm: { nome: string; valor: number }[];
@@ -50,6 +54,7 @@ const C = {
   greenCardBorder: '#1d6b4e',
   backCover: '#175243',
   danger: '#f08c8c',
+  liberdade: '#b7a4f0',
 };
 
 // Sistema tipográfico do relatório: Archivo (variable) para títulos/destaques, Instrument Sans
@@ -345,6 +350,13 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
                     : <>No ritmo de carteira desta simulação, o plano de independência tende a <span style={{ color: C.danger, fontWeight: 700 }}>atrasar {formatarAnosMeses(delta)}</span>.</>
                 ) : delta !== null ? <>No ritmo de carteira desta simulação, o plano de independência segue dentro do prazo planejado.</> : null}
               </p>
+              {dados.patrimonioSucessao !== null && (
+                <p style={{ color: C.body, fontSize: 12, lineHeight: 1.7, marginTop: 10 }}>
+                  {dados.liberdadeFinanceira
+                    ? <>No ritmo atual, a projeção aponta <span style={{ color: C.warning, fontWeight: 700 }}>Liberdade Financeira</span>: aos 100 anos, o patrimônio estimado para sucessão é de <span style={{ color: C.warning, fontWeight: 700 }}>{formatarMoeda(dados.patrimonioSucessao)}</span>.</>
+                    : <>No ritmo atual, a projeção aponta <span style={{ color: C.cream, fontWeight: 700 }}>Independência Financeira</span>: o patrimônio sustenta a renda-alvo, sem sobra relevante projetada para sucessão aos 100 anos.</>}
+                </p>
+              )}
             </>
           }
           direita={
@@ -376,11 +388,17 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
                 <ReferenceLine y={dados.curva[0]?.target || 0} stroke={C.cream} strokeOpacity={0.55} strokeDasharray="4 4" ifOverflow="extendDomain" />
                 <Line type="monotone" dataKey="plano" stroke={C.warning} strokeWidth={2} dot={false} isAnimationActive={false} />
                 <Line type="monotone" dataKey="real" stroke={C.accent} strokeWidth={2.2} dot={false} connectNulls isAnimationActive={false} />
+                {dados.liberdadeFinanceira && (
+                  <Area type="monotone" dataKey="liberdade" stroke={C.liberdade} strokeWidth={1.8} strokeDasharray="4 3" fill={C.liberdade} fillOpacity={0.14} dot={false} connectNulls isAnimationActive={false} />
+                )}
               </ComposedChart>
               <div className="flex gap-4" style={{ marginTop: 8 }}>
                 <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: C.warning, display: 'inline-block' }} /> Plano</span>
                 <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: C.accent, display: 'inline-block' }} /> Trajetória real</span>
                 <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 2, backgroundColor: C.cream, opacity: 0.55, display: 'inline-block' }} /> Capital de liberdade</span>
+                {dados.liberdadeFinanceira && (
+                  <span className="flex items-center gap-1.5" style={{ color: C.faint, fontSize: 9.5 }}><span style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: C.liberdade, display: 'inline-block' }} /> Patrimônio de liberdade</span>
+                )}
               </div>
             </>
           }

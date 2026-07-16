@@ -148,6 +148,19 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   const [finishing, setFinishing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [resumo, setResumo] = useState<any>(null);
+  const [frentesExcluidas, setFrentesExcluidas] = useState<Set<'reserva' | 'projetos' | 'independencia'>>(new Set());
+  const alternarFrenteExcluida = (frente: 'reserva' | 'projetos' | 'independencia') => {
+    setFrentesExcluidas(prev => {
+      const next = new Set(prev);
+      if (next.has(frente)) {
+        next.delete(frente);
+      } else if (next.size < 2) {
+        // Mantém sempre pelo menos uma frente ativa — não há para onde redistribuir se as três forem excluídas.
+        next.add(frente);
+      }
+      return next;
+    });
+  };
   const [rebateClasses, setRebateClasses] = useState<any[]>([]);
   const [patrimonioProjetado, setPatrimonioProjetado] = useState(0);
   const [distribuicaoAtivos, setDistribuicaoAtivos] = useState<any[]>([]);
@@ -321,14 +334,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
         });
         const vendasPorObj = { reserva: vendasPorDestino.reserva, projetos: vendasPorDestino.projetos, independencia: vendasPorDestino.independencia };
         const aporteEfetivo = aporte + vendasPorDestino.livre;
-        const result = investimentoService.calcularRebateOtimo(ativos, aporteEfetivo, cliente?.reserva_recomendada || 0, projetos, modelo.classes || [], vendasPorObj);
+        const result = investimentoService.calcularRebateOtimo(ativos, aporteEfetivo, cliente?.reserva_recomendada || 0, projetos, modelo.classes || [], vendasPorObj, frentesExcluidas);
         setResumo(result.resumo);
         setRebateClasses(result.distribuicaoIndependencia);
         setPatrimonioProjetado(result.totalIndepProjetado);
       } catch (err) { console.error(err); }
     }, 400);
     return () => clearTimeout(h);
-  }, [modo, aporte, estrategiaId, vendas, cliente, projetos, modelosDisponiveis, ativos]);
+  }, [modo, aporte, estrategiaId, vendas, cliente, projetos, modelosDisponiveis, ativos, frentesExcluidas]);
 
   // Recálculo reativo do Simulador Tático — substitui o antigo botão "Próximo: Simulador Tático".
   useEffect(() => {
@@ -443,7 +456,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   }, [ultimoRebal]);
 
   // Habilitação progressiva das seções da página única.
-  const temAporteEfetivo = useMemo(() => distribuicaoAtivos.some((c: any) => (c.ativos || []).some((a: any) => (manualSettings[a.id]?.aporte_efetivo || 0) > 0.01)), [distribuicaoAtivos, manualSettings]);
+  // Considera o valor SUGERIDO como efetivo quando não há override manual — mesma regra de
+  // fallback já usada em `cotasAtuais` e na montagem do relatório (ver `aporteEf` acima e
+  // `manualSettings[a.id]?.aporte_efetivo || a.aporte_sugerido` na construção de `dadosRelatorio`).
+  // Sem isso, quando reserva e projetos ficam sem meta (ex.: "Não aportar este mês" nas duas, ou
+  // reserva já 100% coberta e cliente sem projetos), o botão "Gerar Relatório" ficava bloqueado
+  // mesmo com a tabela tática já mostrando valores sugeridos prontos — exigia redigitar cada linha
+  // manualmente antes de liberar, inconsistente com o resto do fluxo.
+  const temAporteEfetivo = useMemo(() => distribuicaoAtivos.some((c: any) => (c.ativos || []).some((a: any) => ((manualSettings[a.id]?.aporte_efetivo || a.aporte_sugerido || 0)) > 0.01)), [distribuicaoAtivos, manualSettings]);
   const temReservaAlloc = useMemo(() => reservaAlloc.some(r => r.valor > 0.01), [reservaAlloc]);
   const temProjetosAlloc = useMemo(() => projetosAlloc.some(p => p.valor > 0.01), [projetosAlloc]);
   const secEnabled: Record<string, boolean> = {
@@ -565,6 +585,8 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       deltaPrazoMeses: projecaoIndep.mesIndependenciaReal !== null
         ? projecaoIndep.mesIndependenciaReal - prazoIndepInfo.prazoInicialMeses
         : null,
+      patrimonioSucessao: projecaoIndep.patrimonioSucessaoReal,
+      liberdadeFinanceira: projecaoIndep.liberdadeFinanceiraReal,
       barData: barDataRelatorio,
       curva: projecaoIndep.chartData,
       reserva: {
@@ -893,9 +915,27 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
           <SectionShell id="sec-distribuicao" numero={2} hideOnPrint titulo="Resumo da Distribuição" descricao="Alvos calculados para Reserva, Projetos e Independência" disabled={!secEnabled['sec-distribuicao']} hint="Defina o capital e a estratégia para calcular a distribuição">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className={cardCls}><ShieldCheck size={18} className="mb-3" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Reserva</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.reserva || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'reserva') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
-              <div className={cardCls}><Target size={18} className="mb-3" style={{ color: 'var(--info)' }} /><p className={kpiLabel}>Alvo Projetos</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.projetos || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'projetos') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
-              <div className={cardCls}><Bird size={18} className="mb-3" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Independência</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.independencia || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'independencia') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
+              {([
+                { key: 'reserva' as const, label: 'Alvo Reserva', icon: <ShieldCheck size={18} className="mb-3" style={{ color: 'var(--primary)' }} />, valor: resumo?.reserva || 0 },
+                { key: 'projetos' as const, label: 'Alvo Projetos', icon: <Target size={18} className="mb-3" style={{ color: 'var(--info)' }} />, valor: resumo?.projetos || 0 },
+                { key: 'independencia' as const, label: 'Alvo Independência', icon: <Bird size={18} className="mb-3" style={{ color: 'var(--primary)' }} />, valor: resumo?.independencia || 0 },
+              ]).map(({ key, label, icon, valor }) => {
+                const excluida = frentesExcluidas.has(key);
+                const podeExcluir = frentesExcluidas.size < 2 || excluida;
+                return (
+                  <div key={key} className={`${cardCls} transition-opacity ${excluida ? 'opacity-60' : ''}`}>
+                    {icon}
+                    <p className={kpiLabel}>{label}</p>
+                    <p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(valor)}</p>
+                    {(Object.values(vendas) as VendaItem[]).some(v => v.destino === key) && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}
+                    {excluida && <p className="text-[11px] font-semibold mt-2" style={{ color: 'var(--warning)' }}>Aporte redistribuído para as demais frentes</p>}
+                    <label className={`flex items-center gap-1.5 mt-3 select-none ${podeExcluir ? 'cursor-pointer' : 'cursor-not-allowed'}`} title={!podeExcluir ? 'Ao menos uma frente precisa continuar ativa para receber o aporte.' : undefined}>
+                      <input type="checkbox" checked={excluida} disabled={!podeExcluir} onChange={() => alternarFrenteExcluida(key)} className="h-3.5 w-3.5 accent-[color:var(--primary)]" />
+                      <span className="text-[11px] font-medium text-faint">Não aportar este mês</span>
+                    </label>
+                  </div>
+                );
+              })}
             </div>
           </SectionShell>
 
