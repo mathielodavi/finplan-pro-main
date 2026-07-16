@@ -95,6 +95,10 @@ const Rodape: React.FC<{ num: string; cliente: string; data: string }> = ({ num,
     <span style={{
       color: C.faint, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600,
       lineHeight: 1.4, maxWidth: PAGE_W / 2 - 64, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      // Folga vertical no clip: overflow:hidden (necessário p/ o ellipsis de 1 linha) faz o
+      // html2canvas cortar o topo/base dos glifos; o padding entra dentro da caixa de clip e
+      // a margem negativa compensa a posição, evitando o corte sem alterar o layout.
+      paddingTop: 3, paddingBottom: 3, marginTop: -3, marginBottom: -3,
     }}>
       Simulação de Alocação Estratégica · {cliente} · {data}
     </span>
@@ -194,8 +198,11 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
       <div style={{ backgroundColor: C.panel, border: `1px solid ${C.panelBorder}`, borderRadius: 14, overflow: 'hidden' }}>
         {classe.ativos.map((at, i) => (
           <div key={i} className="flex justify-between items-center" style={{ padding: '11px 18px', borderTop: i > 0 ? `1px solid ${C.panelBorder}` : 'none' }}>
-            <div style={{ minWidth: 0, paddingRight: 12 }}>
-              <p style={{ color: C.cream, fontSize: 11.5, fontWeight: 600, lineHeight: 1.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>{at.nome}</p>
+            <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+              {/* Sem overflow:hidden/ellipsis: o html2canvas corta glifos altos (maiúsculas em
+                  negrito) na vertical quando há overflow:hidden no elemento de texto — o nome
+                  quebra em duas linhas em vez de truncar, evitando o corte no PDF. */}
+              <p style={{ color: C.cream, fontSize: 11.5, fontWeight: 600, lineHeight: 1.5, wordBreak: 'break-word' }}>{at.nome}</p>
               <p style={{ color: C.faint, fontSize: 9.5, lineHeight: 1.5, marginTop: 2 }}>{at.codigo || '—'}</p>
             </div>
             <div className="text-right shrink-0">
@@ -435,9 +442,11 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
                 <div style={{ backgroundColor: C.panel, border: `1px solid ${C.panelBorder}`, borderRadius: 14, overflow: 'hidden' }}>
                   {dados.vendas.map((v, i) => (
                     <div key={i} className="flex justify-between items-center" style={{ padding: '12px 18px', borderTop: i > 0 ? `1px solid ${C.panelBorder}` : 'none' }}>
-                      <div style={{ minWidth: 0, paddingRight: 12 }}>
-                        <p style={{ color: C.cream, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 250 }}>{v.nome}</p>
-                        <p style={{ color: C.faint, fontSize: 10, marginTop: 2 }}>{v.codigo || '—'} · destino: {v.destino}</p>
+                      <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+                        {/* Sem overflow:hidden/ellipsis (ver nota em cardOrdens): evita o corte
+                            vertical de glifos pelo html2canvas — o nome quebra em duas linhas. */}
+                        <p style={{ color: C.cream, fontSize: 12, fontWeight: 600, lineHeight: 1.5, wordBreak: 'break-word' }}>{v.nome}</p>
+                        <p style={{ color: C.faint, fontSize: 10, lineHeight: 1.5, marginTop: 2 }}>{v.codigo || '—'} · destino: {v.destino}</p>
                       </div>
                       <span style={{ color: C.danger, fontSize: 12.5, fontWeight: 700 }} className="shrink-0">{formatarMoeda(v.valor)}</span>
                     </div>
