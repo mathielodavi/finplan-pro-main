@@ -15,7 +15,7 @@ import { CHART_GRID, CHART_COLORS, axisTick, tooltipStyle, tooltipCursor } from 
 import SidePanel from '../UI/SidePanel';
 import Button from '../UI/Button';
 import ObjetivoFormDrawer from './ObjetivoFormDrawer';
-import { ShieldCheck, Target, Settings, SlidersHorizontal, Plus, TrendingUp, Clock, Bird } from 'lucide-react';
+import { ShieldCheck, Target, Settings, SlidersHorizontal, Plus, TrendingUp, Clock, Bird, Sparkles } from 'lucide-react';
 import { toast } from '../../utils/toast';
 
 const MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -39,6 +39,14 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
    // Controles do gráfico de independência (paridade com o simulador de referência)
    const [zoom, setZoom] = useState<'2' | '5' | '10' | 'max'>('max');
    const [negativos, setNegativos] = useState(false);
+   const [seriesOcultas, setSeriesOcultas] = useState<Set<'plano' | 'real' | 'liberdade'>>(new Set());
+   const alternarSerie = (serie: 'plano' | 'real' | 'liberdade') => {
+      setSeriesOcultas(prev => {
+         const next = new Set(prev);
+         next.has(serie) ? next.delete(serie) : next.add(serie);
+         return next;
+      });
+   };
    // Cópia de trabalho das premissas enquanto o drawer simula ao vivo (null = sem simulação ativa)
    const [simulacao, setSimulacao] = useState<PremissasIndependencia | null>(null);
    const [premSalvas, setPremSalvas] = useState(false);
@@ -541,6 +549,10 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
                                  <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.35} />
                                  <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
                               </linearGradient>
+                              <linearGradient id="gradLiberdade" x1="0" y1="0" x2="0" y2="1">
+                                 <stop offset="0%" stopColor={CHART_COLORS.purple} stopOpacity={0.28} />
+                                 <stop offset="100%" stopColor={CHART_COLORS.purple} stopOpacity={0} />
+                              </linearGradient>
                            </defs>
                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_GRID} />
                            <XAxis
@@ -563,14 +575,26 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
                            />
                            <Legend content={() => (
                               <div className="flex justify-center flex-wrap gap-4 mt-2">
-                                 <span className="flex items-center gap-1.5 text-[11px] text-muted"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.warning }} /> Aposentadoria ideal</span>
-                                 <span className="flex items-center gap-1.5 text-[11px] text-muted"><span className="h-2 w-2 rounded-full bg-[color:var(--primary)]" /> Patrimônio real</span>
+                                 <button type="button" onClick={() => alternarSerie('plano')} className="flex items-center gap-1.5 text-[11px] text-muted transition-opacity" style={{ opacity: seriesOcultas.has('plano') ? 0.35 : 1 }}>
+                                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.warning }} /> Aposentadoria ideal
+                                 </button>
+                                 <button type="button" onClick={() => alternarSerie('real')} className="flex items-center gap-1.5 text-[11px] text-muted transition-opacity" style={{ opacity: seriesOcultas.has('real') ? 0.35 : 1 }}>
+                                    <span className="h-2 w-2 rounded-full bg-[color:var(--primary)]" /> Patrimônio real
+                                 </button>
+                                 {projecao.liberdadeFinanceiraReal && (
+                                    <button type="button" onClick={() => alternarSerie('liberdade')} className="flex items-center gap-1.5 text-[11px] text-muted transition-opacity" style={{ opacity: seriesOcultas.has('liberdade') ? 0.35 : 1 }}>
+                                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS.purple }} /> Patrimônio de liberdade
+                                    </button>
+                                 )}
                               </div>
                            )} />
                            {negativos && <ReferenceLine y={0} stroke="#454c63" />}
                            <ReferenceLine y={projecao.patrimonioNecessario} stroke="#3a4254" strokeDasharray="5 5" />
-                           <Line type="monotone" dataKey="plano" name="Aposentadoria ideal" stroke={CHART_COLORS.warning} strokeWidth={2} dot={false} />
-                           <Area type="monotone" dataKey="real" name="Patrimônio real" stroke="var(--primary)" strokeWidth={2.5} fill="url(#gradReal)" connectNulls />
+                           <Line type="monotone" dataKey="plano" name="Aposentadoria ideal" stroke={CHART_COLORS.warning} strokeWidth={2} dot={false} hide={seriesOcultas.has('plano')} />
+                           <Area type="monotone" dataKey="real" name="Patrimônio real" stroke="var(--primary)" strokeWidth={2.5} fill="url(#gradReal)" connectNulls hide={seriesOcultas.has('real')} />
+                           {projecao.liberdadeFinanceiraReal && (
+                              <Area type="monotone" dataKey="liberdade" name="Patrimônio de liberdade" stroke={CHART_COLORS.purple} strokeWidth={2} strokeDasharray="4 3" fill="url(#gradLiberdade)" connectNulls hide={seriesOcultas.has('liberdade')} />
+                           )}
                            {/* Marcadores sem rótulo fixo — as informações aparecem no Tooltip ao passar o mouse */}
                            {mesVisivel(projecao.mesesAteHoje) && (
                               <ReferenceDot x={projecao.mesesAteHoje} y={patrimonioFinanceiroTotal} r={4} fill="var(--primary)" stroke="var(--surface)" strokeWidth={2} isFront />
@@ -607,8 +631,8 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
                   </p>
                )}
 
-               {/* Prazo planejado vs. atualizado + rentabilidade realizada */}
-               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-subtle">
+               {/* Prazo planejado vs. atualizado + rentabilidade realizada + projeção de liberdade */}
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 pt-3 border-t border-subtle">
                   <div className="flex items-center gap-2.5">
                      <Clock size={15} className="text-faint shrink-0" />
                      <div>
@@ -635,6 +659,24 @@ const ResumoInvestimentos = ({ clienteId, ativos, cliente, onRefresh, onNavigate
                         </p>
                      </div>
                   </button>
+                  <div
+                     className="flex items-center gap-2.5"
+                     title={projecao.patrimonioSucessaoReal === null
+                        ? 'Cadastre a data de nascimento para simular o consumo até os 100 anos'
+                        : `Patrimônio projetado aos 100 anos, no ritmo atual de aportes e rentabilidade: ${formatarMoeda(projecao.patrimonioSucessaoReal)}`}
+                  >
+                     <Sparkles size={15} className="shrink-0" style={{ color: projecao.liberdadeFinanceiraReal ? 'var(--warning)' : 'var(--faint)' }} />
+                     <div>
+                        <p className={kpiLabel}>Projeção de liberdade financeira</p>
+                        <p className={`text-[14px] font-semibold ${projecao.liberdadeFinanceiraReal ? '' : 'text-main'}`} style={projecao.liberdadeFinanceiraReal ? { color: 'var(--warning)' } : undefined}>
+                           {projecao.patrimonioSucessaoReal === null
+                              ? '—'
+                              : projecao.liberdadeFinanceiraReal
+                                 ? `Liberdade · ${formatarMoeda(projecao.patrimonioSucessaoReal)}`
+                                 : 'Independência'}
+                        </p>
+                     </div>
+                  </div>
                </div>
             </div>
          </div>

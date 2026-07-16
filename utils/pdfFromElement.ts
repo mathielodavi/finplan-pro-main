@@ -122,6 +122,50 @@ export async function baixarElementoComoPDFPaginado(el: HTMLElement, filename: s
   pdf.save(filename);
 }
 
+/**
+ * Gera um PDF A4 PAISAGEM onde cada descendente marcado com `data-pdf-page` vira exatamente uma
+ * página (o elemento já deve ter a proporção A4 paisagem ~1.414:1 — ele é esticado para a página
+ * inteira, sem margens). Usado pelos relatórios "editoriais" (capa/contracapa/duas colunas).
+ *
+ * Links clicáveis: qualquer descendente com `data-pdf-href="https://..."` ganha uma anotação de
+ * link na área correspondente da página (html2canvas rasteriza tudo, então o link precisa ser
+ * re-anotado por cima da imagem).
+ */
+export async function baixarPaginasComoPDF(container: HTMLElement, filename: string) {
+  const paginas = Array.from(container.querySelectorAll<HTMLElement>('[data-pdf-page]'));
+  if (paginas.length === 0) return baixarElementoComoPDF(container, filename);
+
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+
+  for (let i = 0; i < paginas.length; i++) {
+    const pagina = paginas[i];
+    if (i > 0) pdf.addPage();
+
+    const canvas = await html2canvas(pagina, {
+      scale: 2,
+      backgroundColor: null,
+      useCORS: true,
+      logging: false,
+    });
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageW, pageH);
+
+    // Reanota os links por cima da imagem rasterizada.
+    const pagRect = pagina.getBoundingClientRect();
+    const fx = pageW / pagRect.width;
+    const fy = pageH / pagRect.height;
+    pagina.querySelectorAll<HTMLElement>('[data-pdf-href]').forEach(el => {
+      const url = el.getAttribute('data-pdf-href');
+      if (!url) return;
+      const r = el.getBoundingClientRect();
+      pdf.link((r.left - pagRect.left) * fx, (r.top - pagRect.top) * fy, r.width * fx, r.height * fy, { url });
+    });
+  }
+
+  pdf.save(filename);
+}
+
 function hexToRgb(hex: string) {
   const clean = hex.replace('#', '');
   return {

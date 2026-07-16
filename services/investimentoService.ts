@@ -259,7 +259,19 @@ export const investimentoService = {
     return header;
   },
 
-  calcularRebateOtimo(ativos: any[], aporte: number, reservaRecomendada: number = 0, projetos: any[] = [], classesMeta: any[] = [], vendasPorObjetivo?: { reserva: number, projetos: number, independencia: number }) {
+  /**
+   * `frentesExcluidas` (opcional): frentes marcadas como "não aportar este mês" — o valor do
+   * APORTE que naturalmente iria para elas (não mexe no saldo de vendas, que é destino explícito
+   * de uma etapa anterior) é redistribuído para as demais frentes ativas, na mesma ordem de
+   * prioridade do cálculo original (reserva → projetos → independência), respeitando a
+   * necessidade real de cada uma: reserva só recebe até completar `reservaRecomendada`, projetos
+   * só até a necessidade mensal apurada; independência absorve o restante sem teto (mesmo papel
+   * de "frente residual" que já tem no cálculo padrão). Se as frentes ativas restantes já não
+   * tiverem necessidade adicional (ou todas as três estiverem excluídas), o valor liberado
+   * simplesmente não é alocado — não força o aporte além do que cada frente precisa.
+   */
+  calcularRebateOtimo(ativos: any[], aporte: number, reservaRecomendada: number = 0, projetos: any[] = [], classesMeta: any[] = [], vendasPorObjetivo?: { reserva: number, projetos: number, independencia: number }, frentesExcluidas?: Set<'reserva' | 'projetos' | 'independencia'>) {
+    const excluidas = frentesExcluidas || new Set<'reserva' | 'projetos' | 'independencia'>();
     const resumo = { reserva: 0, projetos: 0, independencia: 0, travas: [] as string[] };
     const totalReservaAtual = (ativos || []).reduce((acc, a) => {
       const link = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'reserva');
@@ -273,11 +285,11 @@ export const investimentoService = {
     else if (percCobReserva <= 0.50) percAporteReserva = 0.50;
     else percAporteReserva = 0.25;
 
-    resumo.reserva = (aporte * percAporteReserva) + (vendasPorObjetivo?.reserva || 0);
-    let aporteRestante = aporte - (aporte * percAporteReserva);
+    let aporteReserva = aporte * percAporteReserva;
+    let aporteRestante = aporte - aporteReserva;
 
+    let necProjetos = 0;
     if (percCobReserva > 0.20) {
-      let necProjetos = 0;
       const hoje = new Date();
       projetos.forEach(p => {
         const acumulado = (ativos || []).reduce((acc, a) => {
@@ -287,14 +299,38 @@ export const investimentoService = {
         const meses = Math.max(1, (new Date(p.data_alvo).getFullYear() - hoje.getFullYear()) * 12 + (new Date(p.data_alvo).getMonth() - hoje.getMonth()));
         necProjetos += Math.max(0, p.valor_alvo - acumulado) / meses;
       });
-      const aporteNovoProjetos = Math.min(aporteRestante, necProjetos, aporte * 0.99);
-      resumo.projetos = aporteNovoProjetos + (vendasPorObjetivo?.projetos || 0);
-      aporteRestante -= aporteNovoProjetos;
-    } else {
-      resumo.projetos = (vendasPorObjetivo?.projetos || 0);
     }
-    resumo.independencia = Math.max(0, aporteRestante) + (vendasPorObjetivo?.independencia || 0);
-    
+    let aporteProjetos = percCobReserva > 0.20 ? Math.min(aporteRestante, necProjetos, aporte * 0.99) : 0;
+    aporteRestante -= aporteProjetos;
+    let aporteIndependencia = Math.max(0, aporteRestante);
+
+    if (excluidas.size > 0) {
+      let liberado = 0;
+      if (excluidas.has('reserva')) { liberado += aporteReserva; aporteReserva = 0; }
+      if (excluidas.has('projetos')) { liberado += aporteProjetos; aporteProjetos = 0; }
+      if (excluidas.has('independencia')) { liberado += aporteIndependencia; aporteIndependencia = 0; }
+
+      if (liberado > 0 && !excluidas.has('reserva')) {
+        const gapReserva = Math.max(0, reservaRecomendada - totalReservaAtual - aporteReserva);
+        const extra = Math.min(liberado, gapReserva);
+        aporteReserva += extra;
+        liberado -= extra;
+      }
+      if (liberado > 0 && !excluidas.has('projetos')) {
+        const gapProjetos = Math.max(0, necProjetos - aporteProjetos);
+        const extra = Math.min(liberado, gapProjetos);
+        aporteProjetos += extra;
+        liberado -= extra;
+      }
+      if (liberado > 0 && !excluidas.has('independencia')) {
+        aporteIndependencia += liberado;
+      }
+    }
+
+    resumo.reserva = aporteReserva + (vendasPorObjetivo?.reserva || 0);
+    resumo.projetos = aporteProjetos + (vendasPorObjetivo?.projetos || 0);
+    resumo.independencia = aporteIndependencia + (vendasPorObjetivo?.independencia || 0);
+
     const ativosIndep = (ativos || []).filter(a => (a.distribuicao_objetivos || []).some((o: any) => o.tipo === 'independencia'));
     const totalIndepAtual = ativosIndep.reduce((acc, a) => {
       const link = a.distribuicao_objetivos.find((o: any) => o.tipo === 'independencia');

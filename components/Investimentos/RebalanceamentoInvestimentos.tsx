@@ -16,8 +16,9 @@ import {
 import Accordion from '../UI/Accordion';
 import { supabase } from '../../services/supabaseClient';
 import { DestinoVenda, DESTINOS_VENDA } from '../../utils/destinosVenda';
-import { baixarElementoComoPDFPaginado } from '../../utils/pdfFromElement';
+import { baixarPaginasComoPDF } from '../../utils/pdfFromElement';
 import HistoricoAportes from './HistoricoAportes';
+import RelatorioAporteDoc, { DadosRelatorioAporte } from './RelatorioAporteDoc';
 import Badge from '../UI/Badge';
 import { protecaoService } from '../../services/protecaoService';
 import { calcularIdade } from '../../utils/calculosFinanceiros';
@@ -62,6 +63,16 @@ const PriceInputCell = ({ initialValue, onConfirm, prefix = "R$" }: { initialVal
     }, 2000);
     return () => clearTimeout(handler);
   }, [currentValue, initialValue, onConfirm]);
+
+  // Flush no desmonte: se o usuário digita um valor e sai da tela (ex.: "Gerar Relatório") antes
+  // do debounce de 2s disparar, o cleanup acima descartaria a edição — as cotas/aportes chegariam
+  // zerados ao relatório. Aqui a edição pendente é confirmada na hora do desmonte.
+  const pendenteRef = useRef({ currentValue, initialValue, onConfirm });
+  pendenteRef.current = { currentValue, initialValue, onConfirm };
+  useEffect(() => () => {
+    const { currentValue: cv, initialValue: iv, onConfirm: fn } = pendenteRef.current;
+    if (cv !== iv) fn(cv);
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, "");
@@ -137,6 +148,19 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   const [finishing, setFinishing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [resumo, setResumo] = useState<any>(null);
+  const [frentesExcluidas, setFrentesExcluidas] = useState<Set<'reserva' | 'projetos' | 'independencia'>>(new Set());
+  const alternarFrenteExcluida = (frente: 'reserva' | 'projetos' | 'independencia') => {
+    setFrentesExcluidas(prev => {
+      const next = new Set(prev);
+      if (next.has(frente)) {
+        next.delete(frente);
+      } else if (next.size < 2) {
+        // Mantém sempre pelo menos uma frente ativa — não há para onde redistribuir se as três forem excluídas.
+        next.add(frente);
+      }
+      return next;
+    });
+  };
   const [rebateClasses, setRebateClasses] = useState<any[]>([]);
   const [patrimonioProjetado, setPatrimonioProjetado] = useState(0);
   const [distribuicaoAtivos, setDistribuicaoAtivos] = useState<any[]>([]);
@@ -239,25 +263,60 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     setManualSettings(prev => ({ ...prev, [id]: { ...prev[id], ...up } }));
   };
 
-  // Cotação automática (edge function cotacao-ativos, via brapi.dev) para ativos de bolsa com
-  // ticker — só preenche o preço de mercado quando o usuário ainda não editou manualmente
-  // aquele ativo, e tenta cada ticker uma única vez por sessão (falha/ticker não encontrado
-  // nunca bloqueia: o campo simplesmente continua disponível para preenchimento manual).
-  const tickersTentadosRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const candidatos = distribuicaoAtivos.flatMap((c: any) => c.ativos || [])
-      .filter((a: any) => a.acao === 'COMPRAR' && a.ticker && manualSettings[a.id]?.preco_mercado === undefined && !tickersTentadosRef.current.has(a.ticker));
-    const tickers = Array.from(new Set(candidatos.map((a: any) => a.ticker)));
-    if (tickers.length === 0) return;
-    tickers.forEach(t => tickersTentadosRef.current.add(t));
+  // Cotas derivadas em tempo de render (sempre dos overrides mais recentes). O `at.cotas` vindo
+  // do último recálculo pode estar defasado: a cadeia debounce (2s) + recálculo (500ms) é
+  // cancelada quando o usuário troca para o modo relatório logo após editar, e o relatório
+  // exibiria cotas zeradas mesmo com preço/aporte já confirmados em manualSettings.
+  const cotasAtuais = (at: any): number => {
+    const ovr = manualSettings[at.id];
+    const preco = ovr?.preco_mercado ?? at.preco_mercado;
+    const aporteEf = ovr?.aporte_efetivo || at.aporte_sugerido;
+    return preco > 0 ? Math.floor(aporteEf / preco) : 0;
+  };
 
-    cotacaoService.getCotacoes(tickers).then(cotacoes => {
-      candidatos.forEach((a: any) => {
-        if (cotacoes[a.ticker] && manualSettings[a.id]?.preco_mercado === undefined) {
-          updateManual(a.id, { preco_mercado: cotacoes[a.ticker] });
-        }
-      });
-    }).catch(() => {});
+  // Ticker efetivo para a cotação: alguns fundos/ETFs (ex.: "ETF FIXA11 ou ETF IDKA11") foram
+  // cadastrados na Carteira Recomendada com o ticker real gravado no campo `cnpj` (ex.: cnpj
+  // "IDKA11", ticker "" vazio) — um resquício de importação antiga. Sem isso, esses ativos
+  // nunca entravam no lote de cotação (a.ticker vazio), mesmo aparecendo como "Comprar".
+  const tickerEfetivo = (a: any): string => (a.ticker || (a.cnpj && !a.cnpj.includes('/') ? a.cnpj : '')).trim();
+
+  // Cotação automática (edge function cotacao-ativos, via brapi.dev) para ativos de bolsa com
+  // ticker — só preenche o preço de mercado quando o usuário ainda não editou manualmente aquele
+  // ativo. Em lotes grandes (muitos ativos "Comprar" na mesma simulação) alguns tickers podem
+  // falhar por rate-limit momentâneo da brapi.dev enquanto outros do mesmo lote são atendidos —
+  // por isso um ticker só é "desistido" após algumas tentativas (retryzinho automático a cada
+  // ~4s), em vez de ficar bloqueado pro resto da sessão na primeira falha.
+  const tentativasRef = useRef<Map<string, number>>(new Map());
+  const MAX_TENTATIVAS_COTACAO = 3;
+  useEffect(() => {
+    let cancelado = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const buscar = () => {
+      const candidatos = distribuicaoAtivos.flatMap((c: any) => c.ativos || [])
+        .filter((a: any) => a.acao === 'COMPRAR' && tickerEfetivo(a) && manualSettings[a.id]?.preco_mercado === undefined
+          && (tentativasRef.current.get(tickerEfetivo(a)) || 0) < MAX_TENTATIVAS_COTACAO);
+      const tickers = Array.from(new Set(candidatos.map((a: any) => tickerEfetivo(a))));
+      if (tickers.length === 0) return;
+      tickers.forEach(t => tentativasRef.current.set(t, (tentativasRef.current.get(t) || 0) + 1));
+
+      cotacaoService.getCotacoes(tickers).then(cotacoes => {
+        if (cancelado) return;
+        let faltouAlgum = false;
+        candidatos.forEach((a: any) => {
+          const tk = tickerEfetivo(a);
+          if (cotacoes[tk] && manualSettings[a.id]?.preco_mercado === undefined) {
+            updateManual(a.id, { preco_mercado: cotacoes[tk] });
+          } else if (!cotacoes[tk]) {
+            faltouAlgum = true;
+          }
+        });
+        if (faltouAlgum) timer = setTimeout(buscar, 4000);
+      }).catch(() => {});
+    };
+
+    buscar();
+    return () => { cancelado = true; if (timer) clearTimeout(timer); };
   }, [distribuicaoAtivos]);
 
 
@@ -275,14 +334,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
         });
         const vendasPorObj = { reserva: vendasPorDestino.reserva, projetos: vendasPorDestino.projetos, independencia: vendasPorDestino.independencia };
         const aporteEfetivo = aporte + vendasPorDestino.livre;
-        const result = investimentoService.calcularRebateOtimo(ativos, aporteEfetivo, cliente?.reserva_recomendada || 0, projetos, modelo.classes || [], vendasPorObj);
+        const result = investimentoService.calcularRebateOtimo(ativos, aporteEfetivo, cliente?.reserva_recomendada || 0, projetos, modelo.classes || [], vendasPorObj, frentesExcluidas);
         setResumo(result.resumo);
         setRebateClasses(result.distribuicaoIndependencia);
         setPatrimonioProjetado(result.totalIndepProjetado);
       } catch (err) { console.error(err); }
     }, 400);
     return () => clearTimeout(h);
-  }, [modo, aporte, estrategiaId, vendas, cliente, projetos, modelosDisponiveis, ativos]);
+  }, [modo, aporte, estrategiaId, vendas, cliente, projetos, modelosDisponiveis, ativos, frentesExcluidas]);
 
   // Recálculo reativo do Simulador Tático — substitui o antigo botão "Próximo: Simulador Tático".
   useEffect(() => {
@@ -378,13 +437,6 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     }));
   }, [modelosDisponiveis, estrategiaId, ativos]);
 
-  const formatarMesAno = (meses: number) => {
-    if (meses < 12) return `${meses} ${meses === 1 ? 'mês' : 'meses'}`;
-    const anos = Math.floor(meses / 12);
-    const restoMeses = meses % 12;
-    return restoMeses > 0 ? `${anos}a ${restoMeses}m` : `${anos} ${anos === 1 ? 'ano' : 'anos'}`;
-  };
-
   // Reconstrói a Revisão Final do último aporte a partir do log salvo (prefixos nos nomes), para o modo leitura.
   const revisaoData = useMemo(() => {
     if (!ultimoRebal) return null;
@@ -404,7 +456,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
   }, [ultimoRebal]);
 
   // Habilitação progressiva das seções da página única.
-  const temAporteEfetivo = useMemo(() => distribuicaoAtivos.some((c: any) => (c.ativos || []).some((a: any) => (manualSettings[a.id]?.aporte_efetivo || 0) > 0.01)), [distribuicaoAtivos, manualSettings]);
+  // Considera o valor SUGERIDO como efetivo quando não há override manual — mesma regra de
+  // fallback já usada em `cotasAtuais` e na montagem do relatório (ver `aporteEf` acima e
+  // `manualSettings[a.id]?.aporte_efetivo || a.aporte_sugerido` na construção de `dadosRelatorio`).
+  // Sem isso, quando reserva e projetos ficam sem meta (ex.: "Não aportar este mês" nas duas, ou
+  // reserva já 100% coberta e cliente sem projetos), o botão "Gerar Relatório" ficava bloqueado
+  // mesmo com a tabela tática já mostrando valores sugeridos prontos — exigia redigitar cada linha
+  // manualmente antes de liberar, inconsistente com o resto do fluxo.
+  const temAporteEfetivo = useMemo(() => distribuicaoAtivos.some((c: any) => (c.ativos || []).some((a: any) => ((manualSettings[a.id]?.aporte_efetivo || a.aporte_sugerido || 0)) > 0.01)), [distribuicaoAtivos, manualSettings]);
   const temReservaAlloc = useMemo(() => reservaAlloc.some(r => r.valor > 0.01), [reservaAlloc]);
   const temProjetosAlloc = useMemo(() => projetosAlloc.some(p => p.valor > 0.01), [projetosAlloc]);
   const secEnabled: Record<string, boolean> = {
@@ -484,13 +543,15 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     } finally { setFinishing(false); }
   };
 
-  // Gera o PDF a partir do próprio layout do relatório na tela (substitui a geração programática antiga).
+  // Gera o PDF a partir do próprio layout do relatório na tela: cada [data-pdf-page] vira uma
+  // folha A4 paisagem, com os links (QR codes, Finclass) reanotados como áreas clicáveis.
   const handleDownloadRelatorio = async () => {
     if (!relatorioRef.current) return;
     setBaixandoPdf(true);
     try {
-      const nomeArq = `Relatorio_Aporte_${(cliente?.nome || 'cliente').replace(/\s+/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
-      await baixarElementoComoPDFPaginado(relatorioRef.current, nomeArq);
+      const nomeArq = `Simulacao_Alocacao_${(cliente?.nome || 'cliente').replace(/\s+/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+      await document.fonts.ready;
+      await baixarPaginasComoPDF(relatorioRef.current, nomeArq);
     } catch (err: any) {
       toast.error('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
     } finally {
@@ -498,238 +559,70 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     }
   };
 
-  // Documento do relatório de aporte — layout formal usado na tela de revisão e no PDF (html2canvas).
-  // Cores em tokens/hex (sem paleta padrão do Tailwind, que é oklch e quebra o html2canvas).
-  // Cada card marcado com data-pdf-block é uma unidade indivisível na paginação do PDF: um bloco
-  // que não cabe no espaço restante da página desce inteiro para a próxima (sem cortes no meio).
-  const renderRelatorioDoc = () => (
-    <div ref={relatorioRef} className="space-y-4">
-      {/* Cabeçalho tipo timbrado */}
-      <div data-pdf-block className="bg-surface rounded-xl border border-subtle px-5 sm:px-8 py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-[16px] font-semibold text-main">Relatório de Aporte Mensal</h3>
-          <p className="text-[12px] text-muted mt-1">
-            {cliente?.nome || 'Cliente'} • {new Date().toLocaleDateString('pt-BR')}{planejador?.nome ? ` • Consultor: ${planejador.nome}` : ''}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-4">
-          <div className="text-right">
-            <span className={kpiLabel}>Asset Mix</span>
-            <p className="text-[12px] font-semibold text-main mt-0.5">{modelosDisponiveis.find(m => m.id === estrategiaId)?.nome}</p>
-          </div>
-          <div className="text-right">
-            <span className={kpiLabel}>Tese / Faixa</span>
-            <p className="text-[12px] font-semibold text-main mt-0.5">{tesesDisponiveis.find(t => t.id === teseId)?.nome} • {faixaAplicada?.nome}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 01 — Resumo executivo */}
-      <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-4">
-        <DocSectionTitle numero="01" titulo="Resumo Executivo" icon={<Landmark size={16} className="text-faint" />} />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className={cardCls}>
-            <span className={kpiLabel}>Aporte Novo</span>
-            <p className="text-[22px] font-bold tracking-tight mt-2" style={{ color: 'var(--primary)' }}>{formatarMoeda(aporte)}</p>
-          </div>
-          <div className={cardCls}>
-            <span className={kpiLabel}>Saldo de Vendas</span>
-            <p className="text-[22px] font-bold tracking-tight mt-2" style={{ color: totalVendas > 0 ? 'var(--danger)' : 'var(--text-main)' }}>{formatarMoeda(totalVendas)}</p>
-          </div>
-          <div className={cardCls}>
-            <span className={kpiLabel}>Total Disponível</span>
-            <p className="text-[22px] font-bold tracking-tight text-main mt-2">{formatarMoeda(aporte + totalVendas)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 02 — Plano de independência: aporte do mês vs meta, prazos e alocação alvo vs carteira */}
-      <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-5">
-        <DocSectionTitle numero="02" titulo="Plano de Independência" icon={<Bird size={16} className="text-faint" />} />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className={cardCls}>
-            <span className={kpiLabel}>Aporte do mês</span>
-            <p className="text-[18px] font-bold text-main tracking-tight mt-2">{formatarMoeda(aporte)}</p>
-            {aporteMetaMensal !== null ? (
-              <>
-                <p className="text-[11px] font-semibold mt-1.5" style={{ color: aporte >= aporteMetaMensal ? 'var(--primary)' : 'var(--warning)' }}>
-                  {aporte >= aporteMetaMensal
-                    ? `Acima da meta (+${formatarMoeda(aporte - aporteMetaMensal)})`
-                    : `Abaixo da meta (−${formatarMoeda(aporteMetaMensal - aporte)})`}
-                </p>
-                <p className="text-[10px] text-faint mt-0.5">Meta: {formatarMoeda(aporteMetaMensal)}/mês</p>
-              </>
-            ) : (
-              <p className="text-[10px] text-faint mt-1.5">Meta indisponível — prazo alvo já decorrido</p>
-            )}
-          </div>
-          <div className={cardCls}>
-            <span className={kpiLabel}>Prazo planejado inicial</span>
-            <p className="text-[18px] font-bold text-main tracking-tight mt-2">{formatarMesAno(prazoIndepInfo.prazoInicialMeses)}</p>
-          </div>
-          <div className={cardCls}>
-            <span className={kpiLabel}>Prazo atualizado</span>
-            <p className="text-[18px] font-bold tracking-tight mt-2" style={{ color: 'var(--primary)' }}>
-              {projecaoIndep.mesIndependenciaReal === null ? 'Não atingível' : formatarMesAno(projecaoIndep.mesIndependenciaReal)}
-            </p>
-          </div>
-        </div>
-        {barDataRelatorio.length > 0 && (
-          <div>
-            <p className={`${kpiLabel} mb-3`}>Alocação · alvo vs carteira</p>
-            <div className="space-y-3">
-              {barDataRelatorio.map((d: any, i: number) => (
-                <div key={i}>
-                  <div className="flex justify-between text-[11px] font-semibold mb-1">
-                    <span className="text-main">{d.classe}</span>
-                    <span className="text-muted">Alvo {d.alvo.toFixed(1)}% · Carteira {d.atual.toFixed(1)}%</span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-2 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(d.alvo, 100)}%`, backgroundColor: d.cor, opacity: 0.35 }} /></div>
-                    <div className="h-2 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(d.atual, 100)}%`, backgroundColor: d.cor }} /></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-4 mt-3">
-              <span className="flex items-center gap-1.5 text-[10px] text-muted"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: 'var(--primary)', opacity: 0.35 }} /> Alvo (modelo)</span>
-              <span className="flex items-center gap-1.5 text-[10px] text-muted"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: 'var(--primary)' }} /> Carteira atual</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 03 — Distribuição por objetivo */}
-      <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-4">
-        <DocSectionTitle numero="03" titulo="Distribuição por Objetivo" icon={<Target size={16} className="text-faint" />} />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-[color:var(--primary)]"><ShieldCheck size={15} /><span className="text-[12px] font-semibold">Reserva de Emergência</span></div>
-              <div className={`${cardCls} space-y-3`}>
-                <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                  <span className={kpiLabel}>Total Alocado</span>
-                  <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoReserva)}</span>
-                </div>
-                <div className="space-y-2">
-                  {reservaAlloc.filter(r => r.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : reservaAlloc.filter(r => r.valor > 0.01).map(r => (
-                    <div key={r.id} className="flex justify-between text-[12px] font-medium text-muted">
-                      <span>{r.nome}</span>
-                      <span className="font-semibold text-main">{formatarMoeda(r.valor)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-[color:var(--primary)]"><Target size={15} /><span className="text-[12px] font-semibold">Projetos / Objetivos</span></div>
-              <div className={`${cardCls} space-y-3`}>
-                <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                  <span className={kpiLabel}>Total Alocado</span>
-                  <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(totalAlocadoProjetos)}</span>
-                </div>
-                <div className="space-y-2">
-                  {projetosAlloc.filter(p => p.valor > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : projetosAlloc.filter(p => p.valor > 0.01).map(p => (
-                    <div key={p.id} className="flex justify-between text-[12px] font-medium text-muted">
-                      <span>{p.nome}</span>
-                      <span className="font-semibold text-main">{formatarMoeda(p.valor)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-[color:var(--primary)]"><Bird size={15} /><span className="text-[12px] font-semibold">Independência Financeira</span></div>
-              <div className={`${cardCls} space-y-3`}>
-                <div className="flex justify-between items-center pb-3 border-b border-subtle">
-                  <span className={kpiLabel}>Aporte Sugerido</span>
-                  <span className="text-[14px] font-bold text-main tracking-tight">{formatarMoeda(resumo?.independencia || 0)}</span>
-                </div>
-                <div className="space-y-2">
-                  {rebateClasses.filter(c => c.aporte_sugerido > 0.01).length === 0 ? <p className="text-[11px] text-faint">—</p> : rebateClasses.filter(c => c.aporte_sugerido > 0.01).map((c, i) => (
-                    <div key={i} className="flex justify-between text-[12px] font-medium text-muted">
-                      <span>{c.classe}</span>
-                      <span className="font-semibold text-main">{formatarMoeda(c.aporte_sugerido)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      {/* 04 — Ordens de compra: título + cada classe são blocos independentes na paginação */}
-      <div data-pdf-block className="bg-surface rounded-xl border border-subtle px-5 sm:px-8 py-4">
-        <DocSectionTitle numero="04" titulo="Ordens de Compra (Simulador Tático)" icon={<ShoppingCart size={16} className="text-faint" />} />
-      </div>
-      {distribuicaoAtivos.filter(c => c.ativos.some((a: any) => a.acao === 'COMPRAR')).map((classe, cIdx) => (
-        <div key={cIdx} data-pdf-block className="bg-surface border border-subtle rounded-xl overflow-hidden">
-          <div className="bg-surface-2 px-5 py-2.5 border-b border-subtle flex justify-between items-center">
-            <span className="text-[12px] font-semibold text-main">{classe.classe}</span>
-            <span className="text-[11px] font-semibold text-[color:var(--primary)]">Fundo: {formatarMoeda(classe.valor_aporte_classe)}</span>
-          </div>
-          <table className="w-full text-left">
-            <tbody className="divide-y divide-subtle text-[12px]">
-              {classe.ativos.filter((a: any) => a.acao === 'COMPRAR').map((at: any, aIdx: number) => (
-                <tr key={aIdx}>
-                  <td className="py-2.5 px-5">
-                    <p className="font-semibold text-main">{at.nome}</p>
-                    <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
-                  </td>
-                  <td className="py-2.5 px-5 text-right">
-                    <div className="flex flex-col items-end">
-                      <span className="text-[12px] font-semibold text-[color:var(--primary)]">Aporte: {formatarMoeda(manualSettings[at.id]?.aporte_efetivo || at.aporte_sugerido)}</span>
-                      <span className="text-[10px] text-faint mt-0.5">Cotas: {at.cotas || 0}</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-
-      {/* 05 — Ordens de venda (só quando há desinvestimento) */}
-      {Object.keys(vendas).length > 0 && (
-        <div data-pdf-block className="bg-surface rounded-xl border border-subtle p-5 sm:p-8 space-y-4">
-          <DocSectionTitle numero="05" titulo="Ordens de Venda (Desinvestimento)" icon={<Trash2 size={16} className="text-faint" />} />
-          <div className="bg-surface rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(248,113,113,0.25)' }}>
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b" style={{ backgroundColor: 'rgba(248,113,113,0.08)', borderColor: 'rgba(248,113,113,0.25)' }}>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--danger)' }}>Ativo</th>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase text-center tracking-wider" style={{ color: 'var(--danger)' }}>Destino</th>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase text-right tracking-wider" style={{ color: 'var(--danger)' }}>Valor Venda</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-subtle text-[12px]">
-                {(Object.entries(vendas) as [string, VendaItem][]).map(([id, venda]) => {
-                  const at = ativos.find((a: any) => a.id === id);
-                  if (!at) return null;
-                  return (
-                    <tr key={id}>
-                      <td className="py-2.5 px-5">
-                        <p className="font-semibold text-main">{at.nome}</p>
-                        <p className="text-[11px] text-muted mt-0.5">{at.ticker || at.cnpj}</p>
-                      </td>
-                      <td className="py-2.5 px-5 text-center">
-                        <span className="text-[10px] font-semibold text-muted bg-surface-2 px-2.5 py-1 rounded-md">{venda.destino}</span>
-                      </td>
-                      <td className="py-2.5 px-5 text-right font-bold tracking-tight" style={{ color: 'var(--danger)' }}>{formatarMoeda(venda.valor)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
   // Tela de relatório/revisão — separada do fluxo de edição. Baixa o PDF (mesmo layout) ou finaliza.
   if (modo === 'relatorio') {
+    const reservaAcumulada = (ativos || []).reduce((acc: number, a: any) => {
+      const l = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'reserva');
+      return acc + (l ? a.valor_atual * (l.percentual / 100) : 0);
+    }, 0);
+
+    const dadosRelatorio: DadosRelatorioAporte = {
+      clienteNome: cliente?.nome || 'Cliente',
+      planejadorNome: planejador?.nome || null,
+      dataStr: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      perfilNome: modelosDisponiveis.find(m => m.id === estrategiaId)?.nome || '—',
+      teseNome: tesesDisponiveis.find(t => t.id === teseId)?.nome || '—',
+      faixaNome: faixaAplicada?.nome || '—',
+      aporte,
+      totalVendas,
+      recursoDisponivel: aporte + totalVendas,
+      distribuicao: {
+        reserva: totalAlocadoReserva,
+        projetos: totalAlocadoProjetos,
+        independencia: Math.max(0, aporte + totalVendas - totalAlocadoReserva - totalAlocadoProjetos),
+      },
+      aporteMetaMensal,
+      deltaPrazoMeses: projecaoIndep.mesIndependenciaReal !== null
+        ? projecaoIndep.mesIndependenciaReal - prazoIndepInfo.prazoInicialMeses
+        : null,
+      patrimonioSucessao: projecaoIndep.patrimonioSucessaoReal,
+      liberdadeFinanceira: projecaoIndep.liberdadeFinanceiraReal,
+      barData: barDataRelatorio,
+      curva: projecaoIndep.chartData,
+      reserva: {
+        alvo: cliente?.reserva_recomendada || 0,
+        acumulado: reservaAcumulada,
+        aportarEm: reservaAlloc.filter(r => r.valor > 0.01).map(r => ({ nome: r.nome, valor: r.valor })),
+      },
+      projetos: (projetos || []).filter((p: any) => p.valor_alvo > 0).map((p: any) => ({
+        nome: p.nome,
+        alvo: p.valor_alvo,
+        acumulado: (ativos || []).reduce((acc: number, a: any) => {
+          const l = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'projeto' && o.projeto_id === p.id);
+          return acc + (l ? a.valor_atual * (l.percentual / 100) : 0);
+        }, 0),
+      })),
+      projetosAportarEm: projetosAlloc.filter(p => p.valor > 0.01).map(p => ({ nome: p.nome, valor: p.valor })),
+      vendas: (Object.entries(vendas) as [string, VendaItem][]).map(([id, v]) => {
+        const at = (ativos || []).find((a: any) => a.id === id);
+        return { nome: at?.nome || id, codigo: at?.ticker || at?.cnpj || '', destino: v.destino, valor: v.valor };
+      }),
+      ordens: distribuicaoAtivos
+        .filter((c: any) => (c.ativos || []).some((a: any) => a.acao === 'COMPRAR'))
+        .map((c: any) => ({
+          classe: c.classe,
+          fundo: c.valor_aporte_classe,
+          ativos: c.ativos.filter((a: any) => a.acao === 'COMPRAR').map((a: any) => ({
+            nome: a.nome,
+            codigo: a.ticker || a.cnpj || '',
+            aporte: manualSettings[a.id]?.aporte_efetivo || a.aporte_sugerido,
+            cotas: cotasAtuais(a),
+          })),
+        })),
+      whatsappUrl: 'https://wa.me/5527988535056',
+      instagramUrl: 'https://instagram.com/mathielodavi',
+    };
+
     return (
       <div className="max-w-5xl mx-auto py-4 px-2 sm:px-4 relative animate-in fade-in slide-in-from-bottom-4">
         {finishing && (<div className="fixed inset-0 z-[60] bg-surface/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4"><RefreshCw size={48} className="text-[color:var(--primary)] animate-spin" /><p className="text-[12px] font-semibold text-main">Sincronizando decisões...</p></div>)}
@@ -752,7 +645,10 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
           </div>
         )}
 
-        {renderRelatorioDoc()}
+        {/* Documento editorial paginado — rola horizontal na tela se a janela for menor que a página */}
+        <div className="overflow-x-auto rounded-xl">
+          <RelatorioAporteDoc dados={dadosRelatorio} innerRef={relatorioRef} />
+        </div>
 
         <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:justify-end">
           <button
@@ -1019,9 +915,27 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
 
           <SectionShell id="sec-distribuicao" numero={2} hideOnPrint titulo="Resumo da Distribuição" descricao="Alvos calculados para Reserva, Projetos e Independência" disabled={!secEnabled['sec-distribuicao']} hint="Defina o capital e a estratégia para calcular a distribuição">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className={cardCls}><ShieldCheck size={18} className="mb-3" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Reserva</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.reserva || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'reserva') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
-              <div className={cardCls}><Target size={18} className="mb-3" style={{ color: 'var(--info)' }} /><p className={kpiLabel}>Alvo Projetos</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.projetos || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'projetos') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
-              <div className={cardCls}><Bird size={18} className="mb-3" style={{ color: 'var(--primary)' }} /><p className={kpiLabel}>Alvo Independência</p><p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(resumo?.independencia || 0)}</p>{(Object.values(vendas) as VendaItem[]).some(v => v.destino === 'independencia') && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}</div>
+              {([
+                { key: 'reserva' as const, label: 'Alvo Reserva', icon: <ShieldCheck size={18} className="mb-3" style={{ color: 'var(--primary)' }} />, valor: resumo?.reserva || 0 },
+                { key: 'projetos' as const, label: 'Alvo Projetos', icon: <Target size={18} className="mb-3" style={{ color: 'var(--info)' }} />, valor: resumo?.projetos || 0 },
+                { key: 'independencia' as const, label: 'Alvo Independência', icon: <Bird size={18} className="mb-3" style={{ color: 'var(--primary)' }} />, valor: resumo?.independencia || 0 },
+              ]).map(({ key, label, icon, valor }) => {
+                const excluida = frentesExcluidas.has(key);
+                const podeExcluir = frentesExcluidas.size < 2 || excluida;
+                return (
+                  <div key={key} className={`${cardCls} transition-opacity ${excluida ? 'opacity-60' : ''}`}>
+                    {icon}
+                    <p className={kpiLabel}>{label}</p>
+                    <p className="text-[22px] font-bold tracking-tight leading-none text-main mt-2">{formatarMoeda(valor)}</p>
+                    {(Object.values(vendas) as VendaItem[]).some(v => v.destino === key) && <p className="text-[11px] font-semibold text-muted mt-2">+ saldo de vendas</p>}
+                    {excluida && <p className="text-[11px] font-semibold mt-2" style={{ color: 'var(--warning)' }}>Aporte redistribuído para as demais frentes</p>}
+                    <label className={`flex items-center gap-1.5 mt-3 select-none ${podeExcluir ? 'cursor-pointer' : 'cursor-not-allowed'}`} title={!podeExcluir ? 'Ao menos uma frente precisa continuar ativa para receber o aporte.' : undefined}>
+                      <input type="checkbox" checked={excluida} disabled={!podeExcluir} onChange={() => alternarFrenteExcluida(key)} className="h-3.5 w-3.5 accent-[color:var(--primary)]" />
+                      <span className="text-[11px] font-medium text-faint">Não aportar este mês</span>
+                    </label>
+                  </div>
+                );
+              })}
             </div>
           </SectionShell>
 
@@ -1096,7 +1010,7 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
                             <td className="py-3 px-2 sm:px-3 text-center text-[11px] font-semibold text-main rounded-md" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>{at.alocacao_atualizada.toFixed(1)}%</td>
                             <td className="py-3 px-2 sm:px-3 text-right font-semibold text-[12px] whitespace-nowrap" style={{ color: 'var(--primary)' }}>{at.aporte_sugerido > 0.01 ? formatarMoeda(at.aporte_sugerido) : '---'}</td>
                             <td className="py-3 px-1.5 sm:px-2"><PriceInputCell initialValue={at.preco_mercado} onConfirm={v => updateManual(at.id, { preco_mercado: v })} /></td>
-                            <td className="py-3 px-2 sm:px-3 text-center"><span className="text-[12px] font-semibold" style={{ color: at.cotas > 0 ? 'var(--primary)' : 'var(--text-faint)' }}>{at.cotas || 0}</span></td>
+                            <td className="py-3 px-2 sm:px-3 text-center"><span className="text-[12px] font-semibold" style={{ color: cotasAtuais(at) > 0 ? 'var(--primary)' : 'var(--text-faint)' }}>{cotasAtuais(at)}</span></td>
                             <td className="py-3 px-1.5 sm:px-2"><PriceInputCell initialValue={manualSettings[at.id]?.aporte_efetivo || 0} onConfirm={v => updateManual(at.id, { aporte_efetivo: v })} /></td>
                             <td className="py-3 px-2 sm:px-3 text-right"><button onClick={() => updateManual(at.id, { status_manual: at.acao !== 'COMPRAR' })} className={`w-full px-2 h-7 rounded-md text-[10px] font-semibold whitespace-nowrap transition-colors border ${isComprando ? 'hover:opacity-80' : 'bg-surface-2 text-muted border-subtle hover:bg-surface-2'}`} style={isComprando ? { backgroundColor: 'rgba(16,185,129,0.12)', color: 'var(--primary)', borderColor: 'rgba(16,185,129,0.25)' } : undefined}>{isComprando ? 'Comprar' : 'Ignorar'}</button></td>
                           </tr>
@@ -1131,15 +1045,6 @@ const SectionShell = ({ id, numero, titulo, descricao, disabled = false, hint, h
       <div className="mt-3 text-[11px] font-semibold text-faint flex items-center gap-1.5"><AlertCircle size={12} /> {hint}</div>
     )}
   </section>
-);
-
-// Cabeçalho numerado de seção dentro do documento de Revisão (relatório formal).
-const DocSectionTitle = ({ numero, titulo, icon }: { numero: string; titulo: string; icon?: React.ReactNode }) => (
-  <div className="flex items-center gap-2.5 pb-3 border-b border-subtle">
-    <span className="text-[11px] font-mono font-semibold text-faint">{numero}</span>
-    {icon}
-    <h4 className="text-[13px] font-semibold text-main">{titulo}</h4>
-  </div>
 );
 
 // Localiza o ancestral scrollável (o <main> do layout tem overflow-y-auto).
