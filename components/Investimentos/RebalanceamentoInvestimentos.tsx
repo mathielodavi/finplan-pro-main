@@ -485,20 +485,28 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
     e.preventDefault();
     setFinishing(true);
     try {
+      // Cai para o valor SUGERIDO quando não há edição manual — mesma regra de fallback já usada
+      // em `cotasAtuais`, `temAporteEfetivo` e na montagem do relatório. Sem isso, finalizar sem
+      // reescrever manualmente cada linha da tabela tática (ex.: aporte 100% redirecionado para
+      // independência via exclusão de frentes) falha com "Preencha ao menos um valor de 'Aporte
+      // Efetivo'" mesmo com os valores sugeridos já prontos e exibidos na tela.
       const indepEfetivos = distribuicaoAtivos.flatMap(c =>
         (c.ativos || [])
-          .filter((a: any) => (manualSettings[a.id]?.aporte_efetivo || 0) > 0.01)
-          .map((a: any) => ({
-            nome: a.nome,
-            ticker: a.ticker,
-            cnpj: a.cnpj,
-            tipo: a.tipo,
-            ativo_id: a.id_banco_original || null,
-            valor_anterior: a.saldo_atual || 0,
-            valor_distribuido: manualSettings[a.id]?.aporte_efetivo || 0,
-            valor_novo: (a.saldo_atual || 0) + (manualSettings[a.id]?.aporte_efetivo || 0),
-            valor_efetivo: manualSettings[a.id]?.aporte_efetivo || 0
-          }))
+          .filter((a: any) => ((manualSettings[a.id]?.aporte_efetivo || a.aporte_sugerido || 0)) > 0.01)
+          .map((a: any) => {
+            const aporteEf = manualSettings[a.id]?.aporte_efetivo || a.aporte_sugerido || 0;
+            return {
+              nome: a.nome,
+              ticker: a.ticker,
+              cnpj: a.cnpj,
+              tipo: a.tipo,
+              ativo_id: a.id_banco_original || null,
+              valor_anterior: a.saldo_atual || 0,
+              valor_distribuido: aporteEf,
+              valor_novo: (a.saldo_atual || 0) + aporteEf,
+              valor_efetivo: aporteEf
+            };
+          })
       );
 
       const temReserva = (reservaAlloc || []).some(r => r.valor > 0.01);
