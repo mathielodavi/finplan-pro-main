@@ -17,9 +17,11 @@ import { toast } from '../utils/toast';
 import Badge from '../components/UI/Badge';
 import SidePanel from '../components/UI/SidePanel';
 import Confirmacao from '../components/Confirmacao';
+import InputMoeda from '../components/UI/InputMoeda';
 import ContratoFormDrawer from '../components/Contratos/ContratoFormDrawer';
 import MapaBrasil from '../components/Dashboard/MapaBrasil';
-import { Users, ShieldCheck, TrendingDown, DollarSign, BarChart3, ChevronLeft, ChevronRight, AlertCircle, Clock, CalendarX, CalendarCheck, Crown, X, Wallet, CreditCard, HeartPulse, MessageCircle, RefreshCw, CheckCircle2, Phone, Mail, Video } from 'lucide-react';
+import { financeiroService } from '../services/financeiroService';
+import { Users, ShieldCheck, TrendingDown, DollarSign, BarChart3, ChevronLeft, ChevronRight, AlertCircle, Clock, CalendarX, CalendarCheck, Crown, X, Wallet, CreditCard, HeartPulse, MessageCircle, RefreshCw, CheckCircle2, Phone, Mail, Video, Check, Ban } from 'lucide-react';
 
 // ── Helpers visuais ────────────────────────────────────────────────────────
 const SectionTitle: React.FC<{ children: React.ReactNode; hint?: string }> = ({ children, hint }) => (
@@ -87,6 +89,14 @@ const Dashboard: React.FC = () => {
   const [geoData, setGeoData] = useState<any[]>([]);
   const [clientesPorOrigem, setClientesPorOrigem] = useState<any[]>([]);
   const [vencidos, setVencidos] = useState<any[]>([]);
+  const [receivables, setReceivables] = useState<{ total: number; itens: any[] }>({ total: 0, itens: [] });
+  const [receivablesOpen, setReceivablesOpen] = useState(false);
+  // Conciliação/cancelamento de recebíveis dentro do drawer
+  const [recConciliando, setRecConciliando] = useState<string | null>(null);
+  const [recValor, setRecValor] = useState(0);
+  const [recData, setRecData] = useState('');
+  const [recCancelando, setRecCancelando] = useState<any | null>(null);
+  const [recProcessando, setRecProcessando] = useState(false);
   const [temCalendarioAtivo, setTemCalendarioAtivo] = useState(false);
 
   const [filterAgenda, setFilterAgenda] = useState<'all' | 'late' | 'upcoming' | 'pending' | 'inadimplente'>('all');
@@ -146,7 +156,7 @@ const Dashboard: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [summary, term, proj, exp, churn, ltv, endividamento, protecao, geo, origemContratos, vencidosData] = await Promise.all([
+      const [summary, term, proj, exp, churn, ltv, endividamento, protecao, geo, origemContratos, vencidosData, recebiveis] = await Promise.all([
         dashboardService.getSummaryKPIs(),
         dashboardService.getTermometroStats(),
         dashboardService.getIncomeProjection(),
@@ -157,7 +167,8 @@ const Dashboard: React.FC = () => {
         dashboardService.getCoberturaProtecao(),
         dashboardService.getDistribuicaoGeografica(),
         dashboardService.getClientesPorOrigem(),
-        dashboardService.getContratosVencidos()
+        dashboardService.getContratosVencidos(),
+        dashboardService.getReceivablesEmAberto()
       ]);
       setKpis(summary);
       setTermometroData(term);
@@ -170,6 +181,7 @@ const Dashboard: React.FC = () => {
       setGeoData(geo);
       setClientesPorOrigem(origemContratos);
       setVencidos(vencidosData);
+      setReceivables(recebiveis);
     } catch (err) {
       console.error(err);
     } finally {
@@ -322,6 +334,7 @@ const Dashboard: React.FC = () => {
   const kpisFinanceiro = [
     { label: 'Ticket Geral', value: formatarMoeda(kpis.ticketMedio), icon: <DollarSign />, color: CHART_COLORS.primary },
     { label: 'Ticket 6m', value: formatarMoeda(kpis.ticketMedio6m), icon: <BarChart3 />, color: CHART_COLORS.purple },
+    { label: 'Saldo a Receber', value: formatarMoeda(receivables.total), icon: <Clock />, color: CHART_COLORS.warning, onClick: () => setReceivablesOpen(true) },
   ];
 
   const getTagColorClasses = (diffDays: number) => {
@@ -375,6 +388,160 @@ const Dashboard: React.FC = () => {
       {itens.length > 0 ? <div className="space-y-1">{itens.map(renderCliente)}</div> : <p className="text-[12px] text-faint px-1 py-2">Nenhum cliente.</p>}
     </div>
   );
+
+  // Recarrega apenas os recebíveis (mantém o drawer aberto, sem o spinner global).
+  const refreshReceivables = async () => {
+    try {
+      const rec = await dashboardService.getReceivablesEmAberto();
+      setReceivables(rec);
+    } catch (e) { console.error('Erro ao atualizar recebíveis:', e); }
+  };
+
+  const abrirConciliar = (p: any) => {
+    setRecConciliando(p.id);
+    setRecValor(p.valorLiquido);
+    setRecData(new Date().toISOString().split('T')[0]);
+  };
+
+  const confirmarConciliar = async (p: any) => {
+    if (recProcessando) return;
+    setRecProcessando(true);
+    try {
+      await financeiroService.registrarPagamento(p.id, recValor, recData);
+      setRecConciliando(null);
+      await refreshReceivables();
+      toast.success(`Recebimento de ${p.nome} conciliado.`);
+    } catch (e) {
+      toast.error('Erro ao conciliar recebimento.');
+    } finally {
+      setRecProcessando(false);
+    }
+  };
+
+  const confirmarCancelar = async () => {
+    if (!recCancelando || recProcessando) return;
+    setRecProcessando(true);
+    try {
+      await financeiroService.cancelarParcela(recCancelando.id);
+      const nome = recCancelando.nome;
+      setRecCancelando(null);
+      await refreshReceivables();
+      toast.success(`Recebimento de ${nome} cancelado.`);
+    } catch (e) {
+      toast.error('Erro ao cancelar recebimento.');
+    } finally {
+      setRecProcessando(false);
+    }
+  };
+
+  // ── Drawer de recebíveis em aberto: segmento (Planejamento/Extras) agrupado por cliente ──
+  const renderRecebiveisSegmento = (titulo: string, itens: any[]) => {
+    const subtotal = itens.reduce((acc, it) => acc + it.valorLiquido, 0);
+    // Agrupa por cliente preservando a ordem de vencimento já vinda do serviço.
+    const grupos: { nome: string; parcelas: any[]; total: number }[] = [];
+    const idx = new Map<string, number>();
+    itens.forEach(it => {
+      if (!idx.has(it.nome)) { idx.set(it.nome, grupos.length); grupos.push({ nome: it.nome, parcelas: [], total: 0 }); }
+      const g = grupos[idx.get(it.nome)!];
+      g.parcelas.push(it);
+      g.total += it.valorLiquido;
+    });
+
+    return (
+      <div className="mb-5 last:mb-0">
+        <div className="flex items-baseline justify-between mb-2 px-1">
+          <h4 className="text-[11px] font-bold uppercase tracking-wider text-faint">{titulo}</h4>
+          <span className="text-[11px] font-semibold text-muted">{formatarMoeda(subtotal)}</span>
+        </div>
+        {grupos.length === 0 ? (
+          <p className="text-[12px] text-faint px-1 py-2">Nenhuma parcela em aberto.</p>
+        ) : (
+          <div className="space-y-2">
+            {grupos.map(g => (
+              <div key={g.nome} className="bg-surface-2 rounded-lg border border-subtle overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-subtle">
+                  <span className="text-[12px] font-semibold text-main truncate">{g.nome}</span>
+                  <span className="text-[11px] font-semibold text-muted ml-2 shrink-0">{formatarMoeda(g.total)}</span>
+                </div>
+                <div className="divide-y divide-subtle">
+                  {g.parcelas.map(p => (
+                    <div key={p.id} className="px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-semibold text-main leading-none">{formatarMoeda(p.valorLiquido)}</p>
+                          <p className="text-[11px] text-faint mt-1 truncate">
+                            <span className="uppercase tracking-wider font-medium">{p.modelo}</span>
+                            <span className="mx-1">·</span>
+                            venc. {formatarData(p.data_vencimento)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => abrirConciliar(p)}
+                            className="flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                            title="Conciliar recebimento"
+                          >
+                            <Check size={13} strokeWidth={2.5} /> Conciliar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRecCancelando(p)}
+                            className="flex items-center justify-center h-7 w-7 rounded-md text-faint hover:text-danger hover:bg-danger/10 transition-colors"
+                            title="Cancelar recebimento"
+                          >
+                            <Ban size={14} strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {recConciliando === p.id && (
+                        <div className="mt-2.5 p-2.5 rounded-lg bg-surface border border-subtle animate-slide-up">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Valor recebido</label>
+                              <InputMoeda value={recValor} onChange={setRecValor} />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-faint uppercase tracking-wider mb-1">Data</label>
+                              <input
+                                type="date"
+                                value={recData}
+                                onChange={e => setRecData(e.target.value)}
+                                className="w-full bg-surface-2 border border-subtle text-main text-[12px] font-bold rounded-[8px] px-3 h-9 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all uppercase"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setRecConciliando(null)}
+                              disabled={recProcessando}
+                              className="flex-1 h-8 rounded-md border border-subtle text-muted font-semibold text-[11px] hover:bg-surface-2 transition-colors disabled:opacity-50"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => confirmarConciliar(p)}
+                              disabled={recProcessando || !recData || recValor <= 0}
+                              className="flex-1 h-8 rounded-md font-semibold text-[11px] text-[#0b0e14] bg-primary hover:opacity-90 transition-all disabled:opacity-50"
+                            >
+                              {recProcessando ? 'Processando...' : 'Confirmar'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Clique numa barra do gráfico "Clientes por Origem": abre o drawer com todos os clientes
   // daquela origem (a barra clicada — Total/Ativos/Inativos — não filtra a lista, só entra).
@@ -794,16 +961,27 @@ const Dashboard: React.FC = () => {
       <section>
         <SectionTitle hint="Receita e valor do cliente">Financeiro</SectionTitle>
 
-        <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 mb-4">
-          {kpisFinanceiro.map((kpi, i) => (
-            <div key={i} className="bg-surface rounded-xl border border-subtle p-4 flex flex-col gap-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[12px] font-medium text-muted">{kpi.label}</span>
-                <span style={{ color: kpi.color }}>{React.cloneElement(kpi.icon as any, { size: 15, strokeWidth: 2.5 })}</span>
-              </div>
-              <p className="text-[26px] font-bold text-main tracking-tight leading-none">{kpi.value}</p>
-            </div>
-          ))}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+          {kpisFinanceiro.map((kpi, i) => {
+            const clickable = !!(kpi as any).onClick;
+            const Tag: any = clickable ? 'button' : 'div';
+            return (
+              <Tag
+                key={i}
+                {...(clickable ? { onClick: (kpi as any).onClick, type: 'button' } : {})}
+                className={`bg-surface rounded-xl border border-subtle p-4 flex flex-col gap-3 text-left ${clickable ? 'hover:bg-surface-2 hover:border-strong transition-colors cursor-pointer' : ''}`}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] font-medium text-muted">{kpi.label}</span>
+                  <span className="flex items-center gap-1">
+                    <span style={{ color: kpi.color }}>{React.cloneElement(kpi.icon as any, { size: 15, strokeWidth: 2.5 })}</span>
+                    {clickable && <ChevronRight size={14} className="text-faint" />}
+                  </span>
+                </div>
+                <p className="text-[26px] font-bold text-main tracking-tight leading-none">{kpi.value}</p>
+              </Tag>
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -918,6 +1096,37 @@ const Dashboard: React.FC = () => {
           <div className="space-y-1">{modalClientes.list.map(renderCliente)}</div>
         )}
       </SidePanel>
+
+      {/* Drawer de valores a receber em aberto (KPI Saldo a Receber) */}
+      <SidePanel
+        open={receivablesOpen}
+        onClose={() => setReceivablesOpen(false)}
+        title="Valores a receber em aberto"
+        subtitle={`${formatarMoeda(receivables.total)} · até o mês anterior`}
+        widthClass="max-w-lg"
+      >
+        {receivables.itens.length === 0 ? (
+          <div className="py-8 text-center text-muted text-sm">Nenhuma parcela em aberto.</div>
+        ) : (
+          <>
+            {receivables.itens.some(i => i.tipo === 'planejamento') &&
+              renderRecebiveisSegmento('Planejamento', receivables.itens.filter(i => i.tipo === 'planejamento'))}
+            {receivables.itens.some(i => i.tipo === 'extra') &&
+              renderRecebiveisSegmento('Extras', receivables.itens.filter(i => i.tipo === 'extra'))}
+          </>
+        )}
+      </SidePanel>
+
+      {/* Confirmação de cancelamento de recebível */}
+      <Confirmacao
+        isOpen={!!recCancelando}
+        onClose={() => !recProcessando && setRecCancelando(null)}
+        onConfirm={confirmarCancelar}
+        loading={recProcessando}
+        title="Cancelar recebimento"
+        message={recCancelando ? `Cancelar o recebimento de ${formatarMoeda(recCancelando.valorLiquido)} de ${recCancelando.nome} (venc. ${formatarData(recCancelando.data_vencimento)})? A parcela sairá dos valores a receber.` : ''}
+        confirmLabel="Cancelar recebimento"
+      />
 
       {/* Renovação: drawer de vinculação de novo contrato */}
       {renovarContrato && (

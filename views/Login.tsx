@@ -38,19 +38,19 @@ const Login: React.FC = () => {
               <input
                 type="email"
                 required
-                className="w-full px-6 py-4 bg-surface-2 border-2 border-subtle rounded-2xl font-bold text-main placeholder:text-faint outline-none focus:ring-8 focus:ring-emerald-500/5 focus:border-emerald-600 focus:bg-surface transition-all text-sm"
+                className="w-full px-6 py-4 bg-surface-2 border-2 border-subtle rounded-2xl font-bold text-main placeholder:text-faint outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary focus:bg-surface transition-all text-sm"
                 placeholder="exemplo@tulipa.tech"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <Mail size={18} className="absolute right-5 top-4 text-faint group-focus-within:text-emerald-500 transition-colors" />
+              <Mail size={18} className="absolute right-5 top-4 text-faint group-focus-within:text-primary transition-colors" />
             </div>
           </div>
 
           <div className="relative group">
             <div className="flex justify-between items-center mb-2">
               <label className="block text-[10px] font-black text-faint uppercase tracking-widest ml-1">Chave de Segurança</label>
-              <Link to="/recuperar-senha" title="Esqueceu a senha?" className="text-[10px] font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-tighter transition-colors">
+              <Link to="/recuperar-senha" title="Esqueceu a senha?" className="text-[10px] font-black text-primary hover:text-primary-hover uppercase tracking-tighter transition-colors">
                 Recuperar Acesso
               </Link>
             </div>
@@ -58,19 +58,19 @@ const Login: React.FC = () => {
               <input
                 type="password"
                 required
-                className="w-full px-6 py-4 bg-surface-2 border-2 border-subtle rounded-2xl font-bold text-main placeholder:text-faint outline-none focus:ring-8 focus:ring-emerald-500/5 focus:border-emerald-600 focus:bg-surface transition-all text-sm"
+                className="w-full px-6 py-4 bg-surface-2 border-2 border-subtle rounded-2xl font-bold text-main placeholder:text-faint outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary focus:bg-surface transition-all text-sm"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <Lock size={18} className="absolute right-5 top-4 text-faint group-focus-within:text-emerald-500 transition-colors" />
+              <Lock size={18} className="absolute right-5 top-4 text-faint group-focus-within:text-primary transition-colors" />
             </div>
           </div>
         </div>
 
         {(error || localError) && (
-          <div className="p-4 bg-rose-50 text-rose-600 text-xs font-bold rounded-2xl border border-rose-100 animate-slide-up flex items-center gap-3">
-            <div className="h-1.5 w-1.5 rounded-full bg-rose-500 shrink-0" />
+          <div className="p-4 bg-danger/10 text-danger text-xs font-bold rounded-2xl border border-danger/20 animate-slide-up flex items-center gap-3">
+            <div className="h-1.5 w-1.5 rounded-full bg-danger shrink-0" />
             {localError || error}
           </div>
         )}
@@ -78,7 +78,7 @@ const Login: React.FC = () => {
         <Button
           type="submit"
           isLoading={loading}
-          className="w-full py-5 text-xs font-black uppercase tracking-[0.2em] rounded-2xl shadow-2xl shadow-emerald-500/10"
+          className="w-full py-5 text-xs font-black uppercase tracking-[0.2em] rounded-2xl shadow-lg shadow-primary/20"
           variant="primary"
           leftIcon={<LogIn size={18} />}
         >
@@ -87,7 +87,7 @@ const Login: React.FC = () => {
 
         <div className="text-center space-y-4">
           <div className="flex items-center justify-center gap-2 text-[10px] text-faint font-bold uppercase">
-            <ShieldCheck size={12} className="text-emerald-500" />
+            <ShieldCheck size={12} className="text-primary" />
             Ambiente Criptografado SSL
           </div>
           <p className="text-[10px] text-faint font-medium leading-relaxed">

@@ -114,6 +114,17 @@ export const financeiroService = {
     return parcela;
   },
 
+  // Cancela um recebível avulso (uma única parcela). Reversível: a parcela pode
+  // voltar a 'pendente' futuramente (ver cancelarParcelasFuturas). Não mexe no contrato.
+  async cancelarParcela(id: string) {
+    const { error } = await supabase
+      .from('financeiro_parcelas')
+      .update({ status: 'cancelado' })
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
   async verificarExtensaoContratoIlimitado(contratoId: string) {
     const { data: contrato } = await supabase
       .from('contratos')
