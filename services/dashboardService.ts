@@ -140,8 +140,11 @@ export const dashboardService = {
     const projections = [];
 
     for (let i = 0; i < 6; i++) {
-      const targetMonth = hoje.getMonth() + i;
-      const targetYear = hoje.getFullYear();
+      // Normaliza mês/ano pelo construtor Date (lida com a virada de dez→jan),
+      // evitando meses inválidos (ex.: "2026-13") que zeravam a coluna de Janeiro.
+      const base = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+      const targetYear = base.getFullYear();
+      const targetMonth = base.getMonth();
 
       const lastDayDate = new Date(targetYear, targetMonth + 1, 0);
       const firstDay = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01T00:00:00.000Z`;
@@ -175,7 +178,7 @@ export const dashboardService = {
         }
       });
 
-      const dateLabel = new Date(targetYear, targetMonth, 1);
+      const dateLabel = base;
       projections.push({
         mes: dateLabel.toLocaleDateString('pt-BR', { month: 'short', timeZone: 'America/Sao_Paulo' }).toUpperCase(),
         valor: total,
@@ -185,6 +188,49 @@ export const dashboardService = {
     }
 
     return projections;
+  },
+
+  // Saldo de valores a receber em aberto vencidos ATÉ o mês anterior ao corrente
+  // (data_vencimento antes do 1º dia do mês atual). "Em aberto" = qualquer status
+  // exceto pago/cancelado (inclui pendente, atrasado e pausado).
+  async getReceivablesEmAberto() {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+    });
+    const [y, m] = fmt.format(new Date()).split('-').map(Number);
+    const primeiroDiaMesCorrente = `${y}-${String(m).padStart(2, '0')}-01`;
+
+    const { data: parcelas, error } = await supabase
+      .from('financeiro_parcelas')
+      .select(`
+        id, valor_previsto, data_vencimento, status,
+        clientes ( nome ),
+        contratos!inner ( tipo, repasse_percentual, descricao )
+      `)
+      .lt('data_vencimento', primeiroDiaMesCorrente)
+      .not('status', 'in', '("pago","cancelado")')
+      .in('contratos.tipo', ['planejamento', 'extra'])
+      .order('data_vencimento', { ascending: true });
+
+    if (error) {
+      console.error('ERRO RECEBIVEIS Supabase:', error);
+      return { total: 0, itens: [] as any[] };
+    }
+
+    const itens = (parcelas || []).map((p: any) => {
+      const repasse = p.contratos?.repasse_percentual || 100;
+      return {
+        id: p.id,
+        tipo: p.contratos?.tipo as 'planejamento' | 'extra',
+        nome: p.clientes?.nome || 'Sem cliente',
+        modelo: p.contratos?.descricao || '—',
+        valorLiquido: p.valor_previsto * (repasse / 100),
+        data_vencimento: p.data_vencimento,
+      };
+    });
+
+    const total = itens.reduce((acc, it) => acc + it.valorLiquido, 0);
+    return { total, itens };
   },
 
   async getUpcomingExpirations() {
