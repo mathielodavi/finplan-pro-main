@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Landmark, TrendingUp, Search, Briefcase, Edit3, Trash2, CheckCircle2, Clock, Layers } from 'lucide-react';
 import Badge from '../UI/Badge';
 import Confirmacao from '../Confirmacao';
-import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
+import { carteiraRecomendadaService, chaveVariacaoAtivo } from '../../services/carteiraRecomendadaService';
 import { normalizarTexto, diasDesde } from '../../utils/formatadores';
 import { GrupoAtivo } from './AtivoRecomendadoDrawer';
 import { toast } from '../../utils/toast';
@@ -15,8 +15,8 @@ interface TabelaCarteiraProps {
 
 /** Chave do ativo (agrupa TODAS as variações — tickers/CNPJs diferentes do mesmo ativo): nome normalizado. */
 const chaveAtivo = (a: any) => normalizarTexto(a.nome_ativo || '');
-/** Identidade de uma variação dentro do ativo. */
-const chaveVariacao = (a: any) => (a.ticker || a.cnpj || a.tipo || '').trim() || a.id;
+/** Identidade de uma variação dentro do ativo (identificador + rótulo — ver `chaveVariacaoAtivo`). */
+const chaveVariacao = (a: any) => chaveVariacaoAtivo(a) || a.id;
 
 const OrigemIcon = ({ origem }: { origem: string }) => (
    <div className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-surface-2 border border-subtle text-faint">

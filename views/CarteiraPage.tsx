@@ -142,6 +142,7 @@ const CarteiraPage: React.FC = () => {
         open={drawerImport}
         onClose={() => setDrawerImport(false)}
         title="Importar Tese de Investimentos"
+        subtitle="Substitui apenas as combinações estratégia × faixa enviadas"
         widthClass="max-w-lg"
       >
         <ImportacaoCarteira onSuccess={() => { setDrawerImport(false); carregarDados(); }} />
