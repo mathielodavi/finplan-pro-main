@@ -35,7 +35,7 @@ const pesoStatus = (status: 'protegido' | 'parcial' | 'desprotegido') =>
  * (AcordeoReservaEmergencia, AcordeoPlanoSaude, AcordeoSeguros).
  */
 export function calcularScoreProtecaoCliente(input: ScoreProtecaoInput): number {
-  const { clienteId, dadosClienteSeguro: dados, reservaRecomendada, dependentes, planosSaude, segurosVida, ativos, taxaRealMensal } = input;
+  const { clienteId, dadosClienteSeguro: dados, reservaRecomendada, dependentes, planosSaude, segurosVida, ativos } = input;
 
   // ── Pilar 1: Reserva de Emergência ──
   const saldoReserva = (ativos || [])
@@ -74,11 +74,17 @@ export function calcularScoreProtecaoCliente(input: ScoreProtecaoInput): number 
 
   // ── Pilar 3: Seguros de Vida ──
   const segurosClienteVida = (segurosVida || []).filter((s: any) => s.cliente_id === clienteId);
-  const totalDespesas = (dados?.despesas_obrigatorias || 0) + (dados?.despesas_nao_obrigatorias || 0) +
-    (dados?.financiamentos || 0) + (dados?.dividas_mensais || 0) + (dados?.projetos_financeiros || 0);
+  // Fallback recalculado precisa espelhar a EtapaPadraoVida: base de despesas conforme os toggles
+  // cobertura_incluir_* e taxa real ANUAL em percentual (não a mensal, que zerava o crescimento).
+  const totalDespesasCobertura =
+    ((dados?.cobertura_incluir_obrigatorias ?? true) ? (dados?.despesas_obrigatorias || 0) : 0) +
+    ((dados?.cobertura_incluir_nao_obrigatorias ?? false) ? (dados?.despesas_nao_obrigatorias || 0) : 0) +
+    ((dados?.cobertura_incluir_financiamentos ?? true) ? (dados?.financiamentos || 0) : 0) +
+    ((dados?.cobertura_incluir_dividas ?? false) ? (dados?.dividas_mensais || 0) : 0) +
+    ((dados?.cobertura_incluir_projetos ?? false) ? (dados?.projetos_financeiros || 0) : 0);
   const coberturaWizard = calcularCoberturaVida(
-    dados?.renda_cliente || 0, dados?.renda_conjuge || 0, totalDespesas,
-    dados?.periodo_cobertura_anos || 10, taxaRealMensal
+    dados?.renda_cliente || 0, dados?.renda_conjuge || 0, totalDespesasCobertura,
+    dados?.periodo_cobertura_anos || 10, dados?.taxa_real_anual ?? 4
   );
   const idealCliente = dados?.cobertura_cliente || coberturaWizard.coberturaCliente;
   const idealConjuge = dados?.cobertura_conjuge || coberturaWizard.coberturaConjuge;
