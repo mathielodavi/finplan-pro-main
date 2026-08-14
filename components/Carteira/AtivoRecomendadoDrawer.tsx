@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { carteiraRecomendadaService, AtivoRecomendado } from '../../services/carteiraRecomendadaService';
+import { carteiraRecomendadaService, AtivoRecomendado, chaveVariacaoAtivo } from '../../services/carteiraRecomendadaService';
 import { configService } from '../../services/configuracoesService';
 import { formatarCNPJ, normalizarTexto } from '../../utils/formatadores';
 import SidePanel from '../UI/SidePanel';
@@ -99,10 +99,12 @@ const AtivoRecomendadoDrawer: React.FC<Props> = ({ open, onClose, grupoInicial, 
 
       const linhas = grupoInicial.linhas || [];
 
-      // Variações únicas por identificador (ticker || cnpj || tipo).
+      // Variações únicas por identificador + rótulo (ver `chaveVariacaoAtivo`): só o identificador
+      // colapsaria variações legítimas que compartilham `tipo` (ex.: dois CDBs de bancos diferentes),
+      // e as linhas colapsadas seriam apagadas no save seguinte.
       const variacoesPorIdent = new Map<string, VariacaoState>();
       linhas.forEach(l => {
-        const ident = (l.ticker || l.cnpj || l.tipo || '').trim();
+        const ident = chaveVariacaoAtivo(l) || l.id || '';
         if (!variacoesPorIdent.has(ident)) {
           variacoesPorIdent.set(ident, { uid: newUid(), ticker: l.ticker || '', cnpj: l.cnpj || '', tipo: l.tipo || '', variacoes_fundo: l.variacoes_fundo || '' });
         }
@@ -123,7 +125,7 @@ const AtivoRecomendadoDrawer: React.FC<Props> = ({ open, onClose, grupoInicial, 
       // Mapeia cada linha existente ao par (variação uid, colocação uid) para diff no save.
       const ids: Record<string, Record<string, string>> = {};
       linhas.forEach(l => {
-        const ident = (l.ticker || l.cnpj || l.tipo || '').trim();
+        const ident = chaveVariacaoAtivo(l) || l.id || '';
         const combo = `${l.estrategia_id}|${l.faixa_id}`;
         const vUid = variacoesPorIdent.get(ident)?.uid;
         const cUid = colocacoesPorCombo.get(combo)?.uid;
@@ -165,10 +167,12 @@ const AtivoRecomendadoDrawer: React.FC<Props> = ({ open, onClose, grupoInicial, 
     if (variacoesState.length > 1) {
       const idents = new Set<string>();
       for (const v of variacoesState) {
-        const ident = normalizarTexto(identificadorVariacao(v));
-        if (!ident) return 'Toda variação precisa de um identificador (ticker, CNPJ ou tipo) quando há mais de uma.';
-        if (idents.has(ident)) return 'Há variações duplicadas (mesmo identificador).';
-        idents.add(ident);
+        if (!identificadorVariacao(v)) return 'Toda variação precisa de um identificador (ticker, CNPJ ou tipo) quando há mais de uma.';
+        // Identidade = identificador + rótulo: duas variações podem compartilhar o mesmo tipo
+        // (dois CDBs, por exemplo) desde que o rótulo as diferencie.
+        const chave = chaveVariacaoAtivo(v);
+        if (idents.has(chave)) return 'Há variações duplicadas. Use o rótulo para diferenciar variações de mesmo tipo.';
+        idents.add(chave);
       }
     }
 
