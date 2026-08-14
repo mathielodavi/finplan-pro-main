@@ -27,13 +27,27 @@ const PainelResumo: React.FC<Props> = ({ dados, dependentes, parametros, nomeCli
         [dependentes]
     );
 
+    // Base de despesas da cobertura — precisa espelhar EXATAMENTE a EtapaPadraoVida do wizard: só
+    // entram as despesas com o toggle cobertura_incluir_* ligado (padrão: obrigatórias +
+    // financiamentos). Antes somava TODAS as despesas, inflando a cobertura de padrão de vida.
+    const totalDespesasCobertura =
+        ((dados.cobertura_incluir_obrigatorias ?? true) ? (dados.despesas_obrigatorias || 0) : 0) +
+        ((dados.cobertura_incluir_nao_obrigatorias ?? false) ? (dados.despesas_nao_obrigatorias || 0) : 0) +
+        ((dados.cobertura_incluir_financiamentos ?? true) ? (dados.financiamentos || 0) : 0) +
+        ((dados.cobertura_incluir_dividas ?? false) ? (dados.dividas_mensais || 0) : 0) +
+        ((dados.cobertura_incluir_projetos ?? false) ? (dados.projetos_financeiros || 0) : 0);
+
+    // calcularCoberturaVida espera a taxa real ANUAL em percentual (faz (1 + taxa/100)^período).
+    // Antes recebia a taxa real MENSAL (~0,0015), zerando o fator de crescimento da cobertura.
+    const taxaRealAnual = dados.taxa_real_anual ?? 4;
+
     const coberturaVida = useMemo(() => calcularCoberturaVida(
         dados.renda_cliente || 0,
         dados.renda_conjuge || 0,
-        (dados.despesas_obrigatorias || 0) + (dados.despesas_nao_obrigatorias || 0) + (dados.financiamentos || 0) + (dados.dividas_mensais || 0) + (dados.projetos_financeiros || 0),
+        totalDespesasCobertura,
         dados.periodo_cobertura_anos || 10,
-        taxaRealMensal,
-    ), [dados, taxaRealMensal]);
+        taxaRealAnual,
+    ), [dados]);
 
     const sucessao = useMemo(() => calcularSucessao(
         dados.funeral_cliente || 0, dados.funeral_conjuge || 0,

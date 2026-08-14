@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import SidePanel from '../UI/SidePanel';
 import { ClienteSeguro, DependenteSeguro, ParametrosCalculo, protecaoService } from '../../services/protecaoService';
-import { calcularCoberturaVida, calcularSucessao, calcularTaxaRealMensal } from '../../utils/calculosFinanceiros';
+import { calcularCoberturaVida, calcularSucessao } from '../../utils/calculosFinanceiros';
 import AcordeoReservaEmergencia from './AcordeoReservaEmergencia';
 import AcordeoPlanoSaude from './AcordeoPlanoSaude';
 import AcordeoSeguros from './AcordeoSeguros';
@@ -13,7 +13,7 @@ import AcordeoProtecaoPatrimonial from './AcordeoProtecaoPatrimonial';
 import AcordeoProtecaoProfissional from './AcordeoProtecaoProfissional';
 import RelatorioProtecaoDoc from './RelatorioProtecaoDoc';
 import { supabase } from '../../services/supabaseClient';
-import { baixarElementoComoPDFPaginado } from '../../utils/pdfFromElement';
+import { baixarPaginasComoPDF } from '../../utils/pdfFromElement';
 import { toast } from '../../utils/toast';
 
 const fmtMoeda = (v: number) => `R$ ${Math.round(v || 0).toLocaleString('pt-BR')}`;
@@ -117,14 +117,24 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
     };
 
     // ─── Cálculos ────────────────────────────────────────────────────────────────
-    const taxaRealMensal = calcularTaxaRealMensal(parametros.taxa_juros_aa, parametros.ipca_projetado_aa);
-    const totalDespesas = (dados.despesas_obrigatorias || 0) + (dados.despesas_nao_obrigatorias || 0) +
-        (dados.financiamentos || 0) + (dados.dividas_mensais || 0) + (dados.projetos_financeiros || 0);
+    // Base de despesas da cobertura de vida — precisa espelhar EXATAMENTE a EtapaPadraoVida do
+    // wizard: só entram as despesas com o toggle cobertura_incluir_* ligado (padrão: obrigatórias
+    // + financiamentos). Antes o dashboard somava TODAS as despesas, inflando a cobertura.
+    const totalDespesasCobertura =
+        ((dados.cobertura_incluir_obrigatorias ?? true) ? (dados.despesas_obrigatorias || 0) : 0) +
+        ((dados.cobertura_incluir_nao_obrigatorias ?? false) ? (dados.despesas_nao_obrigatorias || 0) : 0) +
+        ((dados.cobertura_incluir_financiamentos ?? true) ? (dados.financiamentos || 0) : 0) +
+        ((dados.cobertura_incluir_dividas ?? false) ? (dados.dividas_mensais || 0) : 0) +
+        ((dados.cobertura_incluir_projetos ?? false) ? (dados.projetos_financeiros || 0) : 0);
+
+    // calcularCoberturaVida espera a taxa real ANUAL em percentual (faz (1 + taxa/100)^período).
+    // Antes recebia a taxa real MENSAL (~0,0015), zerando o fator de crescimento da cobertura.
+    const taxaRealAnual = dados.taxa_real_anual ?? 4;
 
     const coberturaVida = useMemo(() => calcularCoberturaVida(
-        dados.renda_cliente || 0, dados.renda_conjuge || 0, totalDespesas,
-        dados.periodo_cobertura_anos || 10, taxaRealMensal
-    ), [dados, taxaRealMensal]);
+        dados.renda_cliente || 0, dados.renda_conjuge || 0, totalDespesasCobertura,
+        dados.periodo_cobertura_anos || 10, taxaRealAnual
+    ), [dados]);
 
     const sucessao = useMemo(() => calcularSucessao(
         dados.funeral_cliente || 0, dados.funeral_conjuge || 0,
@@ -189,16 +199,16 @@ Planejador: ${planejadorEmail || '—'}`;
     };
 
     // ─── PDF (Levantamento de Necessidade de Proteção) ──────────────────────────
-    // Captura em blocos o documento renderizado fora da tela (RelatorioProtecaoDoc, abaixo) —
-    // mesmo mecanismo do Relatório de Aporte Mensal: cada seção é uma unidade indivisível na
-    // paginação, então nenhuma tabela/linha é cortada no meio de uma quebra de página.
+    // Documento editorial A4 paisagem (mesmo layout do Relatório de Alocação do Simulador Tático):
+    // cada `data-pdf-page` do RelatorioProtecaoDoc vira exatamente uma folha do PDF.
     const gerarPDF = async () => {
         if (!relatorioRef.current) return;
         setGerandoPdf(true);
         try {
             const nomeCliente_ = dados.nome_cliente || nomeCliente || 'Cliente';
             const nomeArquivo = `levantamento-protecao-${nomeCliente_.replace(/\s/g, '-').toLowerCase()}-${fmtDataHoje().replace(/\//g, '-')}.pdf`;
-            await baixarElementoComoPDFPaginado(relatorioRef.current, nomeArquivo);
+            await document.fonts.ready;
+            await baixarPaginasComoPDF(relatorioRef.current, nomeArquivo);
         } catch (err: any) {
             toast.error('Erro ao gerar o PDF: ' + (err?.message || 'tente novamente.'));
         } finally {

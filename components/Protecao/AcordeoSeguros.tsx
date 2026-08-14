@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Umbrella, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check, AlertTriangle, Loader2, Users, User } from 'lucide-react';
 import { SeguroVida, protecaoService, ClienteSeguro, DependenteSeguro } from '../../services/protecaoService';
-import { calcularCoberturaVida, calcularTaxaRealMensal } from '../../utils/calculosFinanceiros';
+import { calcularCoberturaVida } from '../../utils/calculosFinanceiros';
 import CampoMonetario from './CampoMonetario';
 import Badge from '../UI/Badge';
 
@@ -75,13 +75,18 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, suces
     };
 
     // ─── Padrão de Vida: ideal (do Wizard) ──────────────────────────────────────
-    const taxaRealMensal = calcularTaxaRealMensal(parametros.taxa_juros_aa, parametros.ipca_projetado_aa);
-    const totalDespesas = (dados.despesas_obrigatorias || 0) + (dados.despesas_nao_obrigatorias || 0) +
-        (dados.financiamentos || 0) + (dados.dividas_mensais || 0) + (dados.projetos_financeiros || 0);
+    // Fallback recalculado precisa espelhar a EtapaPadraoVida: base de despesas conforme os toggles
+    // cobertura_incluir_* e taxa real ANUAL em percentual (não a mensal, que zerava o crescimento).
+    const totalDespesasCobertura =
+        ((dados.cobertura_incluir_obrigatorias ?? true) ? (dados.despesas_obrigatorias || 0) : 0) +
+        ((dados.cobertura_incluir_nao_obrigatorias ?? false) ? (dados.despesas_nao_obrigatorias || 0) : 0) +
+        ((dados.cobertura_incluir_financiamentos ?? true) ? (dados.financiamentos || 0) : 0) +
+        ((dados.cobertura_incluir_dividas ?? false) ? (dados.dividas_mensais || 0) : 0) +
+        ((dados.cobertura_incluir_projetos ?? false) ? (dados.projetos_financeiros || 0) : 0);
 
     const coberturaWizard = calcularCoberturaVida(
-        dados.renda_cliente || 0, dados.renda_conjuge || 0, totalDespesas,
-        dados.periodo_cobertura_anos || 10, taxaRealMensal
+        dados.renda_cliente || 0, dados.renda_conjuge || 0, totalDespesasCobertura,
+        dados.periodo_cobertura_anos || 10, dados.taxa_real_anual ?? 4
     );
 
     const idealCliente = dados.cobertura_cliente || coberturaWizard.coberturaCliente;
