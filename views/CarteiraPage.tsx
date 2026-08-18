@@ -1,36 +1,23 @@
 
 import React, { useState, useEffect } from 'react';
 import { carteiraRecomendadaService } from '../services/carteiraRecomendadaService';
-import { useProntuarioNav } from '../context/ProntuarioNavContext';
 import Button from '../components/UI/Button';
 import SidePanel from '../components/UI/SidePanel';
 import ImportacaoCarteira from '../components/Carteira/ImportacaoCarteira';
 import TabelaCarteira from '../components/Carteira/TabelaCarteira';
 import AtivoRecomendadoDrawer, { GrupoAtivo } from '../components/Carteira/AtivoRecomendadoDrawer';
-import ConsultaCarteira from '../components/Carteira/ConsultaCarteira';
-import { FileSpreadsheet, Download, Plus, PieChart, Search, LayoutList } from 'lucide-react';
+import { FileSpreadsheet, Download, Plus, PieChart } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-const CARTEIRA_TABS = [
-  { id: 'recomendada', label: 'Carteira Recomendada', icon: <LayoutList size={16} /> },
-  { id: 'consulta', label: 'Consulta de Carteira', icon: <Search size={16} /> },
-];
-
+// A antiga aba "Consulta de Carteira" saiu daqui: virou o drawer do KPI "Patrimônio sob Gestão"
+// na Visão Geral (components/Carteira/ConsultaCarteiraDrawer.tsx), para acesso mais rápido.
+// Sem uma segunda visão, a navegação por abas deixou de fazer sentido nesta tela.
 const CarteiraPage: React.FC = () => {
-  const { setNav } = useProntuarioNav();
-  const [activeTab, setActiveTab] = useState('recomendada');
   const [ativos, setAtivos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerImport, setDrawerImport] = useState(false);
   const [drawerAtivo, setDrawerAtivo] = useState(false);
   const [grupoEdit, setGrupoEdit] = useState<GrupoAtivo | null>(null);
-
-  // Publica as abas da Carteira no header (Navbar) — layout padrão de navegação
-  // por abas em telas com múltiplas visões (ver DESIGN.MD §8).
-  useEffect(() => {
-    setNav({ tabs: CARTEIRA_TABS, activeTab, setActiveTab });
-    return () => setNav(null);
-  }, [activeTab, setNav]);
 
   // `silent` = recarga sem trocar para o spinner de página inteira — mantém a TabelaCarteira
   // montada (preserva busca/filtros) após editar/excluir/marcar OK um ativo.
@@ -115,27 +102,23 @@ const CarteiraPage: React.FC = () => {
         </div>
       </header>
 
-      {activeTab === 'recomendada' ? (
-        loading ? (
-          <div className="py-40 flex flex-col items-center justify-center gap-6">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[color:var(--primary)]"></div>
-            <p className="text-faint font-bold uppercase tracking-widest text-[10px]">Lendo Tese Recomendada...</p>
-          </div>
-        ) : ativos.length === 0 ? (
-          <div className="py-40 text-center bg-surface-2 border border-dashed border-subtle rounded-xl">
-            <FileSpreadsheet size={32} className="mx-auto text-faint mb-4" />
-            <h3 className="text-[14px] font-bold text-main uppercase tracking-widest">Carteira Vazia</h3>
-            <p className="text-faint text-[11px] mt-2 font-bold uppercase tracking-wider">Importe a planilha modelo para começar a usar a inteligência de alocação.</p>
-          </div>
-        ) : (
-          <TabelaCarteira
-            ativos={ativos}
-            onEditGrupo={(g) => { setGrupoEdit(g); setDrawerAtivo(true); }}
-            onRefresh={() => carregarDados(true)}
-          />
-        )
+      {loading ? (
+        <div className="py-40 flex flex-col items-center justify-center gap-6">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[color:var(--primary)]"></div>
+          <p className="text-faint font-bold uppercase tracking-widest text-[10px]">Lendo Tese Recomendada...</p>
+        </div>
+      ) : ativos.length === 0 ? (
+        <div className="py-40 text-center bg-surface-2 border border-dashed border-subtle rounded-xl">
+          <FileSpreadsheet size={32} className="mx-auto text-faint mb-4" />
+          <h3 className="text-[14px] font-bold text-main uppercase tracking-widest">Carteira Vazia</h3>
+          <p className="text-faint text-[11px] mt-2 font-bold uppercase tracking-wider">Importe a planilha modelo para começar a usar a inteligência de alocação.</p>
+        </div>
       ) : (
-        <ConsultaCarteira />
+        <TabelaCarteira
+          ativos={ativos}
+          onEditGrupo={(g) => { setGrupoEdit(g); setDrawerAtivo(true); }}
+          onRefresh={() => carregarDados(true)}
+        />
       )}
 
       <SidePanel

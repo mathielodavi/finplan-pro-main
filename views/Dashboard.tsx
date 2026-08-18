@@ -19,6 +19,7 @@ import SidePanel from '../components/UI/SidePanel';
 import Confirmacao from '../components/Confirmacao';
 import InputMoeda from '../components/UI/InputMoeda';
 import ContratoFormDrawer from '../components/Contratos/ContratoFormDrawer';
+import ConsultaCarteiraDrawer from '../components/Carteira/ConsultaCarteiraDrawer';
 import MapaBrasil from '../components/Dashboard/MapaBrasil';
 import { financeiroService } from '../services/financeiroService';
 import { Users, ShieldCheck, TrendingDown, DollarSign, BarChart3, ChevronLeft, ChevronRight, AlertCircle, Clock, CalendarX, CalendarCheck, Crown, X, Wallet, CreditCard, HeartPulse, MessageCircle, RefreshCw, CheckCircle2, Phone, Mail, Video, Check, Ban } from 'lucide-react';
@@ -91,6 +92,7 @@ const Dashboard: React.FC = () => {
   const [vencidos, setVencidos] = useState<any[]>([]);
   const [receivables, setReceivables] = useState<{ total: number; itens: any[] }>({ total: 0, itens: [] });
   const [receivablesOpen, setReceivablesOpen] = useState(false);
+  const [consultaCarteiraOpen, setConsultaCarteiraOpen] = useState(false);
   // Conciliação/cancelamento de recebíveis dentro do drawer
   const [recConciliando, setRecConciliando] = useState<string | null>(null);
   const [recValor, setRecValor] = useState(0);
@@ -320,7 +322,14 @@ const Dashboard: React.FC = () => {
   );
 
   const kpisAtendimento = [
-    { label: 'Patrimônio sob Gestão', value: formatarMoeda(kpis.aum), icon: <Wallet />, color: CHART_COLORS.info },
+    {
+      label: 'Patrimônio sob Gestão',
+      value: formatarMoeda(kpis.aum),
+      icon: <Wallet />,
+      color: CHART_COLORS.info,
+      onClick: () => setConsultaCarteiraOpen(true),
+      title: 'Consultar carteiras — buscar um ativo entre todos os clientes',
+    },
     { label: 'Endividamento Total', value: formatarMoeda(endividamentoTotal), icon: <CreditCard />, color: CHART_COLORS.danger },
     { label: 'Base com Proteção', value: `${coberturaProtecao.toFixed(0)}%`, icon: <HeartPulse />, color: CHART_COLORS.primary },
   ];
@@ -328,7 +337,13 @@ const Dashboard: React.FC = () => {
   const kpisContratos = [
     { label: 'Base Total', value: kpis.totalClientes, icon: <Users />, color: CHART_COLORS.info },
     { label: 'Ativos', value: kpis.ativosPlanejamento, icon: <ShieldCheck />, color: CHART_COLORS.primary },
-    { label: 'Churn Rate', value: `${kpis.churn.toFixed(1)}%`, icon: <TrendingDown />, color: CHART_COLORS.danger },
+    {
+      label: 'Churn Rate / mês',
+      value: `${kpis.churn.toFixed(2)}%`,
+      icon: <TrendingDown />,
+      color: CHART_COLORS.danger,
+      title: `${kpis.churnEncerrados} de ${kpis.totalClientes} cliente(s) da base encerraram o planejamento, diluídos nos ${kpis.churnMesesAtuacao} meses de atuação desde o primeiro contrato.`,
+    },
   ];
 
   const kpisFinanceiro = [
@@ -585,15 +600,26 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Coluna 1 — KPIs empilhados + Engajamento */}
           <div className="lg:col-span-4 flex flex-col gap-3">
-            {kpisAtendimento.map((kpi, i) => (
-              <div key={i} className="bg-surface rounded-xl border border-subtle p-4 flex items-center justify-between gap-3">
-                <div>
-                  <span className="text-[12px] font-medium text-muted block mb-1">{kpi.label}</span>
-                  <p className="text-[20px] font-bold text-main tracking-tight leading-none">{kpi.value}</p>
-                </div>
-                <span style={{ color: kpi.color }}>{React.cloneElement(kpi.icon as any, { size: 18, strokeWidth: 2.5 })}</span>
-              </div>
-            ))}
+            {kpisAtendimento.map((kpi, i) => {
+              const clicavel = !!(kpi as any).onClick;
+              const Tag: any = clicavel ? 'button' : 'div';
+              return (
+                <Tag
+                  key={i}
+                  {...(clicavel ? { onClick: (kpi as any).onClick, type: 'button', title: (kpi as any).title } : {})}
+                  className={`bg-surface rounded-xl border border-subtle p-4 flex items-center justify-between gap-3 text-left w-full ${clicavel ? 'hover:bg-surface-2 hover:border-strong transition-colors cursor-pointer' : ''}`}
+                >
+                  <div>
+                    <span className="text-[12px] font-medium text-muted block mb-1">{kpi.label}</span>
+                    <p className="text-[20px] font-bold text-main tracking-tight leading-none">{kpi.value}</p>
+                  </div>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <span style={{ color: kpi.color }}>{React.cloneElement(kpi.icon as any, { size: 18, strokeWidth: 2.5 })}</span>
+                    {clicavel && <ChevronRight size={14} className="text-faint" />}
+                  </span>
+                </Tag>
+              );
+            })}
 
             <div className={panelCls}>
               <PanelLabel title="Engajamento" hint="Termômetro" />
@@ -645,16 +671,14 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Agenda */}
+          {/* Agenda — cabeçalho em duas linhas: com 5 filtros, dividir a largura com o título
+              (e sua legenda) espremia os botões numa coluna de 1/3 (lg:col-span-4). */}
           <div className={`${panelCls} lg:col-span-4 overflow-hidden`}>
-            <div className={panelHeadCls}>
-              <div className="flex gap-2 items-baseline">
-                <h3 className="text-[13px] font-semibold text-main">Agenda</h3>
-                <span className="text-[11px] text-faint hidden sm:inline">Compromissos e check-ins</span>
-              </div>
-              <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
+            <div className="px-4 pt-3 pb-2.5 border-b border-subtle space-y-2">
+              <h3 className="text-[13px] font-semibold text-main">Agenda</h3>
+              <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle w-fit max-w-full overflow-x-auto">
                 {['all', 'late', 'upcoming', 'pending', 'inadimplente'].map((f) => (
-                  <button key={f} onClick={() => { setFilterAgenda(f as any); setPageAgenda(1); }} className={segBtn(filterAgenda === f)}>
+                  <button key={f} onClick={() => { setFilterAgenda(f as any); setPageAgenda(1); }} className={`${segBtn(filterAgenda === f)} whitespace-nowrap shrink-0`}>
                     {f === 'all' ? 'Tudo' : f === 'late' ? 'Atraso' : f === 'upcoming' ? 'Próximas' : f === 'pending' ? 'Check-in' : 'Inadimplentes'}
                   </button>
                 ))}
@@ -796,7 +820,7 @@ const Dashboard: React.FC = () => {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
           {kpisContratos.map((kpi, i) => (
-            <div key={i} className="bg-surface rounded-xl border border-subtle p-4 flex flex-col gap-3">
+            <div key={i} title={(kpi as any).title} className="bg-surface rounded-xl border border-subtle p-4 flex flex-col gap-3">
               <div className="flex justify-between items-center">
                 <span className="text-[12px] font-medium text-muted">{kpi.label}</span>
                 <span style={{ color: kpi.color }}>{React.cloneElement(kpi.icon as any, { size: 15, strokeWidth: 2.5 })}</span>
@@ -1116,6 +1140,9 @@ const Dashboard: React.FC = () => {
           </>
         )}
       </SidePanel>
+
+      {/* Consulta de Carteira — busca de ativo entre todos os clientes (KPI Patrimônio sob Gestão) */}
+      <ConsultaCarteiraDrawer open={consultaCarteiraOpen} onClose={() => setConsultaCarteiraOpen(false)} />
 
       {/* Confirmação de cancelamento de recebível */}
       <Confirmacao

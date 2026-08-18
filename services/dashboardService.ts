@@ -33,23 +33,7 @@ export const dashboardService = {
     const clientesComPlanAtivo = new Set(contratos.filter(c => c.tipo === 'planejamento' && c.status === 'ativo').map(c => c.cliente_id));
     const ativosPlanejamentoCount = clientesComPlanAtivo.size;
 
-    // KPI: Churn Rate (Clientes inativos cujo último contrato foi cancelado)
-    const clientesEmChurn = clientesBasePlanejamento.filter(c => {
-      if (c.status === 'Ativo') return false;
-
-      const cliContratosPlan = contratos
-        .filter(cont => cont.cliente_id === c.id && cont.tipo === 'planejamento')
-        .sort((a, b) => new Date(b.data_inicio).getTime() - new Date(a.data_inicio).getTime());
-
-      if (cliContratosPlan.length === 0) return false;
-
-      const ultimoContrato = cliContratosPlan[0];
-      return ultimoContrato.status === 'cancelado';
-    });
-
-    const churn = totalClientesPlan > 0 ? (clientesEmChurn.length / totalClientesPlan) * 100 : 0;
-
-    // "Hoje" no fuso de Brasília (Início do dia) para cálculos de reuniões
+    // "Hoje" no fuso de Brasília (Início do dia) — usado no churn e nos cálculos de reuniões
     const agora = new Date();
     const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Sao_Paulo',
@@ -59,6 +43,40 @@ export const dashboardService = {
     });
     const hojeStr = formatter.format(agora);
     const hoje = new Date(`${hojeStr}T00:00:00-03:00`);
+
+    // KPI: Churn Rate — taxa média MENSAL, normalizada pelo tempo de atuação do planejador,
+    // para não crescer indefinidamente conforme a base histórica envelhece:
+    //   (clientes encerrados ÷ base histórica) ÷ meses de atuação × 100
+    // Numerador: cliente não-ativo com ao menos um contrato de planejamento encerrado
+    // (concluído OU cancelado) — antes exigia que o ÚLTIMO contrato estivesse cancelado,
+    // o que ignorava não renovações (contratos concluídos e não retomados).
+    const clientesEmChurn = clientesBasePlanejamento.filter(c => {
+      if (c.status === 'Ativo') return false;
+      return contratos.some(cont =>
+        cont.cliente_id === c.id
+        && cont.tipo === 'planejamento'
+        && (cont.status === 'concluido' || cont.status === 'cancelado')
+      );
+    });
+
+    // Tempo de atuação: do contrato de planejamento mais antigo até hoje, em meses (inclusivo —
+    // um contrato aberto neste mês conta como 1 mês, o que também evita divisão por zero).
+    const dataPrimeiroContrato = contratos
+      .filter(c => c.tipo === 'planejamento' && c.data_inicio)
+      .reduce<Date | null>((min, c) => {
+        const [y, m, d] = c.data_inicio.split('-').map(Number);
+        const dt = new Date(y, m - 1, d, 12, 0, 0);
+        return !min || dt < min ? dt : min;
+      }, null);
+
+    const mesesAtuacao = dataPrimeiroContrato
+      ? Math.max(1, (hoje.getFullYear() - dataPrimeiroContrato.getFullYear()) * 12
+          + (hoje.getMonth() - dataPrimeiroContrato.getMonth()) + 1)
+      : 1;
+
+    const churn = totalClientesPlan > 0
+      ? ((clientesEmChurn.length / totalClientesPlan) / mesesAtuacao) * 100
+      : 0;
 
     // KPI: Fila Check-in (Ignorar inativos e sem planejamento)
     const pendentesReuniao = clientesBasePlanejamento
@@ -89,15 +107,23 @@ export const dashboardService = {
     const sumMesesG = contratos.reduce((acc, c) => acc + (Number(c.prazo_meses) || 1), 0);
     const ticketMedioGeral = sumValorG / (sumMesesG || 1);
 
-    // KPI: Patrimônio sob Gestão — apenas clientes ativos
-    const aum = clientes
-      .filter(c => c.status === 'Ativo')
-      .reduce((acc, c) => acc + (Number(c.patrimonio_total) || 0), 0);
+    // KPI: Patrimônio sob Gestão — soma do patrimônio VIVO (ativos.valor_atual) dos clientes
+    // ativos. Antes somava clientes.patrimonio_total, que é só o snapshot "Patrimônio Financeiro
+    // Inicial" preenchido no onboarding (ver Situação Inicial em FormularioCliente.tsx) — um
+    // valor estático e informativo, não a carteira real do cliente, que fica em `ativos`.
+    const idsClientesAtivos = clientes.filter(c => c.status === 'Ativo').map(c => c.id);
+    const { data: ativosPatrimonio } = idsClientesAtivos.length > 0
+      ? await supabase.from('ativos').select('valor_atual').in('cliente_id', idsClientesAtivos)
+      : { data: [] as any[] };
+    const aum = (ativosPatrimonio || []).reduce((acc, a) => acc + (Number(a.valor_atual) || 0), 0);
 
     return {
       totalClientes: totalClientesPlan,
       ativosPlanejamento: ativosPlanejamentoCount,
       churn,
+      // Contexto do churn (para o tooltip do card): quantos encerraram e sobre quantos meses.
+      churnEncerrados: clientesEmChurn.length,
+      churnMesesAtuacao: mesesAtuacao,
       ticketMedio: ticketMedioGeral,
       ticketMedio6m,
       pendentesReuniao: pendentesReuniao.length,
