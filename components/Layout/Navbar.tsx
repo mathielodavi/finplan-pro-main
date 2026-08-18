@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Menu } from 'lucide-react';
 import ClienteSwitcher from './ClienteSwitcher';
 import { useProntuarioNav } from '../../context/ProntuarioNavContext';
 
@@ -12,7 +12,12 @@ const SECTION_LABEL: Record<string, string> = {
   carteira: 'Carteira',
 };
 
-const Navbar: React.FC = () => {
+interface NavbarProps {
+  /** Abre a Sidebar como drawer — só existe abaixo de `lg`. */
+  onAbrirMenu: () => void;
+}
+
+const Navbar: React.FC<NavbarProps> = ({ onAbrirMenu }) => {
   const location = useLocation();
   const { nav, subnav } = useProntuarioNav();
 
@@ -22,7 +27,17 @@ const Navbar: React.FC = () => {
   const isProntuario = isClienteScope && segments.length > 1;
 
   return (
-    <header className="h-16 flex-shrink-0 bg-surface border-b border-subtle flex items-center px-6 gap-4">
+    <header className="h-16 flex-shrink-0 bg-surface border-b border-subtle flex items-center px-4 sm:px-6 gap-3 sm:gap-4">
+      {/* Abre a Sidebar em drawer — abaixo de `lg` ela não fica no fluxo */}
+      <button
+        onClick={onAbrirMenu}
+        className="lg:hidden -ml-1 h-10 w-10 flex items-center justify-center rounded-lg text-muted hover:text-main hover:bg-surface-2 transition-colors shrink-0"
+        title="Abrir menu"
+        aria-label="Abrir menu"
+      >
+        <Menu size={20} />
+      </button>
+
       {/* Breadcrumb (com seletor de cliente como último segmento no prontuário) */}
       <nav className="flex items-center gap-1.5 min-w-0 shrink-0">
         {isProntuario ? (
