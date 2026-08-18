@@ -124,7 +124,8 @@ const ProjetosInvestimentos = ({ clienteId, ativos = [] }: { clienteId: string, 
           <h4 className="text-[10px] font-bold text-faint uppercase tracking-wider">{titulo}</h4>
         </div>
         <div className="bg-surface border border-subtle rounded-xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-          <table className="w-full text-left">
+          <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[560px]">
             <thead>
               <tr className="bg-surface-2 border-b border-subtle">
                 <th className="px-5 py-3 font-bold text-faint text-[10px] uppercase tracking-wider">Objetivo</th>
@@ -167,6 +168,7 @@ const ProjetosInvestimentos = ({ clienteId, ativos = [] }: { clienteId: string, 
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     );

@@ -282,7 +282,91 @@ const ConciliacaoPage: React.FC = () => {
               </div>
 
               <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden transition-all">
-                <div className="overflow-x-auto">
+                {/* Abaixo de `md`: os mesmos campos editáveis (valor, data, baixar) da tabela,
+                    só que empilhados — a tabela de 7 colunas com inputs inline não sobrevive a
+                    uma tela de celular nem com scroll horizontal. */}
+                <div className="md:hidden divide-y divide-subtle">
+                  {lista.map(p => {
+                    const fatorRepasse = (p.contratos?.repasse_percentual || 100) / 100;
+                    const esperadoLiquido = p.valor_previsto * fatorRepasse;
+                    const isSelecionada = selecionadas.includes(p.id);
+                    const isPago = p.status === 'pago';
+                    return (
+                      <div key={p.id} className={`p-3.5 ${isPago ? 'bg-surface-2/50' : isSelecionada ? 'bg-primary/10' : ''}`}>
+                        <div className="flex items-start justify-between gap-2" onClick={() => !isPago && toggleSelecao(p.id)}>
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); if (!isPago) toggleSelecao(p.id); }}
+                              className={`h-10 w-10 -m-2 flex items-center justify-center shrink-0 ${isPago ? 'text-primary opacity-40' : isSelecionada ? 'text-primary' : 'text-faint'}`}
+                            >
+                              {isPago ? <CheckCircle2 size={16} /> : isSelecionada ? <CheckSquare size={16} /> : <Square size={16} />}
+                            </button>
+                            <div className="min-w-0 pt-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-1 h-4 rounded-full shrink-0 ${p.contratos?.tipo === 'planejamento' ? 'bg-info' : 'bg-warning'}`} />
+                                <p className="font-bold text-main text-[13px] tracking-tight leading-none truncate">{p.clientes?.nome}</p>
+                              </div>
+                              <span className="text-[10px] text-faint font-bold uppercase block mt-1 truncate">{p.contratos?.descricao} · venc. {formatarData(p.data_vencimento)}</span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-bold text-main text-[13px] leading-none mb-1">{formatarMoeda(esperadoLiquido)}</p>
+                            <span className="text-[10px] font-bold text-faint uppercase tracking-wider block">Bruto: {formatarMoeda(p.valor_previsto)}</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 mt-3 pl-[46px]">
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <label className="text-[9px] font-bold text-faint uppercase tracking-wider block mb-1">Líquido recebido</label>
+                            <InputMoeda
+                              value={valoresLiquidos[p.id] || 0}
+                              onChange={(v) => setValoresLiquidos(prev => ({ ...prev, [p.id]: v }))}
+                              disabled={isPago}
+                            />
+                          </div>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <label className="text-[9px] font-bold text-faint uppercase tracking-wider block mb-1">Recebimento</label>
+                            <div className="relative">
+                              <Calendar size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
+                              <input
+                                type="date"
+                                disabled={isPago}
+                                value={datasRecebimento[p.id] || ''}
+                                onChange={e => setDatasRecebimento({ ...datasRecebimento, [p.id]: e.target.value })}
+                                className="w-full pl-7 pr-1 h-10 bg-surface-2 border border-subtle rounded-[8px] font-bold text-[11px] outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all uppercase disabled:opacity-50 disabled:bg-transparent text-main"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pl-[46px] mt-2.5" onClick={(e) => e.stopPropagation()}>
+                          {!isPago ? (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await financeiroService.registrarPagamento(p.id, valoresLiquidos[p.id], datasRecebimento[p.id]);
+                                  await carregarDados();
+                                } catch (e) {
+                                  toast.error("Erro ao baixar parcela.");
+                                }
+                              }}
+                              className="w-full text-[#0b0e14] font-bold text-[11px] uppercase tracking-wider bg-primary hover:opacity-90 h-10 rounded-[8px] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                            >
+                              Baixar
+                            </button>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Conciliado</span>
+                              <span className="text-[10px] font-bold text-faint uppercase tracking-wider">{formatarData(p.data_pagamento)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-surface border-b border-subtle">

@@ -34,7 +34,8 @@ const AbaRelatorios: React.FC<AbaRelatoriosProps> = ({ clienteId, cliente }) => 
          <section className="space-y-6">
             <h3 className="text-xl font-black text-main tracking-tight">Relatórios Gerados</h3>
             <div className="bg-surface border border-subtle rounded-[2rem] overflow-hidden shadow-sm">
-               <table className="w-full text-left">
+               <div className="overflow-x-auto">
+               <table className="w-full text-left min-w-[520px]">
                   <thead>
                      <tr className="bg-surface-2 border-b border-subtle">
                         <th className="px-6 py-4 text-[10px] font-black uppercase text-faint">Data</th>
@@ -64,6 +65,7 @@ const AbaRelatorios: React.FC<AbaRelatoriosProps> = ({ clienteId, cliente }) => 
                      ))}
                   </tbody>
                </table>
+               </div>
             </div>
          </section>
 
@@ -71,7 +73,8 @@ const AbaRelatorios: React.FC<AbaRelatoriosProps> = ({ clienteId, cliente }) => 
             <section className="space-y-6">
                <h3 className="text-xl font-black text-main tracking-tight">Histórico de Envios</h3>
                <div className="bg-surface border border-subtle rounded-[2rem] overflow-hidden shadow-sm">
-                  <table className="w-full text-left">
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-left min-w-[480px]">
                      <thead>
                         <tr className="bg-surface-2 border-b border-subtle">
                            <th className="px-6 py-4 text-[10px] font-black uppercase text-faint">Data de Envio</th>
@@ -89,6 +92,7 @@ const AbaRelatorios: React.FC<AbaRelatoriosProps> = ({ clienteId, cliente }) => 
                         ))}
                      </tbody>
                   </table>
+                  </div>
                </div>
             </section>
          )}
