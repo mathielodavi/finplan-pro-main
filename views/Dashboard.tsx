@@ -597,9 +597,10 @@ const Dashboard: React.FC = () => {
           </button>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Coluna 1 — KPIs empilhados + Engajamento */}
-          <div className="lg:col-span-4 flex flex-col gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-4">
+          {/* Coluna 1 — KPIs empilhados + Engajamento. No iPad em retrato (md), pareia com a
+              Agenda; o Mapa precisa da largura toda por causa do SVG, então fica embaixo. */}
+          <div className="md:col-span-3 lg:col-span-4 flex flex-col gap-3">
             {kpisAtendimento.map((kpi, i) => {
               const clicavel = !!(kpi as any).onClick;
               const Tag: any = clicavel ? 'button' : 'div';
@@ -673,7 +674,7 @@ const Dashboard: React.FC = () => {
 
           {/* Agenda — cabeçalho em duas linhas: com 5 filtros, dividir a largura com o título
               (e sua legenda) espremia os botões numa coluna de 1/3 (lg:col-span-4). */}
-          <div className={`${panelCls} lg:col-span-4 overflow-hidden`}>
+          <div className={`${panelCls} md:col-span-3 lg:col-span-4 overflow-hidden`}>
             <div className="px-4 pt-3 pb-2.5 border-b border-subtle space-y-2">
               <h3 className="text-[13px] font-semibold text-main">Agenda</h3>
               <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle w-fit max-w-full overflow-x-auto">
@@ -772,8 +773,8 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Mapa */}
-          <div className={`${panelCls} lg:col-span-4 overflow-hidden`}>
+          {/* Mapa — largura cheia no md (o SVG do Brasil fica ilegível espremido a 1/2) */}
+          <div className={`${panelCls} md:col-span-6 lg:col-span-4 overflow-hidden`}>
             <div className={panelHeadCls}>
               <h3 className="text-[13px] font-semibold text-main">Distribuição Geográfica</h3>
               <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
@@ -830,9 +831,11 @@ const Dashboard: React.FC = () => {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
+        {/* No md os dois gráficos ficam em largura cheia — a 1/2 (~350px) a legenda e os eixos
+            do ComposedChart não cabem com folga. Só dividem a partir do lg, com mais espaço real. */}
+        <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-4 mb-4">
           {/* Movimentação da Base — apenas barras */}
-          <div className={`${panelCls} lg:col-span-7`}>
+          <div className={`${panelCls} md:col-span-6 lg:col-span-7`}>
             <PanelLabel title="Movimentação da Base" hint="Últimos 7 meses" />
             <div className="p-4 h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -861,7 +864,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Evolução do Churn — apenas linhas */}
-          <div className={`${panelCls} lg:col-span-5`}>
+          <div className={`${panelCls} md:col-span-6 lg:col-span-5`}>
             <PanelLabel title="Evolução do Churn" hint="% mensal" />
             <div className="p-4 h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -880,9 +883,9 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Clientes por Origem */}
-        <div className={`${panelCls} lg:col-span-5`}>
+        <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-4">
+        {/* Clientes por Origem — largura cheia no md, mesmo raciocínio da grade de gráficos acima */}
+        <div className={`${panelCls} md:col-span-6 lg:col-span-5`}>
           <PanelLabel title="Clientes por Origem" hint="Total · ativos · inativos · clique para detalhar" />
           <div className="p-4 flex-1 min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -901,16 +904,14 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Vencimentos */}
-        <div className={`${panelCls} lg:col-span-7 overflow-hidden`}>
-          <div className={panelHeadCls}>
-            <div className="flex gap-2 items-baseline">
-              <h3 className="text-[13px] font-semibold text-main">Renovação</h3>
-              <span className="text-[11px] text-faint hidden sm:inline">Vigência consultiva</span>
-            </div>
-            <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
+        {/* Vencimentos — mesmo cabeçalho em duas linhas da Agenda: 5 filtros não cabem ao lado
+            do título numa coluna estreita (aqui, o md antes de virar largura cheia). */}
+        <div className={`${panelCls} md:col-span-6 lg:col-span-7 overflow-hidden`}>
+          <div className="px-4 pt-3 pb-2.5 border-b border-subtle space-y-2">
+            <h3 className="text-[13px] font-semibold text-main">Renovação</h3>
+            <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle w-fit max-w-full overflow-x-auto">
               {[{ id: 'all', label: 'Tudo' }, { id: 'critical', label: '≤15d' }, { id: 'attention', label: '≤45d' }, { id: 'safe', label: '>45d' }, { id: 'expired', label: 'Vencidos' }].map((f) => (
-                <button key={f.id} onClick={() => { setFilterRenovacao(f.id as any); setPageVencimentos(1); }} className={segBtn(filterRenovacao === f.id)}>
+                <button key={f.id} onClick={() => { setFilterRenovacao(f.id as any); setPageVencimentos(1); }} className={`${segBtn(filterRenovacao === f.id)} whitespace-nowrap shrink-0`}>
                   {f.label}
                 </button>
               ))}
@@ -1008,9 +1009,9 @@ const Dashboard: React.FC = () => {
           })}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Receita Prevista */}
-          <div className={`${panelCls} lg:col-span-8`}>
+        <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-4">
+          {/* Receita Prevista — largura cheia no md, mesmo raciocínio dos outros gráficos */}
+          <div className={`${panelCls} md:col-span-6 lg:col-span-8`}>
             <PanelLabel title="Receita Prevista" hint="Fluxo líquido — 6 meses" />
             <div className="p-4 h-[240px] flex-1">
               <ResponsiveContainer width="100%" height="100%">
@@ -1030,7 +1031,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* LTV Indicator */}
-          <div className={`${panelCls} lg:col-span-4`}>
+          <div className={`${panelCls} md:col-span-6 lg:col-span-4`}>
             <PanelLabel title="Lifetime Value" hint="Líquido" />
             <div className="p-4 flex flex-col justify-between flex-1">
               <div className="text-center py-2">
