@@ -2,7 +2,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { LayoutDashboard, Users, Settings, Briefcase, Scale, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, Briefcase, Scale, LogOut, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 interface NavItemProps {
   to: string;
@@ -54,13 +54,43 @@ const NavItem: React.FC<NavItemProps> = ({ to, icon, label, badge, isExpanded })
   );
 };
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  /** Estado do drawer abaixo de `lg`. Acima disso a sidebar é sempre visível no fluxo. */
+  menuAberto: boolean;
+  onFechar: () => void;
+}
+
+const LG_BREAKPOINT = '(min-width: 1024px)';
+
+const Sidebar: React.FC<SidebarProps> = ({ menuAberto, onFechar }) => {
   const { user, logout } = useAuth();
 
   const [isExpanded, setIsExpanded] = React.useState<boolean>(() => {
     const saved = localStorage.getItem('sidebar_expanded');
     return saved !== null ? JSON.parse(saved) : true;
   });
+
+  // O modo "recolhido" (só ícones) existe para ganhar espaço no desktop. Como drawer ele não faz
+  // sentido — a sobreposição já é temporária —, então abaixo de `lg` a sidebar abre sempre inteira.
+  const [isDesktop, setIsDesktop] = React.useState<boolean>(
+    () => typeof window !== 'undefined' && window.matchMedia(LG_BREAKPOINT).matches
+  );
+  React.useEffect(() => {
+    const mq = window.matchMedia(LG_BREAKPOINT);
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Esc fecha o drawer, como nos demais painéis do sistema (ver components/UI/SidePanel.tsx).
+  React.useEffect(() => {
+    if (!menuAberto) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuAberto, onFechar]);
+
+  const expandido = isDesktop ? isExpanded : true;
 
   const toggleSidebar = () => {
     setIsExpanded(prev => {
@@ -71,21 +101,47 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className={`${isExpanded ? 'w-64' : 'w-20'} bg-surface border-r border-subtle flex flex-col h-full z-40 transition-all duration-300 relative group/sidebar`}>
-      <button
-        onClick={toggleSidebar}
-        className="absolute -right-3.5 top-8 bg-surface-2 border border-strong text-faint hover:text-primary w-7 h-7 rounded-full flex items-center justify-center transition-all shadow-md z-50 transform hover:scale-110"
+    <>
+      {/* Overlay do drawer — só existe abaixo de `lg` */}
+      {menuAberto && (
+        <div className="fixed inset-0 z-40 bg-surface-3/50 backdrop-blur-sm lg:hidden animate-fade-in" onClick={onFechar} aria-hidden="true" />
+      )}
+
+      <aside
+        className={`
+          ${expandido ? 'w-64' : 'w-20'}
+          bg-surface border-r border-subtle flex flex-col h-full z-50 group/sidebar
+          fixed inset-y-0 left-0 transition-transform duration-300
+          ${menuAberto ? 'translate-x-0' : '-translate-x-full'}
+          lg:static lg:z-40 lg:translate-x-0 lg:shrink-0 lg:transition-all
+        `}
+        style={{ paddingLeft: 'env(safe-area-inset-left)' }}
       >
-        {isExpanded ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-      </button>
+        {/* Recolher/expandir é exclusivo do desktop */}
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3.5 top-8 bg-surface-2 border border-strong text-faint hover:text-primary w-7 h-7 rounded-full items-center justify-center transition-all shadow-md z-50 transform hover:scale-110 hidden lg:flex"
+          title={isExpanded ? 'Recolher menu' : 'Expandir menu'}
+        >
+          {isExpanded ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+        </button>
+
+        {/* Fechar o drawer é exclusivo do mobile */}
+        <button
+          onClick={onFechar}
+          className="absolute right-3 top-5 p-2 text-faint hover:text-main hover:bg-surface-2 rounded-lg transition-colors lg:hidden"
+          title="Fechar menu"
+        >
+          <X size={18} />
+        </button>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className={`p-6 ${!isExpanded ? 'px-4' : ''}`}>
-          <div className={`flex items-center gap-3 mb-8 ${isExpanded ? 'px-2' : 'justify-center'}`}>
+        <div className={`p-6 ${!expandido ? 'px-4' : ''}`}>
+          <div className={`flex items-center gap-3 mb-8 ${expandido ? 'px-2' : 'justify-center'}`}>
             <div className="h-8 w-8 rounded-xl flex items-center justify-center text-[#0b0e14] shadow-sm flex-shrink-0" style={{ backgroundColor: 'var(--primary)' }}>
               <Briefcase size={18} />
             </div>
-            {isExpanded && (
+            {expandido && (
               <div className="overflow-hidden whitespace-nowrap">
                 <span className="text-base font-bold tracking-tight text-main block leading-none uppercase">Tulipa</span>
                 <span className="text-[8px] font-bold text-faint uppercase tracking-widest">Vibe Financeiro</span>
@@ -94,12 +150,12 @@ const Sidebar: React.FC = () => {
           </div>
 
           <nav className="space-y-0.5">
-            <NavItem to="/dashboard" label="Visão Geral" icon={<LayoutDashboard />} isExpanded={isExpanded} />
-            <NavItem to="/clientes" label="Clientes" icon={<Users />} isExpanded={isExpanded} />
-            <NavItem to="/configuracoes" label="Ajustes" icon={<Settings />} isExpanded={isExpanded} />
+            <NavItem to="/dashboard" label="Visão Geral" icon={<LayoutDashboard />} isExpanded={expandido} />
+            <NavItem to="/clientes" label="Clientes" icon={<Users />} isExpanded={expandido} />
+            <NavItem to="/configuracoes" label="Ajustes" icon={<Settings />} isExpanded={expandido} />
 
             <div className="pt-5 pb-1 h-9 flex items-center">
-              {isExpanded ? (
+              {expandido ? (
                 <span
                   className="whitespace-nowrap"
                   style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-faint)', letterSpacing: '0.06em', textTransform: 'uppercase', paddingLeft: '12px' }}
@@ -110,18 +166,18 @@ const Sidebar: React.FC = () => {
                 <div className="w-full h-px mx-2" style={{ backgroundColor: 'var(--border)' }} />
               )}
             </div>
-            <NavItem to="/carteira" label="Carteira" icon={<Briefcase />} badge="Beta" isExpanded={isExpanded} />
-            <NavItem to="/conciliacao" label="Recebíveis" icon={<Scale />} isExpanded={isExpanded} />
+            <NavItem to="/carteira" label="Carteira" icon={<Briefcase />} badge="Beta" isExpanded={expandido} />
+            <NavItem to="/conciliacao" label="Recebíveis" icon={<Scale />} isExpanded={expandido} />
           </nav>
         </div>
 
-        <div className={`mt-auto p-6 border-t border-subtle ${!isExpanded ? 'px-3 flex justify-center' : ''}`}>
-          <div className={`flex items-center group w-full ${isExpanded ? 'justify-between' : 'justify-center flex-col gap-4'}`}>
-            <div className={`flex items-center gap-3 min-w-0 ${!isExpanded ? 'justify-center w-full' : ''}`}>
+        <div className={`mt-auto p-6 border-t border-subtle ${!expandido ? 'px-3 flex justify-center' : ''}`}>
+          <div className={`flex items-center group w-full ${expandido ? 'justify-between' : 'justify-center flex-col gap-4'}`}>
+            <div className={`flex items-center gap-3 min-w-0 ${!expandido ? 'justify-center w-full' : ''}`}>
               <div className="h-9 w-9 rounded-xl bg-surface-2 border border-subtle flex items-center justify-center overflow-hidden flex-shrink-0">
                 <img src={`https://ui-avatars.com/api/?name=${user?.user_metadata?.full_name || 'U'}&background=10b981&color=0b0e14`} alt="Avatar" />
               </div>
-              {isExpanded && (
+              {expandido && (
                 <div className="min-w-0 overflow-hidden">
                   <p className="text-xs font-bold text-main truncate leading-none">{user?.user_metadata?.full_name || 'Consultor'}</p>
                   <span className="text-[9px] font-medium text-faint uppercase tracking-wider block truncate">{user?.user_metadata?.role || 'Master'}</span>
@@ -130,7 +186,7 @@ const Sidebar: React.FC = () => {
             </div>
             <button
               onClick={logout}
-              className={`p-2 text-faint hover:text-[color:var(--danger)] rounded-lg transition-all ${!isExpanded ? 'w-full flex justify-center' : ''}`}
+              className={`p-2 text-faint hover:text-[color:var(--danger)] rounded-lg transition-all ${!expandido ? 'w-full flex justify-center' : ''}`}
               style={{ transition: 'all .15s' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(248,113,113,0.12)'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
@@ -141,7 +197,8 @@ const Sidebar: React.FC = () => {
           </div>
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };
 
