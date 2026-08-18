@@ -77,6 +77,46 @@ export const investimentoService = {
     return Array.from(mapa.values());
   },
 
+  /**
+   * Carteiras dos clientes ATIVOS que já possuem ativos cadastrados — estado inicial da Consulta
+   * de Carteira (drawer do KPI "Patrimônio sob Gestão"). Devolve nome, patrimônio somado e a tese
+   * de investimento. A tese é resolvida em memória: `clientes.tese_investimento_id` não tem FK
+   * declarada para `estrategias_base`, então não dá para usar embedding do PostgREST.
+   */
+  async getCarteirasClientes() {
+    const { data: clientes, error } = await supabase
+      .from('clientes')
+      .select('id, nome, status, tese_investimento_id')
+      .eq('status', 'Ativo');
+    if (error) throw error;
+
+    const lista = clientes || [];
+    if (lista.length === 0) return [];
+
+    const ids = lista.map(c => c.id);
+    const [ativosRes, tesesRes] = await Promise.all([
+      supabase.from('ativos').select('cliente_id, valor_atual').in('cliente_id', ids),
+      supabase.from('estrategias_base').select('id, nome'),
+    ]);
+    if (ativosRes.error) throw ativosRes.error;
+
+    const patrimonio = new Map<string, number>();
+    (ativosRes.data || []).forEach((a: any) => {
+      patrimonio.set(a.cliente_id, (patrimonio.get(a.cliente_id) || 0) + (Number(a.valor_atual) || 0));
+    });
+    const nomeTese = new Map((tesesRes.data || []).map((t: any) => [t.id, t.nome as string]));
+
+    return lista
+      // "com carteira cadastrada" = tem ao menos um ativo (mesmo que zerado)
+      .filter(c => patrimonio.has(c.id))
+      .map(c => ({
+        id: c.id,
+        nome: c.nome as string,
+        patrimonio: patrimonio.get(c.id) || 0,
+        estrategia: (c.tese_investimento_id && nomeTese.get(c.tese_investimento_id)) || null,
+      }));
+  },
+
   async getProjetos(clienteId: string) {
     const { data, error } = await supabase.from('projetos').select('*').eq('cliente_id', clienteId).order('data_alvo', { ascending: true });
     if (error) throw error;
