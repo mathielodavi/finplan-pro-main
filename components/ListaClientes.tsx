@@ -83,7 +83,84 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
 
   return (
     <div className="bg-surface rounded-xl shadow-[var(--shadow-card)] border border-subtle overflow-hidden">
-      <div className="overflow-x-auto">
+      {/* Abaixo de `md` a tabela de 7 colunas não cabe nem com scroll horizontal — vira lista de
+          cartões com os mesmos dados agrupados por cliente. A partir de `md` volta a ser tabela. */}
+      <div className="md:hidden divide-y divide-subtle">
+        {clientes.map((c) => {
+          const acaoCfg = PROXIMA_ACAO_CONFIG[c.proximaAcao?.categoria] || PROXIMA_ACAO_CONFIG.pending;
+          const tagsExtras = (c.etiquetas_tags || []).slice(2);
+          return (
+            <div key={c.id} onClick={() => onView(c)} className="p-4 active:bg-surface-2 transition-colors cursor-pointer">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-9 w-9 rounded-full bg-surface-3 border border-subtle flex items-center justify-center text-[13px] font-bold text-muted shrink-0">
+                    {c.nome.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-semibold text-main text-[14px] block leading-tight truncate">{c.nome}</span>
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                      {c.origem ? <Badge variant="neutral" size="sm">{c.origem}</Badge> : null}
+                      {c.inadimplencia?.inadimplenteAgora && <Badge variant="danger" size="sm">Inadimplente</Badge>}
+                      {!c.temPlanoAtivo && <Badge variant="warning" size="sm">Sem plano ativo</Badge>}
+                      {(c.etiquetas_tags || []).slice(0, 2).map((tag: string) => (
+                        <Badge key={tag} variant="primary" size="sm">{tag}</Badge>
+                      ))}
+                      {tagsExtras.length > 0 && <Badge variant="neutral" size="sm">+{tagsExtras.length}</Badge>}
+                    </div>
+                  </div>
+                </div>
+                {/* Alvo de toque de 40px (vs. 28px na versão desktop) — sem hover no touch,
+                    os botões ficam sempre visíveis em vez de aparecer com opacity no hover. */}
+                <div className="flex gap-0.5 shrink-0">
+                  <button onClick={(e) => { e.stopPropagation(); onEdit(c); }} className="h-10 w-10 flex items-center justify-center text-faint active:text-main active:bg-surface-3 rounded-md transition-all">
+                    <Edit3 size={16} />
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }} className="h-10 w-10 flex items-center justify-center text-faint active:text-[color:var(--danger)] active:bg-[rgba(248,113,113,0.12)] rounded-md transition-all">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 mt-3 pl-[46px]">
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-faint block mb-0.5">Patrimônio líquido</span>
+                  {c.patrimonio_liquido ? (
+                    <span className="text-[13px] font-semibold" style={{ color: c.patrimonio_liquido < 0 ? 'var(--danger)' : 'var(--text-main)' }}>
+                      {formatarMoeda(c.patrimonio_liquido)}
+                    </span>
+                  ) : <span className="text-[12px] text-faint">—</span>}
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-faint block mb-0.5">Termômetro</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: c.termometro?.cor || '#9ca3af' }} />
+                    <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: c.termometro?.cor || '#9ca3af' }}>
+                      {c.termometro?.status || 'SEM DADOS'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-faint block mb-0.5">Proteção</span>
+                  <span className="text-[13px] font-bold" style={{ color: corProtecao(c.percentualProtecao || 0) }}>
+                    {Math.round(c.percentualProtecao || 0)}%
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-faint block mb-0.5">Próxima ação</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="h-5 w-5 rounded flex items-center justify-center shrink-0" style={{ backgroundColor: acaoCfg.bg, color: acaoCfg.color }}>
+                      {React.cloneElement(acaoCfg.icon as any, { size: 11 })}
+                    </div>
+                    <span className="text-[11px] text-muted truncate">{descricaoProximaAcao(c)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-subtle">
@@ -200,27 +277,28 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
                     </div>
                   </td>
 
-                  {/* Ações */}
+                  {/* Ações — opacidade reduzida por padrão SÓ em dispositivos com mouse real
+                      ([@media(hover:hover)]), revelada no hover da linha. Em touch (iPad incluso,
+                      que já vê esta tabela a partir de md) fica sempre 100% visível: não há
+                      hover real para "revelar" o botão, group-hover: nunca dispara (Tailwind v4
+                      já escopa hover:/group-hover: em @media(hover:hover) por padrão). */}
                   <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-0.5 opacity-30 group-hover:opacity-100 transition-all duration-300">
+                    <div className="flex justify-end gap-0.5 opacity-100 [@media(hover:hover)]:opacity-30 group-hover:opacity-100 transition-all duration-300">
                       <button
                         onClick={(e) => { e.stopPropagation(); onView(c); }}
-                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-primary hover:bg-surface-3 rounded-md transition-all"
+                        className="h-9 w-9 flex items-center justify-center text-faint hover:text-primary hover:bg-surface-3 active:bg-surface-3 rounded-md transition-all"
                       >
                         <Eye size={14} />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onEdit(c); }}
-                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-main hover:bg-surface-3 rounded-md transition-all"
+                        className="h-9 w-9 flex items-center justify-center text-faint hover:text-main hover:bg-surface-3 active:bg-surface-3 rounded-md transition-all"
                       >
                         <Edit3 size={14} />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }}
-                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-[color:var(--danger)] rounded-md transition-all"
-                        style={{ transition: 'all .15s' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(248,113,113,0.12)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+                        className="h-9 w-9 flex items-center justify-center text-faint hover:text-[color:var(--danger)] hover:bg-[rgba(248,113,113,0.12)] active:text-[color:var(--danger)] active:bg-[rgba(248,113,113,0.18)] rounded-md transition-all"
                       >
                         <Trash2 size={14} />
                       </button>

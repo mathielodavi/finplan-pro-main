@@ -36,7 +36,7 @@ const iconePorOrigem = (origem?: string) => {
 };
 
 const segBtn = (active: boolean) =>
-  `flex-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted'}`;
+  `flex-1 h-8 px-2.5 flex items-center justify-center rounded-md text-[11px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted active:bg-surface-3/60'}`;
 
 /**
  * Consulta de Carteira — busca um ativo entre as carteiras de TODOS os clientes.

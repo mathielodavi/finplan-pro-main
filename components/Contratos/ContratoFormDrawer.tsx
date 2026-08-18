@@ -452,7 +452,11 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
                     <h4 className="text-[11px] font-semibold text-faint uppercase tracking-wider">Escalonamento de recebíveis (D+{formContrato.prazo_recebimento_dias})</h4>
                   </div>
                   <div className="bg-surface border border-subtle rounded-xl overflow-hidden max-h-72 overflow-y-auto custom-scrollbar">
-                    <table className="w-full text-left">
+                    {/* overflow-x-auto isolado do scroll vertical acima: overflow-x:auto não define
+                        overflow-y, então a rolagem vertical segue passando para o container pai
+                        (necessário para o `sticky top-0` do cabeçalho continuar funcionando). */}
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[520px]">
                       <thead className="sticky top-0 bg-surface-2 border-b border-subtle z-10">
                         <tr>
                           <th className="px-4 py-2.5 text-[11px] font-semibold text-faint uppercase tracking-wider">Referência</th>
@@ -480,6 +484,7 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-2">

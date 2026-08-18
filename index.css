@@ -115,6 +115,17 @@ body {
 .recharts-tooltip-label { color: #9ba1b0 !important; }
 .recharts-cartesian-axis-tick-value { fill: #6b7280; }
 
+/* iOS Safari aplica zoom automático ao focar um <input>/<select>/<textarea> com font-size
+   menor que 16px — muitos campos do sistema usam text-[11px]..text-[13px]. !important é
+   necessário porque uma classe Tailwind (ex.: .text-\[13px\]) tem especificidade maior que um
+   seletor de tipo puro e venceria o override em cascata normal. Escopado a telefones (abaixo de
+   `md`); o iPad, alvo deste projeto, já se comporta bem sem a correção. */
+@media (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Autofill dark (evita campos brancos do navegador) */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,

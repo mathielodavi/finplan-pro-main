@@ -368,8 +368,10 @@ const Dashboard: React.FC = () => {
   });
   const paginatedVencimentos = vencimentosFiltrados.slice((pageVencimentos - 1) * ITEMS_PER_PAGE, pageVencimentos * ITEMS_PER_PAGE);
 
+  // h-8 explícito (era só py-1, ~24px) — alvo de toque maior para os filtros segmentados, todos
+  // em painéis já acessíveis no mobile a partir da F1/F2 (Agenda, Renovação, Distribuição Geo).
   const segBtn = (active: boolean) =>
-    `px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted'}`;
+    `h-8 px-2.5 flex items-center justify-center rounded-md text-[11px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted active:bg-surface-3/60'}`;
 
   // ── Drawer de clientes (drill-down): linha e segmentos ──
   const renderCliente = (c: any, i: number) => {

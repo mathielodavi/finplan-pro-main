@@ -51,7 +51,7 @@ const SidePanel: React.FC<SidePanelProps> = ({ open, onClose, title, subtitle, w
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-faint hover:text-main hover:bg-surface-3 rounded-full transition-colors shrink-0"
+            className="h-10 w-10 flex items-center justify-center text-faint hover:text-main hover:bg-surface-3 active:bg-surface-3 rounded-full transition-colors shrink-0"
             title="Fechar"
           >
             <X size={20} />
