@@ -277,27 +277,28 @@ const ListaClientes: React.FC<ListaClientesProps> = ({ clientes, onEdit, onView,
                     </div>
                   </td>
 
-                  {/* Ações */}
+                  {/* Ações — opacidade reduzida por padrão SÓ em dispositivos com mouse real
+                      ([@media(hover:hover)]), revelada no hover da linha. Em touch (iPad incluso,
+                      que já vê esta tabela a partir de md) fica sempre 100% visível: não há
+                      hover real para "revelar" o botão, group-hover: nunca dispara (Tailwind v4
+                      já escopa hover:/group-hover: em @media(hover:hover) por padrão). */}
                   <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-0.5 opacity-30 group-hover:opacity-100 transition-all duration-300">
+                    <div className="flex justify-end gap-0.5 opacity-100 [@media(hover:hover)]:opacity-30 group-hover:opacity-100 transition-all duration-300">
                       <button
                         onClick={(e) => { e.stopPropagation(); onView(c); }}
-                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-primary hover:bg-surface-3 rounded-md transition-all"
+                        className="h-9 w-9 flex items-center justify-center text-faint hover:text-primary hover:bg-surface-3 active:bg-surface-3 rounded-md transition-all"
                       >
                         <Eye size={14} />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onEdit(c); }}
-                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-main hover:bg-surface-3 rounded-md transition-all"
+                        className="h-9 w-9 flex items-center justify-center text-faint hover:text-main hover:bg-surface-3 active:bg-surface-3 rounded-md transition-all"
                       >
                         <Edit3 size={14} />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }}
-                        className="h-7 w-7 flex items-center justify-center text-faint hover:text-[color:var(--danger)] rounded-md transition-all"
-                        style={{ transition: 'all .15s' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(248,113,113,0.12)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+                        className="h-9 w-9 flex items-center justify-center text-faint hover:text-[color:var(--danger)] hover:bg-[rgba(248,113,113,0.12)] active:text-[color:var(--danger)] active:bg-[rgba(248,113,113,0.18)] rounded-md transition-all"
                       >
                         <Trash2 size={14} />
                       </button>

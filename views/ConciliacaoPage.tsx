@@ -148,8 +148,10 @@ const ConciliacaoPage: React.FC = () => {
     if (m > 12) { m = 1; a += 1; }
     setFiltro({ ...filtro, mes: m, ano: a });
   };
+  // h-8 explícito (era só py-1, ~24px) — alvo de toque maior, esta tela já ganhou cartões
+  // editáveis no mobile na F3.
   const segBtn = (active: boolean) =>
-    `px-3 py-1 rounded-md text-[12px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted'}`;
+    `h-8 px-3 flex items-center justify-center rounded-md text-[12px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted active:bg-surface-3/60'}`;
 
   return (
     <div className="animate-fade-in max-w-[1400px] mx-auto pb-24 px-4 lg:px-8">

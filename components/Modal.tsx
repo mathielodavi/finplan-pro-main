@@ -93,27 +93,12 @@ const Modal: React.FC<ModalProps> = ({
             {headerActions && (
               <div className="flex items-center gap-2">{headerActions}</div>
             )}
-            {/* DESIGN.MD §7: botão X discreto no canto superior direito */}
+            {/* DESIGN.MD §7: botão X discreto no canto superior direito. Hover/active via classes
+                Tailwind (auto-seguras em touch) em vez de onMouseEnter/onMouseLeave — ver nota
+                equivalente em components/Layout/Sidebar.tsx. Alvo de 40px (era 32px). */}
             <button
               onClick={onClose}
-              className="flex items-center justify-center transition-colors duration-150"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                color: 'var(--text-muted)',
-                border: '1px solid transparent',
-                background: 'transparent',
-                cursor: 'pointer',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--border-light)';
-                (e.currentTarget as HTMLElement).style.color = 'var(--danger)';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-                (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)';
-              }}
+              className="flex items-center justify-center w-10 h-10 rounded-lg border border-transparent text-muted bg-transparent cursor-pointer transition-colors duration-150 hover:bg-[var(--border-light)] hover:text-[color:var(--danger)] active:bg-[var(--border-light)] active:text-[color:var(--danger)]"
               title="Fechar"
             >
               <X size={16} strokeWidth={2} />

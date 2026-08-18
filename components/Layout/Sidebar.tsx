@@ -20,10 +20,14 @@ const NavItem: React.FC<NavItemProps> = ({ to, icon, label, badge, isExpanded })
     <Link
       to={to}
       title={!isExpanded ? label : undefined}
-      className={`flex items-center justify-between transition-all duration-150 group rounded-lg ${isExpanded ? 'px-3 py-2' : 'py-2 justify-center'}`}
-      style={{ backgroundColor: isActive ? 'var(--primary-soft)' : 'transparent' }}
-      onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-surface-2)'; }}
-      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+      // Hover/active via classes Tailwind (auto-seguras em touch — ver nota abaixo) em vez de
+      // onMouseEnter/onMouseLeave: no iOS Safari, um mouseenter disparado por toque nem sempre
+      // recebe o mouseleave correspondente, travando o item "em hover" após navegar. Como o
+      // Tailwind v4 já embrulha `hover:` em `@media (hover: hover)`, essas classes simplesmente
+      // não se aplicam em touch — só o `active:` (tap real) dá o feedback visual lá.
+      // Sem inline style quando !isActive, para o hover/active de classe poderem vencer a cascata.
+      className={`flex items-center justify-between transition-all duration-150 group rounded-lg ${isExpanded ? 'px-3 py-2' : 'py-2 justify-center'} ${!isActive ? 'hover:bg-surface-2 active:bg-surface-3' : ''}`}
+      style={isActive ? { backgroundColor: 'var(--primary-soft)' } : undefined}
     >
       <div className="flex items-center gap-2.5">
         <span style={{ color: isActive ? 'var(--primary)' : 'var(--text-muted)', transition: 'color 0.15s' }}>
@@ -186,10 +190,7 @@ const Sidebar: React.FC<SidebarProps> = ({ menuAberto, onFechar }) => {
             </div>
             <button
               onClick={logout}
-              className={`p-2 text-faint hover:text-[color:var(--danger)] rounded-lg transition-all ${!expandido ? 'w-full flex justify-center' : ''}`}
-              style={{ transition: 'all .15s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(248,113,113,0.12)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+              className={`h-10 min-w-10 flex items-center justify-center px-2 text-faint hover:text-[color:var(--danger)] hover:bg-[rgba(248,113,113,0.12)] active:text-[color:var(--danger)] active:bg-[rgba(248,113,113,0.18)] rounded-lg transition-all ${!expandido ? 'w-full' : ''}`}
               title="Sair"
             >
               <LogOut size={16} />
