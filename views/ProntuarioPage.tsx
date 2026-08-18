@@ -8,7 +8,7 @@ import { investimentoService } from '../services/investimentoService';
 import { useClienteContext } from '../context/ClienteContext';
 import { useProntuarioNav } from '../context/ProntuarioNavContext';
 import Button from '../components/UI/Button';
-import { TrendingUp, History, ClipboardList, Wallet, Shield, CreditCard } from 'lucide-react';
+import { TrendingUp, History, ClipboardList, Wallet, Shield, CreditCard, Download } from 'lucide-react';
 
 // Abas
 import AbaResumo from '../components/Prontuario/AbaResumo';
@@ -80,8 +80,22 @@ const ProntuarioPage: React.FC = () => {
       setActiveTab,
       actions: (
         <>
-          <Button variant="outline" size="sm" className="hidden sm:inline-flex">Compartilhar</Button>
-          <Button variant="primary" size="sm" onClick={() => setModalPDF(true)}>Gerar PDF</Button>
+          {/* `hidden` num wrapper, não no próprio Button: o Button sempre inclui `inline-flex`
+              (sem gate de breakpoint) na sua classe base — como nenhuma das duas tem media
+              query, o CSS resolve por ordem na folha compilada (alfabética: hidden < inline-flex),
+              e `inline-flex` vencia a cascata, ignorando o `hidden`. O botão ficava visível e
+              ocupando espaço mesmo abaixo de `sm`. Um wrapper com display:none esconde o
+              conteúdo incondicionalmente, sem essa disputa. */}
+          <span className="hidden sm:inline-flex">
+            <Button variant="outline" size="sm">Compartilhar</Button>
+          </span>
+          {/* Ícone só abaixo de `sm`: com o cabeçalho em duas linhas no mobile, "Gerar PDF" por
+              extenso não cabe ao lado do menu + breadcrumb na primeira linha. Sem sobrescrever
+              o padding do Button (evita colisão de especificidade entre classes Tailwind de
+              mesma propriedade) — só o rótulo escondido já reduz bastante a largura. */}
+          <Button variant="primary" size="sm" leftIcon={<Download size={14} />} onClick={() => setModalPDF(true)}>
+            <span className="hidden sm:inline">Gerar PDF</span>
+          </Button>
         </>
       ),
     });
