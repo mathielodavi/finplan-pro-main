@@ -4,7 +4,7 @@ import { investimentoService } from '../../services/investimentoService';
 import { configService } from '../../services/configuracoesService';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import { cambioService, MOEDAS_SUPORTADAS, MoedaCodigo } from '../../services/cambioService';
-import { formatarMoeda, formatarCNPJ, formatarData, diasDesde } from '../../utils/formatadores';
+import { formatarMoeda, formatarCNPJ, formatarData, diasDesde, normalizarTexto } from '../../utils/formatadores';
 import Modal from '../Modal';
 import SidePanel from '../UI/SidePanel';
 import Badge from '../UI/Badge';
@@ -14,6 +14,12 @@ import { Edit3, Trash2, ArrowUpRight, ArrowDownRight, Filter, FileSpreadsheet, P
 import { DESTINOS_VENDA } from '../../utils/destinosVenda';
 import { toast } from '../../utils/toast';
 import Confirmacao from '../Confirmacao';
+
+// Normaliza ticker/CNPJ antes de comparar com a carteira recomendada — cadastros manuais às vezes
+// trazem espaço extra antes/depois do valor, o que quebrava a igualdade estrita e fazia o ativo
+// aparecer como "Não recomendado" mesmo estando na carteira modelo.
+const upTrim = (s?: string) => (s || '').toUpperCase().trim();
+const soDigitos = (s?: string) => (s || '').replace(/\D/g, '');
 
 const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) => {
   const [modalOpen, setModalOpen] = useState(false);
@@ -118,7 +124,11 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
       const valorParaIndep = temIndependencia ? (a.valor_atual * (linkIndep.percentual / 100)) : 0;
       const pesoNaClasse = (totalClasseIndep > 0 && temIndependencia) ? (valorParaIndep / totalClasseIndep) * 100 : 0;
 
-      const matchesRec = carteiraRec.filter(r => (r.ticker && a.ticker && r.ticker === a.ticker) || (r.cnpj && a.cnpj && r.cnpj === a.cnpj) || (r.nome_ativo === a.nome));
+      const matchesRec = carteiraRec.filter(r =>
+        (r.ticker && a.ticker && upTrim(r.ticker) === upTrim(a.ticker)) ||
+        (r.cnpj && a.cnpj && soDigitos(r.cnpj) === soDigitos(a.cnpj)) ||
+        (normalizarTexto(r.nome_ativo) === normalizarTexto(a.nome))
+      );
       let statusControle = 'Não recomendado';
       let metaAlvo = 0;
       let desvio = 0;
@@ -403,7 +413,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                 </select>
               </div>
               <div>
-                {editing?.origem === 'bolsa' && <><label className={fLabel}>Ticker</label><input type="text" value={editing?.ticker || ''} onChange={e => setEditing({ ...editing, ticker: e.target.value.toUpperCase() })} className={fInput} /></>}
+                {editing?.origem === 'bolsa' && <><label className={fLabel}>Ticker</label><input type="text" value={editing?.ticker || ''} onChange={e => setEditing({ ...editing, ticker: e.target.value.toUpperCase().trimStart() })} onBlur={e => setEditing((prev: any) => prev ? { ...prev, ticker: e.target.value.toUpperCase().trim() } : prev)} className={fInput} /></>}
                 {editing?.origem === 'fundo' && <><label className={fLabel}>CNPJ</label><input type="text" value={editing?.cnpj || ''} onChange={e => setEditing({ ...editing, cnpj: formatarCNPJ(e.target.value) })} className={fInput} /></>}
                 {editing?.origem === 'bancario' && <><label className={fLabel}>Tipo</label><select value={editing?.tipo_especifico || ''} onChange={e => setEditing({ ...editing, tipo_especifico: e.target.value })} className={fInput}><option value="">Selecione...</option><option value="CDB">CDB</option><option value="Tesouro">Tesouro Direto</option><option value="Poupança">Poupança</option><option value="LCI/LCA">LCI/LCA</option><option value="Outros">Outros</option></select></>}
                 {editing?.origem === 'previdencia_privada' && <><label className={fLabel}>CNPJ</label><input type="text" value={editing?.cnpj || ''} onChange={e => setEditing({ ...editing, cnpj: formatarCNPJ(e.target.value) })} className={fInput} /></>}

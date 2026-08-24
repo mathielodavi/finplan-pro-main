@@ -26,6 +26,7 @@ export interface PayloadImportacao {
 export interface ResultadoImportacao {
     inseridos: number;
     atualizados: number;
+    removidos: number;
     totalCarteira: number;
 }
 
@@ -38,15 +39,53 @@ export interface PreviewLinha {
 const up = (s?: string) => (s || '').toUpperCase().trim();
 const digitos = (s?: string) => (s || '').replace(/\D/g, '');
 
-/** Casa por prioridade ticker → cnpj → nome normalizado (mesmo critério do wizard de Aporte). */
+/** Remove pontuação/espaços extras após normalizar (acento/caixa) — usado só no fallback aproximado. */
+const normalizarComparavel = (s?: string) => normalizarTexto(s || '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * Casa dois nomes "por aproximação": um contém o outro após normalização. Só é chamado quando
+ * NENHUM dos dois ativos (importado e existente) tem ticker/cnpj — caso típico de Tesouro/CDB,
+ * onde o JSON pode trazer o nome com sufixo de vencimento ("LFT - Tesouro Selic 2031") diferente
+ * do nome cadastrado ("LFT Tesouro Selic"). Exige um mínimo de caracteres para evitar falso
+ * positivo entre nomes curtos coincidentes.
+ */
+const nomesAproximados = (nomeA?: string, nomeB?: string): boolean => {
+    const a = normalizarComparavel(nomeA);
+    const b = normalizarComparavel(nomeB);
+    if (a.length < 8 || b.length < 8) return false;
+    return a.includes(b) || b.includes(a);
+};
+
+/** O nome cadastrado começa pelo ticker seguido de espaço/hífen/fim de string (ex.: "FIXA11 OU ETF IDKA11"). */
+const nomeComecaComTicker = (nome: string, ticker: string): boolean => {
+    if (!ticker) return false;
+    const n = up(nome);
+    const t = up(ticker);
+    return n === t || n.startsWith(`${t} `) || n.startsWith(`${t}-`);
+};
+
+/**
+ * Casa por prioridade ticker → cnpj → nome normalizado (mesmo critério do wizard de Aporte),
+ * com fallbacks para lidar com classificação/cadastro divergente:
+ * - nome do ativo importado é o próprio ticker do existente (ex.: cripto "BTC"/"ETH" chega com
+ *   origem "outro" e sem campo "ticker" no JSON, mas o ativo já cadastrado tem ticker="BTC");
+ * - ticker/cnpj do existente está vazio ou mal cadastrado, mas o nome cadastrado começa pelo
+ *   ticker (ex.: "FIXA11 OU ETF IDKA11" para o ticker "FIXA11" — padrão comum de cadastro manual);
+ * - nenhum dos dois lados tem ticker/cnpj (Tesouro/CDB) → casa por nome aproximado.
+ */
 const casarAtivo = (existentes: any[], row: AtivoImportado): any | undefined => {
     const t = up(row.ticker);
     const c = digitos(row.cnpj);
-    return (existentes || []).find(a =>
-        (t && up(a.ticker) === t) ||
-        (c && digitos(a.cnpj) === c) ||
-        (normalizarTexto(a.nome) === normalizarTexto(row.nome))
-    );
+    const temChaveForte = !!(t || c);
+    return (existentes || []).find(a => {
+        if (t && up(a.ticker) === t) return true;
+        if (c && digitos(a.cnpj) === c) return true;
+        if (!t && up(a.ticker) && up(a.ticker) === up(row.nome)) return true;
+        if (normalizarTexto(a.nome) === normalizarTexto(row.nome)) return true;
+        if (t && !a.ticker && nomeComecaComTicker(a.nome, t)) return true;
+        if (!temChaveForte && !a.ticker && !a.cnpj && nomesAproximados(a.nome, row.nome)) return true;
+        return false;
+    });
 };
 
 const inferirOrigem = (row: AtivoImportado): AtivoImportado['origem'] => {
@@ -101,14 +140,22 @@ export const importacaoService = {
         return { payload: { ativos, aporte_periodo: isFinite(aporte) ? aporte : 0 }, erros };
     },
 
-    /** Classifica cada linha como inserir/ajustar contra a carteira atual (para o preview). */
-    classificar(existentes: any[], ativos: AtivoImportado[]): PreviewLinha[] {
-        return ativos.map(row => {
+    /**
+     * Classifica cada linha como inserir/ajustar contra a carteira atual (para o preview) e
+     * devolve também os ativos já cadastrados que não casaram com nenhuma linha do JSON —
+     * candidatos a "vendido" que o consultor precisa confirmar antes de remover.
+     */
+    classificar(existentes: any[], ativos: AtivoImportado[]): { linhas: PreviewLinha[]; naoEncontrados: any[] } {
+        const idsCasados = new Set<string>();
+        const linhas: PreviewLinha[] = ativos.map(row => {
             const match = casarAtivo(existentes, row);
+            if (match) idsCasados.add(match.id);
             return match
                 ? { row, acao: 'ajustar', valorAnterior: match.valor_atual || 0 }
                 : { row, acao: 'inserir' };
         });
+        const naoEncontrados = (existentes || []).filter(a => !idsCasados.has(a.id));
+        return { linhas, naoEncontrados };
     },
 
     /**
@@ -117,8 +164,11 @@ export const importacaoService = {
      *   status, classe e origem já cadastrados (campos classificatórios só preenchem se estiverem vazios);
      * - não casou → insere ativo novo (distribuição 100% independência, status Manter).
      * Ao final registra o snapshot mensal em historico_patrimonio (evolução/rentabilidade da carteira).
+     *
+     * `idsVendidosConfirmados` — ativos já cadastrados que o consultor confirmou como vendidos
+     * (não vieram no JSON e foram marcados na tela de preview): são removidos na mesma operação.
      */
-    async importarAtivosJSON(clienteId: string, payload: PayloadImportacao): Promise<ResultadoImportacao> {
+    async importarAtivosJSON(clienteId: string, payload: PayloadImportacao, idsVendidosConfirmados: string[] = []): Promise<ResultadoImportacao> {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Usuário não autenticado');
         const empresaId = user.user_metadata?.empresa_id || user.id;
@@ -179,10 +229,17 @@ export const importacaoService = {
             }
         }
 
+        let removidos = 0;
+        if (idsVendidosConfirmados.length > 0) {
+            const { error } = await supabase.from('ativos').delete().in('id', idsVendidosConfirmados);
+            if (error) throw error;
+            removidos = idsVendidosConfirmados.length;
+        }
+
         // Registra a movimentação no histórico da carteira (mesmo mecanismo do salvar/aporte):
         // upsert mensal do patrimônio total; aporte_periodo evita superestimar a rentabilidade.
         const totalCarteira = await investimentoService.snapshotPatrimonioIndependencia(clienteId, payload.aporte_periodo || 0);
 
-        return { inseridos, atualizados, totalCarteira };
+        return { inseridos, atualizados, removidos, totalCarteira };
     },
 };
