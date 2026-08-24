@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, AlertCircle, Plus, RefreshCw, ClipboardList } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Plus, RefreshCw, ClipboardList, Trash2 } from 'lucide-react';
 import { importacaoService, PreviewLinha, PayloadImportacao, ResultadoImportacao } from '../../services/importacaoService';
 import { investimentoService } from '../../services/investimentoService';
 import { formatarMoeda } from '../../utils/formatadores';
@@ -22,6 +22,8 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
   const [texto, setTexto] = useState('');
   const [aporte, setAporte] = useState(0);
   const [preview, setPreview] = useState<PreviewLinha[] | null>(null);
+  const [naoEncontrados, setNaoEncontrados] = useState<any[]>([]);
+  const [vendidosConfirmados, setVendidosConfirmados] = useState<Set<string>>(new Set());
   const [erros, setErros] = useState<string[]>([]);
   const [payload, setPayload] = useState<PayloadImportacao | null>(null);
   const [analisando, setAnalisando] = useState(false);
@@ -30,7 +32,7 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
 
   const resetPreview = (novoTexto: string) => {
     setTexto(novoTexto);
-    if (preview) { setPreview(null); setPayload(null); setErros([]); }
+    if (preview) { setPreview(null); setPayload(null); setErros([]); setNaoEncontrados([]); setVendidosConfirmados(new Set()); }
   };
 
   const analisar = async () => {
@@ -41,7 +43,10 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
       if (e.length > 0 || p.ativos.length === 0) { setPreview(null); setPayload(null); return; }
       setAporte(prev => (prev !== 0 ? prev : (p.aporte_periodo || 0)));
       const existentes = (await investimentoService.getAtivos(clienteId)) || [];
-      setPreview(importacaoService.classificar(existentes, p.ativos));
+      const { linhas, naoEncontrados: nf } = importacaoService.classificar(existentes, p.ativos);
+      setPreview(linhas);
+      setNaoEncontrados(nf);
+      setVendidosConfirmados(new Set());
       setPayload(p);
     } catch {
       toast.error('Erro ao analisar os dados.');
@@ -50,11 +55,19 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
     }
   };
 
+  const toggleVendido = (id: string) => {
+    setVendidosConfirmados(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   const importar = async () => {
     if (!payload) return;
     setLoading(true);
     try {
-      const res = await importacaoService.importarAtivosJSON(clienteId, { ...payload, aporte_periodo: aporte });
+      const res = await importacaoService.importarAtivosJSON(clienteId, { ...payload, aporte_periodo: aporte }, Array.from(vendidosConfirmados));
       setResultado(res);
       setTimeout(() => onSuccess(), 1800);
     } catch (err: any) {
@@ -72,7 +85,8 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
         </div>
         <h3 className="text-[18px] font-bold text-main">Carteira sincronizada</h3>
         <p className="text-[13px] text-muted">
-          {resultado.inseridos} ativo(s) inserido(s) · {resultado.atualizados} ajustado(s).<br />
+          {resultado.inseridos} ativo(s) inserido(s) · {resultado.atualizados} ajustado(s)
+          {resultado.removidos > 0 && <> · {resultado.removidos} removido(s) (venda confirmada)</>}.<br />
           Patrimônio total: <span className="font-bold text-main">{formatarMoeda(resultado.totalCarteira)}</span>
         </p>
       </div>
@@ -142,6 +156,36 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
             ))}
           </div>
 
+          {naoEncontrados.length > 0 && (
+            <div>
+              <label className="block text-[11px] font-bold text-faint uppercase tracking-wider mb-1.5">
+                Cadastrados que não vieram no JSON ({naoEncontrados.length}) — confirme se foram vendidos
+              </label>
+              <div className="rounded-lg border border-danger/30 divide-y divide-danger/20 max-h-48 overflow-y-auto custom-scrollbar">
+                {naoEncontrados.map(a => (
+                  <label key={a.id} className="flex items-center justify-between px-3 py-2 gap-2 cursor-pointer hover:bg-danger/5 transition-colors">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={vendidosConfirmados.has(a.id)}
+                        onChange={() => toggleVendido(a.id)}
+                        className="shrink-0 accent-danger"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[12.5px] font-semibold text-main truncate">{a.nome}</p>
+                        <p className="text-[10.5px] text-faint truncate">{a.ticker || a.cnpj || a.tipo_ativo || '—'}</p>
+                      </div>
+                    </div>
+                    <span className="text-[12.5px] font-bold text-main shrink-0">{formatarMoeda(a.valor_atual || 0)}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-faint mt-1.5 flex items-start gap-1.5">
+                <Trash2 size={12} className="shrink-0 mt-0.5" /> Marcados serão <b>removidos</b> da carteira ao importar. Os demais permanecem inalterados.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-[11px] font-bold text-faint uppercase tracking-wider mb-1.5">Aporte líquido do período (opcional)</label>
             <div className="relative">
@@ -161,7 +205,7 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
 
           <div className="flex gap-2 pt-1">
             <button
-              onClick={() => { setPreview(null); setPayload(null); }}
+              onClick={() => { setPreview(null); setPayload(null); setNaoEncontrados([]); setVendidosConfirmados(new Set()); }}
               disabled={loading}
               className="h-10 px-4 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors disabled:opacity-50"
             >
@@ -172,7 +216,9 @@ const ImportacaoAtivos: React.FC<ImportacaoAtivosProps> = ({ clienteId, onSucces
               disabled={loading}
               className="flex-1 h-10 rounded-lg font-semibold text-[12px] text-[#0b0e14] bg-primary hover:opacity-90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'Importando...' : `Importar ${preview.length} ativo(s)`}
+              {loading
+                ? 'Importando...'
+                : `Importar ${preview.length} ativo(s)${vendidosConfirmados.size > 0 ? ` · remover ${vendidosConfirmados.size}` : ''}`}
             </button>
           </div>
         </>

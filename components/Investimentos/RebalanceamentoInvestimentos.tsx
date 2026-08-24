@@ -605,7 +605,14 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
       projetosAportarEm: projetosAlloc.filter(p => p.valor > 0.01).map(p => ({ nome: p.nome, valor: p.valor })),
       vendas: (Object.entries(vendas) as [string, VendaItem][]).map(([id, v]) => {
         const at = (ativos || []).find((a: any) => a.id === id);
-        return { nome: at?.nome || id, codigo: at?.ticker || at?.cnpj || '', destino: v.destino, valor: v.valor };
+        return {
+          nome: at?.nome || id,
+          codigo: at?.ticker || at?.cnpj || '',
+          destino: v.destino,
+          valor: v.valor,
+          origem: at?.origem,
+          tipoEspecifico: at?.tipo_especifico,
+        };
       }),
       ordens: distribuicaoAtivos
         .filter((c: any) => (c.ativos || []).some((a: any) => a.acao === 'COMPRAR'))
