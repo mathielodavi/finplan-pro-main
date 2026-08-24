@@ -2,6 +2,41 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 /**
+ * Garante que toda imagem (tag `<img>` ou `background-image` inline) dentro do elemento já esteja
+ * carregada antes da captura. Sem isso, o html2canvas pode rasterizar a página com a imagem em
+ * branco se ela ainda não tiver terminado de baixar no momento do clique em "Gerar Relatório"
+ * (mais comum em conexões lentas ou no primeiro carregamento, quando a imagem não está em cache).
+ */
+async function aguardarImagens(container: HTMLElement, timeoutMs = 4000): Promise<void> {
+  const promessas: Promise<void>[] = [];
+
+  container.querySelectorAll('img').forEach(img => {
+    if (img.complete && img.naturalWidth > 0) return;
+    promessas.push(new Promise(resolve => {
+      const done = () => resolve();
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+      setTimeout(done, timeoutMs);
+    }));
+  });
+
+  container.querySelectorAll<HTMLElement>('[style*="background-image"]').forEach(el => {
+    const match = el.style.backgroundImage.match(/url\(["']?([^"')]+)["']?\)/);
+    if (!match) return;
+    promessas.push(new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = match[1];
+      if (img.complete) resolve();
+      setTimeout(resolve, timeoutMs);
+    }));
+  });
+
+  await Promise.all(promessas);
+}
+
+/**
  * Captura um elemento do DOM e gera um PDF A4 (multi-página) para download, preservando o layout
  * exato renderizado na tela. Fatia o canvas na altura da página SEM respeitar limites de conteúdo
  * — linhas de tabela podem ser cortadas ao meio. Prefira `baixarElementoComoPDFPaginado` quando o
@@ -135,6 +170,8 @@ export async function baixarPaginasComoPDF(container: HTMLElement, filename: str
   const paginas = Array.from(container.querySelectorAll<HTMLElement>('[data-pdf-page]'));
   if (paginas.length === 0) return baixarElementoComoPDF(container, filename);
 
+  await aguardarImagens(container);
+
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
@@ -148,6 +185,13 @@ export async function baixarPaginasComoPDF(container: HTMLElement, filename: str
       backgroundColor: null,
       useCORS: true,
       logging: false,
+      // Cada [data-pdf-page] já tem largura/altura fixas em px (documento "editorial" — não é
+      // responsivo). Sem isto, o html2canvas usa a janela real do dispositivo como referência de
+      // layout ao clonar o documento, o que pode alterar sutilmente o resultado da captura conforme
+      // o tamanho de tela de quem gerou o PDF. Fixando aqui, a captura sempre parte de uma janela
+      // "notebook", igual em qualquer dispositivo.
+      windowWidth: 1600,
+      windowHeight: 1000,
     });
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageW, pageH);
 

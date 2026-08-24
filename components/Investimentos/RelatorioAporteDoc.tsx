@@ -34,7 +34,7 @@ export interface DadosRelatorioAporte {
   reserva: { alvo: number; acumulado: number; aportarEm: { nome: string; valor: number }[] };
   projetos: { nome: string; alvo: number; acumulado: number }[];
   projetosAportarEm: { nome: string; valor: number }[];
-  vendas: { nome: string; codigo: string; destino: string; valor: number }[];
+  vendas: { nome: string; codigo: string; destino: string; valor: number; origem?: string; tipoEspecifico?: string }[];
   ordens: { classe: string; fundo: number; ativos: { nome: string; codigo: string; aporte: number; cotas: number }[] }[];
   whatsappUrl: string;
   instagramUrl: string;
@@ -68,6 +68,42 @@ const GOOGLE_FONTS_HREF = 'https://fonts.googleapis.com/css2?family=Archivo:wght
 
 const PAGE_W = 1050;
 const PAGE_H = 742; // proporção A4 paisagem (297×210)
+
+// ─── Sinalização de possível DARF nas vendas ──────────────────────────────────
+// Heurística informativa (não é apuração fiscal): sinaliza classes de ativo sem isenção mensal de
+// IR (FIIs e ETFs de bolsa — tributados a 15/20% sobre eventual ganho em qualquer valor vendido) e
+// classes com isenção por limite mensal (ações até R$20 mil, cripto até R$35 mil) quando a SOMA das
+// vendas dessa classe NESTA operação ultrapassa o limite. Não considera outras vendas do cliente no
+// mês fora desta simulação, nem se houve efetivamente ganho de capital — por isso o texto do
+// relatório é explícito em recomendar conferência com o contador/corretora antes do recolhimento.
+const LIMIAR_ISENCAO_ACOES = 20000;
+const LIMIAR_ISENCAO_CRIPTO = 35000;
+
+interface VendaComAtencaoFiscal { nome: string; codigo: string; valor: number; motivo: string }
+
+const analisarAtencaoFiscal = (vendas: DadosRelatorioAporte['vendas']): VendaComAtencaoFiscal[] => {
+  const ehAcao = (v: DadosRelatorioAporte['vendas'][0]) => v.origem === 'bolsa' && (!v.tipoEspecifico || v.tipoEspecifico === 'Ações');
+  const ehCripto = (v: DadosRelatorioAporte['vendas'][0]) => v.tipoEspecifico === 'Criptomoedas';
+
+  const totalAcoes = vendas.filter(ehAcao).reduce((s, v) => s + v.valor, 0);
+  const totalCripto = vendas.filter(ehCripto).reduce((s, v) => s + v.valor, 0);
+
+  const out: VendaComAtencaoFiscal[] = [];
+  vendas.forEach(v => {
+    let motivo: string | null = null;
+    if (v.origem === 'bolsa' && v.tipoEspecifico === 'FIIs') {
+      motivo = 'FII — sem isenção de R$ 20 mil; havendo ganho na venda, o IR (20%) é recolhido via DARF.';
+    } else if (v.origem === 'bolsa' && v.tipoEspecifico === 'ETFs') {
+      motivo = 'ETF — sem isenção de R$ 20 mil; havendo ganho na venda, o IR (15%) é recolhido via DARF.';
+    } else if (ehAcao(v) && totalAcoes > LIMIAR_ISENCAO_ACOES) {
+      motivo = `Ações — total vendido nesta operação (${formatarMoeda(totalAcoes)}) ultrapassa a isenção mensal de R$ 20 mil; havendo ganho, recolhimento via DARF.`;
+    } else if (ehCripto(v) && totalCripto > LIMIAR_ISENCAO_CRIPTO) {
+      motivo = `Criptoativo — total vendido nesta operação (${formatarMoeda(totalCripto)}) ultrapassa a isenção mensal de R$ 35 mil; havendo ganho, recolhimento via DARF.`;
+    }
+    if (motivo) out.push({ nome: v.nome, codigo: v.codigo, valor: v.valor, motivo });
+  });
+  return out;
+};
 
 const formatarAnosMeses = (m: number) => {
   const anos = Math.floor(m / 12);
@@ -166,9 +202,14 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
   const paginasOrdens: typeof dados.ordens[] = [];
   for (let i = 0; i < ordensRestantes.length; i += 2) paginasOrdens.push(ordensRestantes.slice(i, i + 2));
 
-  // Numeração: 01 = sumário; 02 = resumo executivo; 03 = reserva/projetos; 04.. = ordens; última = contato.
+  const atencaoFiscal = temVendas ? analisarAtencaoFiscal(dados.vendas) : [];
+  const temAtencaoFiscal = atencaoFiscal.length > 0;
+
+  // Numeração: 01 = sumário; 02 = resumo executivo; 03 = reserva/projetos; 04.. = ordens;
+  // (opcional) atenção fiscal; última = contato.
   const numPagOrdens = temVendas || dados.ordens.length > 1 ? `${String(4).padStart(2, '0')}` : '03';
-  const totalPaginasNumeradas = 3 + paginasOrdens.length;
+  const numPagAtencaoFiscal = 4 + paginasOrdens.length;
+  const totalPaginasNumeradas = 3 + paginasOrdens.length + (temAtencaoFiscal ? 1 : 0);
 
   const sumario: { titulo: string; pagina: string }[] = [
     { titulo: 'Resumo Executivo', pagina: '02' },
@@ -176,6 +217,7 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
     { titulo: 'Reserva de Emergência e Projetos', pagina: '03' },
     ...(temVendas ? [{ titulo: 'Vendas e Desinvestimentos', pagina: '03' }] : []),
     { titulo: 'Distribuição de Ativos por Classe', pagina: temVendas ? numPagOrdens : '03' },
+    ...(temAtencaoFiscal ? [{ titulo: 'Atenção Fiscal — Possível DARF', pagina: String(numPagAtencaoFiscal).padStart(2, '0') }] : []),
     { titulo: 'Contato e Compartilhamento', pagina: String(totalPaginasNumeradas + 1).padStart(2, '0') },
   ];
 
@@ -251,6 +293,7 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
     <div ref={innerRef} className="flex flex-col items-center gap-6" style={{ fontFamily: FONT_SANS }}>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="stylesheet" href={GOOGLE_FONTS_HREF} />
+      <link rel="preload" as="image" href="/relatorio-capa.jpg" />
 
       {/* ═══ CAPA ═══ */}
       <Pagina>
@@ -263,11 +306,19 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
             <p style={{ color: C.faint, fontSize: 14 }}>Emitido em {dados.dataStr}</p>
           </div>
           <div className="flex justify-end" style={{ width: '42%' }}>
-            {/* Foto ocupa ~1/3 da página, em P&B (asset já convertido), cantos arredondados como na referência */}
-            <img
-              src="/relatorio-capa.jpg"
-              alt=""
-              style={{ width: PAGE_W / 3, height: 520, objectFit: 'cover', objectPosition: 'center 18%', borderRadius: 24 }}
+            {/* Foto ocupa ~1/3 da página, em P&B (asset já convertido), cantos arredondados como na
+                referência. `background-image` em vez de `<img>` com object-fit: o html2canvas não
+                aplica object-fit/object-position de forma confiável, mas respeita background-size/
+                position — evita a foto sair distorcida ou em branco no PDF gerado. */}
+            <div
+              role="img"
+              aria-label=""
+              style={{
+                width: PAGE_W / 3, height: 520, borderRadius: 24,
+                backgroundImage: 'url(/relatorio-capa.jpg)',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center 18%',
+              }}
             />
           </div>
         </div>
@@ -478,6 +529,37 @@ const RelatorioAporteDoc: React.FC<{ dados: DadosRelatorioAporte; innerRef?: Rea
           {rodape(4 + pIdx)}
         </Pagina>
       ))}
+
+      {/* ═══ ATENÇÃO FISCAL — POSSÍVEL DARF (só quando há venda sujeita) ═══ */}
+      {temAtencaoFiscal && (
+        <Pagina>
+          <div style={{ padding: '64px 64px 0' }}>
+            <TituloColuna>Atenção Fiscal — Possível DARF</TituloColuna>
+            <p style={{ color: C.body, fontSize: 12.5, lineHeight: 1.75, maxWidth: 800, marginBottom: 26 }}>
+              As vendas abaixo pertencem a classes de ativo sem isenção mensal de Imposto de Renda, ou
+              ultrapassaram o limite de isenção considerando apenas as vendas desta operação. Havendo
+              ganho de capital, o recolhimento é feito por DARF até o último dia útil do mês seguinte à
+              venda. Esta é uma sinalização informativa com base na classificação do ativo — a apuração
+              definitiva (ganho efetivo, base de cálculo e demais vendas do mês fora desta simulação)
+              deve ser confirmada com o contador ou a corretora responsável.
+            </p>
+            <div style={{ backgroundColor: C.panel, border: `1px solid ${C.panelBorder}`, borderRadius: 14, overflow: 'hidden', maxWidth: 800 }}>
+              {atencaoFiscal.map((v, i) => (
+                <div key={i} style={{ padding: '14px 20px', borderTop: i > 0 ? `1px solid ${C.panelBorder}` : 'none' }}>
+                  <div className="flex justify-between items-baseline" style={{ gap: 12 }}>
+                    <p style={{ color: C.cream, fontSize: 13, fontWeight: 700, lineHeight: 1.5, wordBreak: 'break-word' }}>
+                      {v.nome}{v.codigo ? ` · ${v.codigo}` : ''}
+                    </p>
+                    <span style={{ color: C.warning, fontSize: 13, fontWeight: 700 }} className="shrink-0">{formatarMoeda(v.valor)}</span>
+                  </div>
+                  <p style={{ color: C.faint, fontSize: 10.5, lineHeight: 1.5, marginTop: 5 }}>{v.motivo}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          {rodape(numPagAtencaoFiscal)}
+        </Pagina>
+      )}
 
       {/* ═══ CONTRACAPA (verde, QR codes clicáveis) ═══ */}
       <Pagina bg={C.backCover}>
