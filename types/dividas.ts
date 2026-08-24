@@ -6,6 +6,8 @@ export type ContemplationStatus = 'not_contemplated' | 'contemplated_by_draw' | 
 export type BidStrategy = 'none' | 'own_resources' | 'fgts' | 'credit_bid' | 'mixed';
 export type PrioritizationMethod = 'avalanche' | 'snowball';
 export type AmortizationSystem = 'price' | 'sac';
+export type DebtSituacao = 'em_dia' | 'em_atraso';
+export type TaxaNominalUnidade = 'am' | 'aa';
 
 export interface DividaCredito {
     debt_id?: string;
@@ -16,12 +18,18 @@ export interface DividaCredito {
     contracted_value: number;
     installment_value: number;
     total_installments: number;
-    remaining_installments: number;
+    remaining_installments: number; // calculated — cronograma de amortização, não editado manualmente
     start_date: string;
-    end_date: string;
+    end_date: string; // calculated — start_date + total_installments meses
+    situacao: DebtSituacao;
+    /** Nº da parcela do último pagamento efetuado. Obrigatório quando situacao === 'em_atraso'. */
+    parcela_ultimo_pagamento?: number;
+    /** Taxa nominal informativa — não afeta nenhum cálculo (CET é o campo usado nos cálculos). */
+    taxa_nominal?: number;
+    taxa_nominal_unidade?: TaxaNominalUnidade;
     cet_monthly: number;
     cet_annual: number; // calculated
-    outstanding_balance: number;
+    outstanding_balance: number; // calculated — cronograma de amortização, não editado manualmente
     payoff_balance: number;
     total_paid: number; // calculated
     income_commitment: number; // calculated

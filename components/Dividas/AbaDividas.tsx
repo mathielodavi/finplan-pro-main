@@ -6,7 +6,7 @@ import { selicService } from '../../services/selicService';
 import DashboardDividas from './DashboardDividas';
 import ListaDividas from './ListaDividas';
 import { ordenarAvalanche, ordenarSnowball, ordenarConsorcios } from '../../utils/ordenacaoDividas';
-import { simularQuitacaoCarteira } from '../../utils/calculosDividas';
+import { simularQuitacaoCarteira, calcularSaldoEParcelasAtual, calcularComprometimentoRenda } from '../../utils/calculosDividas';
 import { CHART_COLORS, CHART_GRID, axisTick, tooltipStyle, tooltipCursor } from '../../utils/chartTheme';
 import { formatarMoeda } from '../../utils/formatadores';
 import Button from '../UI/Button';
@@ -60,15 +60,29 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
                 dividasService.getConsorcios(clienteId)
             ]);
 
+            // Saldo devedor, parcelas em aberto e comprometimento de renda são sempre
+            // recalculados aqui (em memória) a partir dos dados cadastrados — nunca lidos
+            // como valor manualmente digitado. Todo o resto (risco, alertas, ordenação,
+            // dashboard) continua lendo os mesmos nomes de campo, sem precisar mudar.
+            const crEnriquecidos = crData.map(c => {
+                const { saldoDevedor, parcelasAbertas } = calcularSaldoEParcelasAtual(c);
+                return {
+                    ...c,
+                    outstanding_balance: saldoDevedor,
+                    remaining_installments: parcelasAbertas,
+                    income_commitment: calcularComprometimentoRenda(c.installment_value, rendaMensalCliente),
+                };
+            });
+
             setPrioritizationMethod(metodo);
-            setCreditos(crData);
+            setCreditos(crEnriquecidos);
             setConsorcios(coData);
         } catch (err) {
             console.error('Erro ao carregar dívidas do cliente', err);
         } finally {
             setLoading(false);
         }
-    }, [clienteId]);
+    }, [clienteId, rendaMensalCliente]);
 
     useEffect(() => {
         loadDados();
@@ -336,6 +350,7 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
                 onSave={handleSaveCredito}
                 initialData={editingCredito}
                 clienteId={clienteId}
+                rendaMensalCliente={rendaMensalCliente}
             />
 
             <ModalFormConsorcio
