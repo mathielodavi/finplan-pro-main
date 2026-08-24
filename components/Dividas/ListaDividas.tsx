@@ -84,7 +84,7 @@ const ListaDividas: React.FC<Props> = ({
                             <tr className="bg-surface border-b border-subtle">
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Rank</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Dívida / Instituição</th>
-                                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">CET a.m.</th>
+                                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">CET a.a.</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Saldo Devedor</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Parcelas</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Risco</th>
@@ -108,12 +108,15 @@ const ListaDividas: React.FC<Props> = ({
                                                 </div>
                                             </td>
                                             <td className="px-5 py-3">
-                                                <div className="text-[12px] font-bold text-main tracking-tight">{cred.debt_label}</div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="text-[12px] font-bold text-main tracking-tight">{cred.debt_label}</div>
+                                                    {cred.situacao === 'em_atraso' && <Badge variant="danger" size="sm">EM ATRASO</Badge>}
+                                                </div>
                                                 <div className="text-[10px] text-muted font-bold uppercase tracking-wider mt-0.5">{cred.institution}</div>
                                             </td>
                                             <td className="px-5 py-3">
-                                                <div className="text-[12px] font-bold text-danger">{Number(cred.cet_monthly).toFixed(2)}%</div>
-                                                <div className="text-[10px] text-muted font-bold uppercase mt-0.5">{(cred.cet_annual).toFixed(2)}% a.a. <span className="text-faint">(Selic {selicAnual.toFixed(1)}%)</span></div>
+                                                <div className="text-[12px] font-bold text-danger">{Number(cred.cet_annual).toFixed(2)}% a.a.</div>
+                                                <div className="text-[10px] text-muted font-bold uppercase mt-0.5">{Number(cred.cet_monthly).toFixed(2)}% a.m. <span className="text-faint">(Selic {selicAnual.toFixed(1)}%)</span></div>
                                             </td>
                                             <td className="px-5 py-3">
                                                 <div className="text-[12px] font-bold text-main">R$ {Number(cred.outstanding_balance).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>

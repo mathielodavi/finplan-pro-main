@@ -66,6 +66,16 @@ export const alertasDividaService = {
             });
         }
 
+        // ALERT CL-06: dívida em atraso
+        if (credito.situacao === 'em_atraso') {
+            alertas.push({
+                id: 'CL-06',
+                recordId: credito.debt_id as string,
+                severity: 'CRITICAL',
+                message: 'Dívida em atraso — regularizar pagamento para evitar acúmulo de encargos e negativação.'
+            });
+        }
+
         return alertas;
     },
 

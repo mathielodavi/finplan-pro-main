@@ -33,6 +33,42 @@ export const derivarCetAnual = (cetMensal: number): number => {
     return (Math.pow(1 + rate, 12) - 1) * 100;
 };
 
+/**
+ * Resolve a taxa mensal implícita (CET a.m., em %) que iguala o valor presente de N
+ * parcelas fixas ao valor contratado — sistema Price. `pv(i)` é estritamente decrescente
+ * para i > 0 (PMT, N > 0), então bisseção é segura/robusta, sem precisar de Newton-Raphson.
+ * Retorna 0 quando não há solução (parcelas não cobrem o principal) ou dados insuficientes.
+ */
+export const calcularCetImplicitoPrice = (valorContratado: number, valorParcela: number, numParcelas: number): number => {
+    if (valorContratado <= 0 || valorParcela <= 0 || numParcelas <= 0) return 0;
+    if (valorParcela * numParcelas <= valorContratado) return 0; // parcelas não cobrem o principal
+
+    const pv = (i: number) => i <= 0 ? valorParcela * numParcelas : valorParcela * (1 - Math.pow(1 + i, -numParcelas)) / i;
+
+    let lo = 0, hi = 1.0; // 0%–100% a.m.
+    if (pv(hi) > valorContratado) hi = 5.0; // fallback para prazos muito curtos/agressivos
+
+    let mid = 0;
+    for (let iter = 0; iter < 100; iter++) {
+        mid = (lo + hi) / 2;
+        const diff = pv(mid) - valorContratado;
+        if (Math.abs(diff) < 0.01) break; // convergência de 1 centavo
+        if (diff > 0) lo = mid; else hi = mid; // pv decrescente: pv > alvo => taxa maior
+    }
+    return mid * 100;
+};
+
+/**
+ * Variante para SAC: a 1ª parcela SAC = (valorContratado/N) + valorContratado*i, então a
+ * taxa é solucionável diretamente (sem bisseção). `valorPrimeiraParcela` deve ser a
+ * primeira parcela (a mais alta em SAC, já que a amortização é constante e os juros caem).
+ */
+export const calcularCetImplicitoSac = (valorContratado: number, valorPrimeiraParcela: number, numParcelas: number): number => {
+    if (valorContratado <= 0 || valorPrimeiraParcela <= 0 || numParcelas <= 0) return 0;
+    const i = valorPrimeiraParcela / valorContratado - 1 / numParcelas;
+    return i > 0 ? i * 100 : 0;
+};
+
 // RULE A5: total_paid = (total_installments - remaining_installments) * installment_value
 export const calcularTotalPagoCredito = (credito: DividaCredito): number => {
     const pagas = credito.total_installments - credito.remaining_installments;
@@ -297,6 +333,75 @@ export const calcularSaldoAtualEstimado = (credito: DividaCredito, hoje: Date = 
     const divergente = diffAbsoluta > 50 && diffRelativa > 0.05;
 
     return { mesesDecorridos: mesesClamped, saldoEstimado, parcelasRestantesEstimadas, divergente };
+};
+
+export interface SaldoAtualCalculado {
+    saldoDevedor: number;
+    parcelasAbertas: number;
+}
+
+/**
+ * Fonte ÚNICA e autoritativa de saldo devedor / parcelas em aberto — substitui a entrada
+ * manual removida do formulário. Ancora o cronograma real (Price/SAC) em:
+ *  - `parcela_ultimo_pagamento` quando situacao === 'em_atraso' (anda o cronograma até essa
+ *    parcela e lê o saldo/posição ali — as parcelas entre a última paga e hoje ainda contam
+ *    como "em aberto", refletindo o atraso real);
+ *  - meses decorridos desde `start_date` até `hoje` quando situacao === 'em_dia' (mesma
+ *    lógica de `calcularSaldoAtualEstimado`, mas aqui é a fonte oficial, não só um alerta).
+ * Usa sempre o `cet_monthly` atual do registro (auto-calculado ou editado manualmente) —
+ * nunca recalcula a taxa por conta própria.
+ */
+export const calcularSaldoEParcelasAtual = (
+    credito: Pick<DividaCredito, 'contracted_value' | 'installment_value' | 'total_installments' |
+        'start_date' | 'cet_monthly' | 'amortization_system' | 'monetary_correction_annual' |
+        'situacao' | 'parcela_ultimo_pagamento'>,
+    hoje: Date = new Date()
+): SaldoAtualCalculado => {
+    const totalInstallments = credito.total_installments || 0;
+    if (totalInstallments <= 0 || !credito.contracted_value) {
+        return { saldoDevedor: credito.contracted_value || 0, parcelasAbertas: totalInstallments };
+    }
+
+    const taxaMensal = (credito.cet_monthly || 0) / 100;
+    const correcaoMensal = credito.monetary_correction_annual
+        ? Math.pow(1 + credito.monetary_correction_annual / 100, 1 / 12) - 1 : 0;
+    const sistema = credito.amortization_system || 'price';
+
+    const cronograma = gerarCronogramaAmortizacao({
+        saldo: credito.contracted_value, meses: totalInstallments, taxaMensal, sistema,
+        parcelaFixa: sistema === 'price' ? credito.installment_value : undefined,
+        correcaoMensal,
+    });
+
+    let mesAncora: number;
+    if (credito.situacao === 'em_atraso') {
+        mesAncora = Math.min(Math.max(0, credito.parcela_ultimo_pagamento || 0), totalInstallments);
+    } else {
+        if (!credito.start_date) return { saldoDevedor: credito.contracted_value, parcelasAbertas: totalInstallments };
+        const inicio = new Date(credito.start_date);
+        if (isNaN(inicio.getTime())) return { saldoDevedor: credito.contracted_value, parcelasAbertas: totalInstallments };
+        const mesesDecorridos = (hoje.getFullYear() - inicio.getFullYear()) * 12 + (hoje.getMonth() - inicio.getMonth());
+        mesAncora = Math.min(Math.max(0, mesesDecorridos), totalInstallments);
+    }
+
+    if (mesAncora <= 0) return { saldoDevedor: credito.contracted_value, parcelasAbertas: totalInstallments };
+
+    const ponto = cronograma.parcelas[mesAncora - 1];
+    // Arredonda a centavos — o cronograma acumula erro de ponto flutuante a cada mês
+    // (juros compostos), e o saldo aqui vira valor "oficial" exibido na tela.
+    const saldoDevedor = Math.round((ponto ? ponto.saldo : 0) * 100) / 100;
+    return {
+        saldoDevedor,
+        parcelasAbertas: Math.max(0, totalInstallments - mesAncora),
+    };
+};
+
+/** Soma `meses` a `dataInicio` (YYYY-MM-DD) e devolve a data resultante no mesmo formato. */
+export const calcularDataFim = (dataInicio: string, meses: number): string => {
+    const inicio = new Date(dataInicio);
+    if (isNaN(inicio.getTime())) return dataInicio;
+    const fim = new Date(inicio.getFullYear(), inicio.getMonth() + meses, inicio.getDate());
+    return fim.toISOString().split('T')[0];
 };
 
 export type EstrategiaAporteExtra = 'reduzir_prazo' | 'reduzir_parcela';
