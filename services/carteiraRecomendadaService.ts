@@ -54,6 +54,25 @@ const resolverOrigem = (raw: string): 'bolsa' | 'fundo' | 'bancario' => {
 };
 
 /**
+ * Origem e campo identificador de UMA variação, inferidos pelo campo que ela mesma traz
+ * (ticker → bolsa, cnpj → fundo, tipo → bancario) — não pelo `origem` declarado no ativo.
+ * Cobre o caso de um grupo "Expandir" com variações de origem mista (ex.: um ETF via
+ * ticker ao lado de um fundo via cnpj sob o mesmo ativo/alocação), que nenhuma origem única
+ * no nível do ativo consegue descrever corretamente. Só recorre a `origemPadrao` (a origem
+ * do ativo) quando a variação não traz nenhum dos três campos — mesmo comportamento de
+ * antes para o caso comum de uma variação só, com o identificador direto no ativo.
+ */
+const inferirOrigemVariacao = (
+  v: VariacaoImportada,
+  origemPadrao: 'bolsa' | 'fundo' | 'bancario'
+): { origem: 'bolsa' | 'fundo' | 'bancario'; campo: 'ticker' | 'cnpj' | 'tipo' } => {
+  if (v?.ticker) return { origem: 'bolsa', campo: 'ticker' };
+  if (v?.cnpj) return { origem: 'fundo', campo: 'cnpj' };
+  if (v?.tipo) return { origem: 'bancario', campo: 'tipo' };
+  return { origem: origemPadrao, campo: origemPadrao === 'bolsa' ? 'ticker' : origemPadrao === 'fundo' ? 'cnpj' : 'tipo' };
+};
+
+/**
  * Identidade de uma variação dentro de um ativo. O rótulo (`variacoes_fundo`) faz parte da chave
  * porque o identificador de origem sozinho não desambigua todos os casos: "CDB do Daycoval" e
  * "CDB do BMG" são ambos `tipo = 'CDB'` e só se distinguem pelo nome. Retorna '' quando a linha
@@ -336,10 +355,9 @@ export const carteiraRecomendadaService = {
           });
         }
 
-        // Origem é compartilhada pelo ativo (como no editor manual) e define qual campo identifica
-        // cada variação: bolsa→ticker, fundo→cnpj, bancario→tipo.
+        // Origem do ativo — usada como padrão só quando uma variação não traz seu próprio
+        // ticker/cnpj/tipo (ver `inferirOrigemVariacao`, que decide por variação).
         const origem = resolverOrigem(a.origem);
-        const campoIdent: 'ticker' | 'cnpj' | 'tipo' = origem === 'bolsa' ? 'ticker' : origem === 'fundo' ? 'cnpj' : 'tipo';
 
         // `variacoes` como array = variações do ativo; como string (ou ausente) = ativo de uma
         // variação só, com os identificadores no próprio ativo (formato da planilha).
@@ -351,21 +369,19 @@ export const carteiraRecomendadaService = {
         lista.forEach((v: any, vi: number) => {
           const rotuloVar = String(v?.nome || '').trim();
           const posVar = lista.length > 1 ? `${pos} (${nome}), variação ${vi + 1}${rotuloVar ? ` "${rotuloVar}"` : ''}` : `${pos} (${nome})`;
-          const ident = String(v?.[campoIdent] || '').trim();
+          const { origem: origemVar, campo: campoIdentVar } = inferirOrigemVariacao(v, origem);
+          const ident = String(v?.[campoIdentVar] || '').trim();
 
-          // Com mais de uma variação, cada uma precisa do identificador da origem do ativo —
-          // sem isso elas seriam linhas indistinguíveis.
+          // Com mais de uma variação, cada uma precisa de algum identificador próprio (ticker,
+          // cnpj ou tipo) — sem isso elas seriam linhas indistinguíveis.
           if (lista.length > 1 && !ident) {
-            const outro = ['ticker', 'cnpj', 'tipo'].filter(c => c !== campoIdent).find(c => String(v?.[c] || '').trim());
-            erros.push(outro
-              ? `${posVar}: origem "${origem}" exige "${campoIdent}", mas veio "${outro}". Confira a origem do ativo.`
-              : `${posVar}: falta "${campoIdent}" (obrigatório quando o ativo tem variações).`);
+            erros.push(`${posVar}: falta ticker, cnpj ou tipo (obrigatório quando o ativo tem variações).`);
             return;
           }
 
           // Só é duplicata se o identificador E o rótulo coincidirem — mesma regra de identidade
           // usada pela tabela e pelo editor manual (ver `chaveVariacaoAtivo`).
-          const chaveVar = chaveVariacaoAtivo({ [campoIdent]: ident, variacoes_fundo: rotuloVar } as any);
+          const chaveVar = chaveVariacaoAtivo({ [campoIdentVar]: ident, variacoes_fundo: rotuloVar } as any);
           if (identsVistos.has(chaveVar)) {
             erros.push(`${posVar}: variação duplicada (mesmo identificador e nome).`);
             return;
@@ -378,11 +394,11 @@ export const carteiraRecomendadaService = {
             faixa_id: fx.id,
             nome_ativo: nome,
             variacoes_fundo: rotuloVar,
-            origem_ativo: origem,
+            origem_ativo: origemVar,
             // Espelha o editor manual: só o campo da origem é gravado, os demais ficam vazios.
-            ticker: campoIdent === 'ticker' ? ident : '',
-            cnpj: campoIdent === 'cnpj' ? ident : '',
-            tipo: campoIdent === 'tipo' ? ident : '',
+            ticker: campoIdentVar === 'ticker' ? ident : '',
+            cnpj: campoIdentVar === 'cnpj' ? ident : '',
+            tipo: campoIdentVar === 'tipo' ? ident : '',
             // Todas as variações compartilham a MESMA alocação (são alternativas, não somam).
             alocacao,
             asset_classe_nome: asset,
