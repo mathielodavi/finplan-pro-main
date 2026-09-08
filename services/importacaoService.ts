@@ -238,7 +238,7 @@ export const importacaoService = {
 
         // Registra a movimentação no histórico da carteira (mesmo mecanismo do salvar/aporte):
         // upsert mensal do patrimônio total; aporte_periodo evita superestimar a rentabilidade.
-        const totalCarteira = await investimentoService.snapshotPatrimonioIndependencia(clienteId, payload.aporte_periodo || 0);
+        const totalCarteira = await investimentoService.snapshotPatrimonioGeral(clienteId, payload.aporte_periodo || 0);
 
         return { inseridos, atualizados, removidos, totalCarteira };
     },

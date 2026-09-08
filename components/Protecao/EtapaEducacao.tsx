@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import { GraduationCap } from 'lucide-react';
 import { DependenteSeguro, ParametrosCalculo } from '../../services/protecaoService';
 import { calcularIdade, calcularVP, calcularTaxaRealMensal } from '../../utils/calculosFinanceiros';
-import { protecaoService } from '../../services/protecaoService';
 import TooltipAjuda from './TooltipAjuda';
 
 const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all";
@@ -23,6 +22,8 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
 
     const taxaRealMensal = calcularTaxaRealMensal(parametros.taxa_juros_aa, parametros.ipca_projetado_aa);
 
+    // Persistência é responsabilidade do pai (StepperProtecao): `onChange` já atualiza o state
+    // E dispara o autosave debounced (com retry) — ver `handleChangeDependentes`.
     const update = (index: number, campo: 'cobertura_anos' | 'auxilio_mensal', valor: any) => {
         const novos = locais.map((d, i) => {
             if (i !== index) return d;
@@ -32,11 +33,6 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
         });
         setLocais(novos);
         onChange(novos);
-        const curr = locais[index];
-        protecaoService.salvarDependentes(curr.cliente_id, novos.map(d => ({
-            ordem: d.ordem, nome_dependente: d.nome_dependente, data_nascimento_dep: d.data_nascimento_dep,
-            parentesco: d.parentesco, cobertura_anos: d.cobertura_anos, auxilio_mensal: d.auxilio_mensal, total_calculado: d.total_calculado,
-        }))).catch(console.error);
     };
 
     const handleAuxilioInput = (i: number, rawValue: string) => {

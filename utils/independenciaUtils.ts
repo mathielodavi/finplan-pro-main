@@ -439,11 +439,24 @@ export interface ResultadoPrazo {
  * timestamp de cada fluxo dentro do mês. Com a granularidade mensal atual (um único valor de
  * aporte por mês), essa aproximação é o que a estrutura de dados hoje permite calcular.
  */
+/**
+ * Teto de plausibilidade para a variação mensal (30% já é um mês excepcional para qualquer
+ * carteira). Acima disso, quase certamente não é retorno de investimento de verdade — é aporte,
+ * transferência de carteira ou correção de saldo lançada como snapshot sem passar por
+ * `valor_aporte`. Sem esse filtro, um único snapshot "sujo" (ex.: saldo pulou de R$47 mil para
+ * R$190 mil num mês sem aporte registrado) inflava a rentabilidade "realizada" para centenas de
+ * % ao mês — e esse número, composto mês a mês até os 100 anos do cliente, estourava o
+ * patrimônio de sucessão para uma escala absurda, distorcendo o gráfico, o Resumo Geral e o
+ * relatório de aportes (o bug relatado).
+ */
+const LIMIAR_TAXA_MENSAL_PLAUSIVEL = 0.30;
+
 function calcularTaxaRealizada(valorAnterior: number, valorAtual: number, aporte: number): number | null {
   if (!(valorAnterior > 0)) return null;
   const rendimento = valorAtual - valorAnterior - aporte;
   const taxa = rendimento / valorAnterior;
-  return isFinite(taxa) ? taxa : null;
+  if (!isFinite(taxa) || Math.abs(taxa) > LIMIAR_TAXA_MENSAL_PLAUSIVEL) return null;
+  return taxa;
 }
 
 /**

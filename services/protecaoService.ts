@@ -221,13 +221,31 @@ export const protecaoService = {
         return data || [];
     },
 
+    /**
+     * Substitui a lista de dependentes do cliente. Grava os novos ANTES de apagar os antigos
+     * (nunca o inverso): se a gravação falhar no meio do caminho, os dependentes já cadastrados
+     * continuam intactos no banco — antes, um delete-then-insert podia apagar todos os
+     * dependentes e falhar no insert seguinte (erro transitório de rede, por exemplo), zerando o
+     * cadastro no banco enquanto a tela ainda mostrava os dados digitados (só no state local).
+     */
     async salvarDependentes(clienteId: string, dependentes: Omit<DependenteSeguro, 'id' | 'cliente_id'>[]): Promise<DependenteSeguro[]> {
-        await supabase.from('dependentes_seguros').delete().eq('cliente_id', clienteId);
-        if (dependentes.length === 0) return [];
-        const rows = dependentes.map((d, i) => ({ ...d, cliente_id: clienteId, ordem: i }));
-        const { data, error } = await supabase.from('dependentes_seguros').insert(rows).select();
-        if (error) throw error;
-        return data || [];
+        const { data: atuais, error: errAtuais } = await supabase.from('dependentes_seguros').select('id').eq('cliente_id', clienteId);
+        if (errAtuais) throw errAtuais;
+        const idsAntigos = (atuais || []).map((a: any) => a.id);
+
+        let salvos: DependenteSeguro[] = [];
+        if (dependentes.length > 0) {
+            const rows = dependentes.map((d, i) => ({ ...d, cliente_id: clienteId, ordem: i }));
+            const { data, error } = await supabase.from('dependentes_seguros').insert(rows).select();
+            if (error) throw error;
+            salvos = data || [];
+        }
+
+        if (idsAntigos.length > 0) {
+            const { error: errDel } = await supabase.from('dependentes_seguros').delete().in('id', idsAntigos);
+            if (errDel) throw errDel;
+        }
+        return salvos;
     },
 
     // ─── Parâmetros ───────────────────────────────────────────────────────────

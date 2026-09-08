@@ -122,7 +122,7 @@ const HistoricoAportes = ({ clienteId }: { clienteId: string }) => {
             <thead>
               <tr className="bg-surface-2 border-b border-subtle">
                 <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider">Mês</th>
-                <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Patrimônio (Indep.)</th>
+                <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Patrimônio Total</th>
                 <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Aporte do período</th>
                 <th className="py-2.5 px-3 text-[11px] font-semibold text-faint uppercase tracking-wider text-right">Ações</th>
               </tr>

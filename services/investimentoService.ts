@@ -204,21 +204,30 @@ export const investimentoService = {
   },
 
   /**
-   * Snapshot automático do patrimônio financeiro TOTAL do cliente (soma de todos os ativos, em
-   * todos os objetivos — reserva + projetos + independência) com UPSERT MENSAL: se já houver um
-   * ponto no mês corrente para o cliente, atualiza-o (e ACUMULA o aporte do período); senão
-   * insere. Disparado ao salvar a carteira e ao finalizar o wizard de aporte (que informa o valor
+   * Snapshot automático do PATRIMÔNIO GERAL do cliente (soma de todos os ativos, em todos os
+   * objetivos — reserva + projetos + independência) com UPSERT MENSAL: se já houver um ponto no
+   * mês corrente para o cliente, atualiza-o (e ACUMULA o aporte do período); senão insere.
+   * Disparado ao salvar a carteira e ao finalizar o wizard de aporte (que informa o valor
    * efetivamente aportado).
+   *
+   * Nome deliberadamente SEM "independência": apesar de `historico_patrimonio` alimentar o
+   * gráfico e os KPIs de independência financeira (Resumo Geral / relatório de aportes), o valor
+   * gravado aqui sempre foi (e continua sendo) o patrimônio TOTAL do cliente, não a fatia isolada
+   * do objetivo 'independencia' — não existe hoje nenhum mecanismo que desinveste/realoca o saldo
+   * de um ativo quando um objetivo de reserva/projeto é concluído (`distribuicao_objetivos`
+   * permanece ligado ao objetivo indefinidamente até edição manual), então "patrimônio de
+   * independência" isolado não é um valor confiável de se rastrear mês a mês. Um nome antigo
+   * desta função (`snapshotPatrimonioIndependencia`) sugeria o contrário e levou a esse engano se
+   * espalhar por comentários e rótulos de tela — ver histórico do arquivo.
    *
    * Até jul/2026, este snapshot registrava apenas a fatia vinculada ao objetivo
    * 'independencia'. Linhas de historico_patrimonio salvas antes dessa mudança continuam
    * representando o valor antigo (mais estreito) — não há como recalcular retroativamente sem o
-   * detalhamento de ativos daquela época. A partir de agora, todo novo snapshot é o patrimônio
-   * total, base usada tanto no gráfico de independência quanto na tabela de rentabilidade mensal.
+   * detalhamento de ativos daquela época.
    */
-  async snapshotPatrimonioIndependencia(clienteId: string, aporteRealizado: number = 0) {
+  async snapshotPatrimonioGeral(clienteId: string, aporteRealizado: number = 0) {
     const ativos = await this.getAtivos(clienteId);
-    const valorIndependencia = (ativos || []).reduce((acc: number, a: any) => acc + (a.valor_atual || 0), 0);
+    const valorPatrimonioTotal = (ativos || []).reduce((acc: number, a: any) => acc + (a.valor_atual || 0), 0);
 
     const agora = new Date();
     const hojeStr = agora.toISOString().split('T')[0];
@@ -238,16 +247,16 @@ export const investimentoService = {
       const aporteAcumulado = (Number(existentes[0].valor_aporte) || 0) + aporteRealizado;
       const { error } = await supabase
         .from('historico_patrimonio')
-        .update({ valor_patrimonio: valorIndependencia, data_historico: hojeStr, valor_aporte: aporteAcumulado })
+        .update({ valor_patrimonio: valorPatrimonioTotal, data_historico: hojeStr, valor_aporte: aporteAcumulado })
         .eq('id', existentes[0].id);
       if (error) throw error;
     } else {
       const { error } = await supabase
         .from('historico_patrimonio')
-        .insert([{ cliente_id: clienteId, data_historico: hojeStr, valor_patrimonio: valorIndependencia, valor_aporte: aporteRealizado }]);
+        .insert([{ cliente_id: clienteId, data_historico: hojeStr, valor_patrimonio: valorPatrimonioTotal, valor_aporte: aporteRealizado }]);
       if (error) throw error;
     }
-    return valorIndependencia;
+    return valorPatrimonioTotal;
   },
 
   async salvarHistoricoRebalanceamento(clienteId: string, estrategiaId: string, valorAporte: number, itens: any[]) {

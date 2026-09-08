@@ -535,8 +535,12 @@ const RebalanceamentoInvestimentos = ({ clienteId, ativos, onFinish }: any) => {
         ...vendasEfetivas
       ];
       await investimentoService.salvarHistoricoRebalanceamento(clienteId, estrategiaId, aporte, todosItensHistorico);
-      // Atualiza o snapshot mensal do patrimônio de independência (upsert mensal)
-      await investimentoService.snapshotPatrimonioIndependencia(clienteId, aporte).catch(() => {});
+      // Atualiza o snapshot mensal do patrimônio geral (upsert mensal) — erro aqui não desfaz o
+      // aporte/vendas já gravados acima, mas precisa aparecer: silenciar por completo fazia o mês
+      // sumir inteiro do Histórico de Aportes (patrimônio E aporte), sem nenhum aviso ao consultor.
+      await investimentoService.snapshotPatrimonioGeral(clienteId, aporte).catch(() => {
+        toast.info('Aporte sincronizado, mas o histórico mensal de patrimônio não pôde ser atualizado agora. Confira em Histórico de Aportes.');
+      });
       setSuccess(true);
     } catch (err: any) {
       toast.error("Erro técnico ao salvar: " + (err.message || "Erro desconhecido"));
