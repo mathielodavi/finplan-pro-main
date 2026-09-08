@@ -200,8 +200,12 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
     try {
       await investimentoService.salvarAtivo({ ...payloadParaBanco, cliente_id: clienteId });
       // Atualiza o snapshot mensal do patrimônio (upsert mensal) — o aporte declarado neste ativo
-      // acumula com o de outras edições do mesmo mês, sem depender de uma edição única.
-      await investimentoService.snapshotPatrimonioIndependencia(clienteId, aporteRealizado).catch(() => {});
+      // acumula com o de outras edições do mesmo mês, sem depender de uma edição única. Erro aqui
+      // não desfaz o ativo já salvo, mas precisa aparecer — silenciar por completo (como antes)
+      // fazia o mês inteiro sumir do Histórico de Aportes sem nenhum aviso.
+      await investimentoService.snapshotPatrimonioGeral(clienteId, aporteRealizado).catch(() => {
+        toast.info('Ativo salvo, mas o histórico mensal de patrimônio não pôde ser atualizado agora. Confira em Histórico de Aportes.');
+      });
       setModalOpen(false);
       onRefresh();
     } catch (err) { toast.error("Falha ao sincronizar dados."); }
