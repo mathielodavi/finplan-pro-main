@@ -3,7 +3,6 @@ import React from 'react';
 import { Plus, Trash2, Users } from 'lucide-react';
 import { DependenteSeguro } from '../../services/protecaoService';
 import { calcularIdade } from '../../utils/calculosFinanceiros';
-import { protecaoService } from '../../services/protecaoService';
 
 const inp = "w-full px-3 h-[36px] bg-surface border border-subtle rounded-lg font-medium text-main text-[13px] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-[color:var(--primary)] transition-all placeholder:text-faint";
 const lbl = "block text-[12px] font-semibold text-[color:var(--text-muted)] ml-1 mb-1.5";
@@ -26,41 +25,20 @@ const EtapaDependentes: React.FC<Props> = ({ clienteId, dependentes, onChange })
         auxilio_mensal: 0,
     });
 
-    const salvar = async (deps: DependenteSeguro[]) => {
-        try {
-            await protecaoService.salvarDependentes(
-                clienteId,
-                deps.map(d => ({
-                    ordem: d.ordem,
-                    nome_dependente: d.nome_dependente,
-                    data_nascimento_dep: d.data_nascimento_dep,
-                    parentesco: d.parentesco,
-                    cobertura_anos: d.cobertura_anos,
-                    auxilio_mensal: d.auxilio_mensal,
-                    total_calculado: d.total_calculado,
-                }))
-            );
-        } catch (err) { console.error('[EtapaDependentes]', err); }
-    };
-
+    // Persistência é responsabilidade do pai (StepperProtecao): `onChange` já atualiza o state
+    // E dispara o autosave debounced (com retry) — ver `handleChangeDependentes`.
     const add = () => {
         if (dependentes.length >= 10) return;
-        const novo = [...dependentes, novoDependente()];
-        onChange(novo);
-        salvar(novo);
+        onChange([...dependentes, novoDependente()]);
     };
 
     const remove = (i: number) => {
         if (dependentes.length <= 1) return;
-        const atualizado = dependentes.filter((_, idx) => idx !== i).map((d, idx) => ({ ...d, ordem: idx }));
-        onChange(atualizado);
-        salvar(atualizado);
+        onChange(dependentes.filter((_, idx) => idx !== i).map((d, idx) => ({ ...d, ordem: idx })));
     };
 
     const update = (i: number, campo: keyof DependenteSeguro, valor: any) => {
-        const atualizado = dependentes.map((d, idx) => idx === i ? { ...d, [campo]: valor } : d);
-        onChange(atualizado);
-        salvar(atualizado);
+        onChange(dependentes.map((d, idx) => idx === i ? { ...d, [campo]: valor } : d));
     };
 
     return (

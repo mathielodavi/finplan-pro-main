@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, Clock, Save } from 'lucide-react';
 import { protecaoService, ClienteSeguro, DependenteSeguro, ParametrosCalculo } from '../../services/protecaoService';
 import { obterClientePorId } from '../../services/clienteService';
@@ -37,7 +37,39 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
     const [loading, setLoading] = useState(true);
     const [concluido, setConcluido] = useState(false);
 
-    const { save, saving, savedAtLabel, saveError } = useAutoSave({ clienteId });
+    // Espelham `dados`/`dependentes` para uso dentro do closure do submenu do header (registrado
+    // num efeito que não pode depender deles sem re-registrar a cada tecla digitada).
+    const dadosRef = useRef(dados);
+    dadosRef.current = dados;
+    const dependentesRef = useRef(dependentes);
+    dependentesRef.current = dependentes;
+
+    const saveFnDados = useCallback((d: ClienteSeguro) => protecaoService.update(clienteId, d), [clienteId]);
+    const { save, saveImmediate, saving, savedAt, savedAtLabel, saveError } = useAutoSave<ClienteSeguro>({ saveFn: saveFnDados });
+
+    const saveFnDependentes = useCallback((deps: DependenteSeguro[]) => protecaoService.salvarDependentes(
+        clienteId,
+        deps.map(d => ({
+            ordem: d.ordem,
+            nome_dependente: d.nome_dependente,
+            data_nascimento_dep: d.data_nascimento_dep,
+            parentesco: d.parentesco,
+            cobertura_anos: d.cobertura_anos,
+            auxilio_mensal: d.auxilio_mensal,
+            total_calculado: d.total_calculado,
+        }))
+    ), [clienteId]);
+    const { save: saveDependentes, saveImmediate: saveDependentesImmediate, saving: savingDeps, savedAt: savedAtDeps, saveError: saveErrorDeps } = useAutoSave<DependenteSeguro[]>({ saveFn: saveFnDependentes });
+
+    // Indicador único de status, combinando os dois autosaves (campos do cliente + dependentes) —
+    // o consultor não precisa saber que são dois mecanismos internos diferentes.
+    const savingCombined = saving || savingDeps;
+    const saveErrorCombined = saveError || saveErrorDeps;
+    const savedAtCombined = [savedAt, savedAtDeps].filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0] || null;
+    const savedAtLabelCombined = savedAtCombined
+        ? `Salvo às ${savedAtCombined.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+        : savedAtLabel;
+
     const { setSubnav } = useProntuarioNav();
 
     // Publica as etapas (+ Resumo) como submenu no header enquanto Proteção estiver ativa
@@ -46,6 +78,11 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
             items: [...ETAPAS.map(e => ({ id: String(e.id), label: e.label })), { id: 'resumo', label: 'Resumo' }],
             activeId: concluido ? 'resumo' : String(etapa),
             onSelect: (id: string) => {
+                // Flush das duas frentes de autosave antes de trocar de tela pelo submenu do
+                // header — mesmo motivo do `irParaEtapa`: navegar não pode deixar a última edição
+                // presa só no debounce.
+                saveImmediate(dadosRef.current).catch(() => {});
+                saveDependentesImmediate(dependentesRef.current).catch(() => {});
                 if (id === 'resumo') {
                     setConcluido(true);
                     setDados(prev => ({ ...prev, completo: true }));
@@ -130,11 +167,26 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
         save(novosDados);
     }, [dados, save]);
 
+    // Dependentes (etapas 2 e 3): atualiza o state local e dispara o mesmo autosave debounced
+    // com retry — antes, cada Etapa chamava o Supabase diretamente a cada tecla, sem debounce,
+    // sem retry e sem refletir erro no indicador de status do stepper.
+    const handleChangeDependentes = useCallback((novos: DependenteSeguro[]) => {
+        setDependentes(novos);
+        saveDependentes(novos);
+    }, [saveDependentes]);
+
     // ─── Navegação ───────────────────────────────────────────────────────────────
+    // Flush das duas frentes de autosave antes de trocar de etapa/concluir: garante que a última
+    // edição (ainda dentro da janela do debounce) esteja gravada antes de seguir em frente, em vez
+    // de depender só do timer ou do flush-ao-desmontar para não perder nada.
     const irParaEtapa = async (novaEtapa: number) => {
         const clamp = Math.max(1, Math.min(5, novaEtapa));
         setEtapa(clamp);
-        await protecaoService.update(clienteId, { etapa_atual: clamp });
+        await Promise.allSettled([
+            saveImmediate(dados),
+            saveDependentesImmediate(dependentes),
+            protecaoService.update(clienteId, { etapa_atual: clamp }),
+        ]);
     };
 
     const proximo = async () => {
@@ -142,7 +194,10 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
             irParaEtapa(etapa + 1);
         } else {
             setConcluido(true);
-            await protecaoService.update(clienteId, { completo: true });
+            await Promise.allSettled([
+                saveImmediate({ ...dados, completo: true }),
+                saveDependentesImmediate(dependentes),
+            ]);
             setDados(prev => ({ ...prev, completo: true }));
         }
     };
@@ -210,20 +265,20 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
 
             {/* ── Status de salvamento ────────────────────────────────────────────── */}
             <div className="flex items-center gap-2 h-4">
-                {saving && (
+                {savingCombined && (
                     <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
                         <Clock size={11} className="animate-spin" />
                         Salvando...
                     </span>
                 )}
-                {!saving && savedAtLabel && (
+                {!savingCombined && savedAtLabelCombined && !saveErrorCombined && (
                     <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
                         <Save size={11} />
-                        {savedAtLabel}
+                        {savedAtLabelCombined}
                     </span>
                 )}
-                {saveError && (
-                    <span className="text-[10px] font-semibold text-[color:var(--danger)] uppercase tracking-widest">{saveError}</span>
+                {saveErrorCombined && (
+                    <span className="text-[10px] font-semibold text-[color:var(--danger)] uppercase tracking-widest">{saveErrorCombined}</span>
                 )}
             </div>
 
@@ -249,13 +304,13 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                         <EtapaDependentes
                             clienteId={clienteId}
                             dependentes={dependentes}
-                            onChange={setDependentes}
+                            onChange={handleChangeDependentes}
                         />
                     )}
                     {etapa === 3 && (
                         <EtapaEducacao
                             dependentes={dependentes}
-                            onChange={setDependentes}
+                            onChange={handleChangeDependentes}
                             parametros={parametros}
                         />
                     )}
