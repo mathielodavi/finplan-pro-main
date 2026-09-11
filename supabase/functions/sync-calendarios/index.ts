@@ -344,10 +344,20 @@ serve(async (_req: Request) => {
           if (errUpdate) throw errUpdate;
 
           if (c.evento.uid) {
+            // Só reaproveita a reunião "gerenciada pelo sync" se ela ainda estiver
+            // 'agendada'. Sem esse filtro, quando o consultor marcava a reunião como
+            // 'realizada' (com notas), a PRÓXIMA ocorrência do evento recorrente no
+            // feed ICS "roubava" essa mesma linha na próxima sincronização (a busca
+            // pegava qualquer linha com calendario_evento_uid, sem olhar o status) e
+            // sobrescrevia status/data para o novo evento — a reunião concluída
+            // reaparecia como pendente. Ver índice único parcial em
+            // supabase_migration_reunioes_sync_status_fix.sql, que agora só proíbe
+            // duplicar uma reunião AGENDADA por cliente (uma já realizada não conta).
             let { data: reuniaoExistente, error: errBuscaReuniao } = await supabase
               .from("reunioes")
               .select("id")
               .eq("cliente_id", c.id)
+              .eq("status", "agendada")
               .not("calendario_evento_uid", "is", null)
               .maybeSingle();
             if (errBuscaReuniao) throw errBuscaReuniao;
