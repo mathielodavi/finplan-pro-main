@@ -10,6 +10,9 @@ export interface Parcela {
   data_vencimento: string;
   data_pagamento?: string;
   status: 'pendente' | 'pago' | 'atrasado' | 'cancelado' | 'pausado';
+  /** Seguradora/plano de origem da comissão (ex.: Azos, MAG) — hoje só preenchido para
+   * recebíveis da frente "extra" conciliados via import JSON. */
+  seguradora?: string | null;
   clientes?: { nome: string };
   contratos?: {
     descricao: string;
@@ -75,14 +78,19 @@ export const financeiroService = {
     return data as Parcela[];
   },
 
-  async registrarPagamento(id: string, valor: number, data: string) {
+  async registrarPagamento(id: string, valor: number, data: string, seguradora?: string) {
+    const payload: any = {
+      valor_pago: valor,
+      data_pagamento: data,
+      status: 'pago'
+    };
+    // Só entra no payload quando informado — omitir preserva o valor já gravado (se houver)
+    // em vez de apagá-lo com null a cada nova baixa que não traz seguradora.
+    if (seguradora) payload.seguradora = seguradora;
+
     const { data: parcela, error } = await supabase
       .from('financeiro_parcelas')
-      .update({
-        valor_pago: valor,
-        data_pagamento: data,
-        status: 'pago'
-      })
+      .update(payload)
       .eq('id', id)
       .select()
       .single();
