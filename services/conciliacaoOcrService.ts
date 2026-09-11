@@ -1,11 +1,10 @@
 import { supabase } from './supabaseClient';
 import { financeiroService, Parcela } from './financeiroService';
-import { extrairArquivo } from '../utils/extracaoConciliacao';
-import { gerarSugestoes, normalizarChaveAprendizado, ClienteResumo } from '../utils/matchingConciliacao';
-import { LinhaExtraida } from '../utils/extracaoConciliacao';
+import { extrairArquivo, extrairDeJson, Frente, LinhaExtraida } from '../utils/extracaoConciliacao';
+import { gerarSugestoes, normalizarChaveAprendizado, ClienteResumo, SugestaoMatch } from '../utils/matchingConciliacao';
 import { toLocalDateString } from '../utils/formatadores';
 
-export type Frente = 'planejamento' | 'extra';
+export type { Frente };
 
 /** Uma parcela alvo de uma linha extraída, com o valor a ser baixado nela (rateio de Dividir/Agregar). */
 export interface AlvoBaixa {
@@ -13,11 +12,14 @@ export interface AlvoBaixa {
     valorAlocado: number;
 }
 
-/** Item pronto para consolidação: a linha extraída, o cliente e suas parcelas-alvo (1 ou N). */
+/** Item pronto para consolidação: a linha extraída, o cliente e suas parcelas-alvo (1 ou N).
+ * `frente` vem da própria linha no import JSON (cada linha pode ter a sua); nos fluxos antigos
+ * de arquivo/OCR, sempre a única frente escolhida no drawer antes do upload. */
 export interface LinhaConfirmacao {
     linha: LinhaExtraida;
     clienteId: string;
     alvos: AlvoBaixa[];
+    frente: Frente;
 }
 
 /** Aceita "dd/mm/aaaa" (comum em planilhas/PDFs BR) ou ISO; cai para hoje se não reconhecer. */
@@ -77,25 +79,67 @@ export const conciliacaoOcrService = {
     },
 
     /**
+     * Faz o parse do JSON colado e gera as sugestões de match — cada recebimento pode ter sua
+     * própria frente (planejamento ou extra), ao contrário do upload de arquivo, que usa uma
+     * frente só para o lote inteiro. Por isso carrega o contexto de matching (parcelas em aberto
+     * + histórico de aprendizado) separadamente por frente e roda `gerarSugestoes` uma vez para
+     * cada grupo, preservando o isolamento (um recebimento de "extra" nunca sugere uma parcela
+     * de "planejamento", e vice-versa).
+     */
+    async processarJson(jsonTexto: string) {
+        const { linhas, erros } = extrairDeJson(jsonTexto);
+        if (linhas.length === 0) return { sugestoes: [] as SugestaoMatch[], clientes: [] as ClienteResumo[], parcelasPorClienteFrente: {} as Record<Frente, Map<string, Parcela[]>>, erros };
+
+        const frentesPresentes = Array.from(new Set(linhas.map(l => l.frente as Frente)));
+        const contextosPorFrente = new Map<Frente, Awaited<ReturnType<typeof this.carregarContextoMatching>>>();
+        for (const f of frentesPresentes) {
+            contextosPorFrente.set(f, await this.carregarContextoMatching(f));
+        }
+
+        // Clientes são os mesmos independente da frente (não são filtrados por ela) — usa o
+        // primeiro contexto carregado como fonte.
+        const clientes = contextosPorFrente.get(frentesPresentes[0])!.clientes;
+
+        const parcelasPorClienteFrente = {} as Record<Frente, Map<string, Parcela[]>>;
+        let sugestoes: SugestaoMatch[] = [];
+        for (const f of frentesPresentes) {
+            const ctx = contextosPorFrente.get(f)!;
+            parcelasPorClienteFrente[f] = ctx.parcelasPorCliente;
+            const linhasDaFrente = linhas.filter(l => l.frente === f);
+            sugestoes = sugestoes.concat(gerarSugestoes(linhasDaFrente, clientes, ctx.parcelasPorCliente, ctx.historico));
+        }
+
+        return { sugestoes, clientes, parcelasPorClienteFrente, erros };
+    },
+
+    /**
      * Consolida as sugestões aceitas pelo usuário: registra o pagamento de cada parcela
      * (reaproveitando `financeiroService.registrarPagamento`, com toda a lógica de extensão de
-     * contrato ilimitado já existente) e grava/reforça as associações confirmadas na tabela de
+     * contrato ilimitado já existente), grava o canal de recebimento quando a linha trouxer um
+     * (import JSON, frente "extra"), e grava/reforça as associações confirmadas na tabela de
      * aprendizado, além de um registro de auditoria da importação.
+     *
+     * `frente` é lida de cada item (`item.frente`), não recebida como parâmetro único — um mesmo
+     * lote (import JSON) pode misturar planejamento e extras. A tabela de auditoria
+     * (`conciliacao_importacoes`) exige uma frente só por linha, então um registro é gravado por
+     * frente distinta presente no lote confirmado.
      */
-    async confirmarConciliacao(itens: LinhaConfirmacao[], frente: Frente, nomeArquivo: string): Promise<{ confirmadas: number }> {
+    async confirmarConciliacao(itens: LinhaConfirmacao[], nomeArquivo: string): Promise<{ confirmadas: number }> {
         const { data: { user } } = await supabase.auth.getUser();
         const aceitas = itens.filter(i => i.clienteId && i.alvos.some(a => a.parcelaId));
 
         let parcelasBaixadas = 0;
+        const porFrente = new Map<Frente, number>();
 
         for (const item of aceitas) {
             const dataPagamento = converterDataOriginalParaISO(item.linha.dataOriginal);
+            porFrente.set(item.frente, (porFrente.get(item.frente) || 0) + 1);
 
             // Uma linha pode baixar 1 parcela (1:1), dividir o recebimento entre 2 ou
             // agregar N parcelas — cada alvo recebe seu valor rateado.
             for (const alvo of item.alvos) {
                 if (!alvo.parcelaId) continue;
-                await financeiroService.registrarPagamento(alvo.parcelaId, alvo.valorAlocado, dataPagamento);
+                await financeiroService.registrarPagamento(alvo.parcelaId, alvo.valorAlocado, dataPagamento, item.linha.canalRecebimento);
                 parcelasBaixadas++;
             }
 
@@ -110,7 +154,7 @@ export const conciliacaoOcrService = {
                         chave_identificacao: chave,
                         tipo_chave: tipo,
                         cliente_id: item.clienteId,
-                        frente,
+                        frente: item.frente,
                         confirmado_por: user?.id,
                     },
                     { onConflict: 'chave_identificacao,frente' }
@@ -118,13 +162,16 @@ export const conciliacaoOcrService = {
             }
         }
 
-        await supabase.from('conciliacao_importacoes').insert({
-            usuario_id: user?.id,
-            frente,
-            nome_arquivo: nomeArquivo,
-            total_linhas: itens.length,
-            total_confirmadas: parcelasBaixadas,
-        });
+        for (const [f, totalConfirmadasFrente] of porFrente.entries()) {
+            const totalLinhasFrente = itens.filter(i => i.frente === f).length;
+            await supabase.from('conciliacao_importacoes').insert({
+                usuario_id: user?.id,
+                frente: f,
+                nome_arquivo: nomeArquivo,
+                total_linhas: totalLinhasFrente,
+                total_confirmadas: totalConfirmadasFrente,
+            });
+        }
 
         return { confirmadas: parcelasBaixadas };
     },

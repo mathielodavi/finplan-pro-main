@@ -5,12 +5,82 @@ import { normalizarTexto } from './formatadores';
 // Worker do pdf.js — Vite empacota como asset separado via new URL(...).
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
+export type Frente = 'planejamento' | 'extra';
+
 export interface LinhaExtraida {
     nomeOriginal: string;
     valor: number;
     dataOriginal?: string;
     emailOriginal?: string;
     documentoOriginal?: string;
+    /** Só preenchido quando a linha vem do import JSON (`extrairDeJson`) — cada linha pode ter
+     * uma frente diferente no mesmo lote, ao contrário do fluxo de arquivo/OCR (uma frente só,
+     * escolhida no drawer antes do upload). */
+    frente?: Frente;
+    /** Canal do recebimento — só relevante (e obrigatório em `extrairDeJson`) para frente 'extra'. */
+    canalRecebimento?: string;
+}
+
+const CANAIS_RECEBIMENTO_VALIDOS = ['pix', 'transferencia', 'boleto', 'cartao', 'outro'];
+
+/**
+ * Parser do import JSON de conciliação: aceita `{ recebimentos: [...] }` ou um array puro.
+ * Cada item aponta sua PRÓPRIA frente (diferente do fluxo de arquivo/OCR, onde a frente é única
+ * para o lote inteiro) — permite um único JSON com recebimentos de planejamento e extras
+ * misturados, como costuma vir num extrato/relatório de repasse real.
+ */
+export function extrairDeJson(jsonTexto: string): { linhas: LinhaExtraida[]; erros: string[] } {
+    let bruto: any;
+    try {
+        bruto = JSON.parse(jsonTexto);
+    } catch {
+        return { linhas: [], erros: ['JSON inválido — verifique a formatação.'] };
+    }
+
+    const lista: any[] = Array.isArray(bruto) ? bruto : Array.isArray(bruto?.recebimentos) ? bruto.recebimentos : [];
+    if (lista.length === 0) {
+        return { linhas: [], erros: ['Nenhum recebimento encontrado (esperado um array "recebimentos").'] };
+    }
+
+    const erros: string[] = [];
+    const linhas: LinhaExtraida[] = [];
+
+    lista.forEach((r: any, i: number) => {
+        const pos = `Recebimento ${i + 1}`;
+        const frente = r?.frente;
+        if (frente !== 'planejamento' && frente !== 'extra') {
+            erros.push(`${pos}: "frente" deve ser "planejamento" ou "extra" (veio ${JSON.stringify(r?.frente ?? null)}).`);
+            return;
+        }
+
+        const nome = typeof r?.nome_cliente === 'string' ? r.nome_cliente.trim() : '';
+        if (!nome) { erros.push(`${pos}: "nome_cliente" ausente.`); return; }
+
+        const valor = Number(r?.valor_repasse);
+        if (!isFinite(valor) || valor <= 0) { erros.push(`${pos} (${nome}): "valor_repasse" inválido.`); return; }
+
+        let canal: string | undefined;
+        if (frente === 'extra') {
+            canal = typeof r?.canal_recebimento === 'string' ? r.canal_recebimento.trim().toLowerCase() : '';
+            if (!canal) { erros.push(`${pos} (${nome}): "canal_recebimento" é obrigatório quando "frente" é "extra".`); return; }
+            if (!CANAIS_RECEBIMENTO_VALIDOS.includes(canal)) {
+                erros.push(`${pos} (${nome}): "canal_recebimento" deve ser um de: ${CANAIS_RECEBIMENTO_VALIDOS.join(', ')} (veio "${canal}").`);
+                return;
+            }
+        }
+
+        linhas.push({
+            nomeOriginal: nome,
+            valor,
+            dataOriginal: typeof r?.data_pagamento === 'string' ? r.data_pagamento : undefined,
+            emailOriginal: typeof r?.email_cliente === 'string' ? r.email_cliente.trim() : undefined,
+            documentoOriginal: typeof r?.documento_cliente === 'string' ? r.documento_cliente.trim() : undefined,
+            frente,
+            canalRecebimento: canal,
+        });
+    });
+
+    return { linhas, erros };
 }
 
 // Sinônimos de cabeçalho, em ordem de prioridade (o primeiro que combinar vence).
