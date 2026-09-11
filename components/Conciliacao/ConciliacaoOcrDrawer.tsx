@@ -28,7 +28,7 @@ const EXEMPLO = `{
   "recebimentos": [
     { "frente": "planejamento", "nome_cliente": "Ana Zellner", "valor_repasse": 450.00 },
     { "frente": "extra", "nome_cliente": "Pedro Camargo", "valor_repasse": 1200.00,
-      "canal_recebimento": "pix" }
+      "seguradora": "Azos" }
   ]
 }`;
 
@@ -307,8 +307,8 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
                         />
                         <p className="text-[11px] text-faint mt-1.5 leading-relaxed">
                             Cada recebimento aponta sua própria <b>frente</b> ("planejamento" ou "extra") — um único JSON
-                            pode misturar as duas. Para "extra", <b>canal_recebimento</b> é obrigatório (pix, transferencia,
-                            boleto, cartao ou outro). Nada é gravado até a confirmação final na próxima etapa.
+                            pode misturar as duas. Para "extra", <b>seguradora</b> é obrigatória (nome livre, ex.: Azos,
+                            MAG). Nada é gravado até a confirmação final na próxima etapa.
                         </p>
                     </div>
 
@@ -364,8 +364,8 @@ const ConciliacaoOcrDrawer: React.FC<Props> = ({ open, onClose, onConcluido }) =
                                             </div>
                                             <p className="text-[11px] text-muted">
                                                 Recebido: <span className="font-semibold text-main">{formatarMoeda(l.linha.valor)}</span>
-                                                {frenteL === 'extra' && l.linha.canalRecebimento && (
-                                                    <span className="text-faint"> · {l.linha.canalRecebimento}</span>
+                                                {frenteL === 'extra' && l.linha.seguradora && (
+                                                    <span className="text-faint"> · {l.linha.seguradora}</span>
                                                 )}
                                             </p>
                                         </div>

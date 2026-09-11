@@ -115,7 +115,7 @@ export const conciliacaoOcrService = {
     /**
      * Consolida as sugestões aceitas pelo usuário: registra o pagamento de cada parcela
      * (reaproveitando `financeiroService.registrarPagamento`, com toda a lógica de extensão de
-     * contrato ilimitado já existente), grava o canal de recebimento quando a linha trouxer um
+     * contrato ilimitado já existente), grava a seguradora/plano quando a linha trouxer uma
      * (import JSON, frente "extra"), e grava/reforça as associações confirmadas na tabela de
      * aprendizado, além de um registro de auditoria da importação.
      *
@@ -139,7 +139,7 @@ export const conciliacaoOcrService = {
             // agregar N parcelas — cada alvo recebe seu valor rateado.
             for (const alvo of item.alvos) {
                 if (!alvo.parcelaId) continue;
-                await financeiroService.registrarPagamento(alvo.parcelaId, alvo.valorAlocado, dataPagamento, item.linha.canalRecebimento);
+                await financeiroService.registrarPagamento(alvo.parcelaId, alvo.valorAlocado, dataPagamento, item.linha.seguradora);
                 parcelasBaixadas++;
             }
 
