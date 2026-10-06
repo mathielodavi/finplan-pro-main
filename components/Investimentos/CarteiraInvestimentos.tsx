@@ -5,6 +5,7 @@ import { configService } from '../../services/configuracoesService';
 import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaService';
 import { cambioService, MOEDAS_SUPORTADAS, MoedaCodigo } from '../../services/cambioService';
 import { formatarMoeda, formatarCNPJ, formatarData, diasDesde, normalizarTexto } from '../../utils/formatadores';
+import { somarPesosPorFaixaClasse, idealNaClasse } from '../../utils/alocacaoIdeal';
 import Modal from '../Modal';
 import SidePanel from '../UI/SidePanel';
 import Badge from '../UI/Badge';
@@ -32,6 +33,9 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
   const [projetosCliente, setProjetosCliente] = useState<any[]>([]);
   const [carteiraRec, setCarteiraRec] = useState<any[]>([]);
   const [teses, setTeses] = useState<any[]>([]);
+  // Modelos de alocação (classes + % por classe) — o do cliente (`estrategia_padrao_id`) dá a meta
+  // de cada classe exibida no cabeçalho das tabelas.
+  const [modelos, setModelos] = useState<any[]>([]);
   // Cotação da moeda estrangeira selecionada no form de ativo (busca automática — ver useEffect abaixo)
   const [cotacaoInfo, setCotacaoInfo] = useState<{ moeda: MoedaCodigo; valor: number } | null>(null);
   const [buscandoCotacao, setBuscandoCotacao] = useState(false);
@@ -53,6 +57,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
         setProjetosCliente(projetos || []);
         setCarteiraRec(rec || []);
         setTeses(teseData || []);
+        setModelos(modelos || []);
       } catch (err) { console.error(err); }
     };
     fetchMetadata();
@@ -117,6 +122,9 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
       return acc;
     }, {});
 
+    // Soma dos pesos da carteira recomendada por (faixa, classe) — denominador do ideal na classe.
+    const somasPesosClasse = somarPesosPorFaixaClasse(carteiraRec, cliente?.tese_investimento_id);
+
     const ativosProcessados = ativos.map((a: any) => {
       const linkIndep = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'independencia');
       const temIndependencia = linkIndep && linkIndep.percentual > 0;
@@ -132,6 +140,9 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
       let statusControle = 'Não recomendado';
       let metaAlvo = 0;
       let desvio = 0;
+      // Alocação ideal DENTRO da classe (mesma base de `pesoNaClasse`) — só existe quando o ativo
+      // está na carteira recomendada da faixa aplicável; nos demais status fica null (traço).
+      let idealClasse: number | null = null;
 
       if (matchesRec.length > 0) {
         const naTese = matchesRec.filter(r => r.estrategia_id === cliente?.tese_investimento_id);
@@ -139,16 +150,30 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
         else {
           const naFaixa = naTese.find(r => r.faixa_id === faixaAtual?.id);
           const naFaixaSeguinte = proximaFaixa ? naTese.find(r => r.faixa_id === proximaFaixa.id) : null;
-          if (naFaixa) { statusControle = 'Ok'; metaAlvo = naFaixa.alocacao; }
-          else if (naFaixaSeguinte && dentroToleranciaUpgrade) { statusControle = 'Ok'; metaAlvo = naFaixaSeguinte.alocacao; }
+          if (naFaixa) { statusControle = 'Ok'; metaAlvo = naFaixa.alocacao; idealClasse = idealNaClasse(naFaixa, somasPesosClasse); }
+          else if (naFaixaSeguinte && dentroToleranciaUpgrade) { statusControle = 'Ok'; metaAlvo = naFaixaSeguinte.alocacao; idealClasse = idealNaClasse(naFaixaSeguinte, somasPesosClasse); }
           else { statusControle = 'Fora da faixa'; metaAlvo = naTese[0].alocacao; }
         }
       }
-      if (temIndependencia && metaAlvo > 0) {
-        const partRealIndepTotal = patrimonioIndependencia > 0 ? (valorParaIndep / patrimonioIndependencia) * 100 : 0;
-        desvio = partRealIndepTotal - metaAlvo;
-      }
-      return { ...a, pesoNaClasse, desvio, temIndependencia, statusControle, metaAlvo };
+      // Desvio em pontos percentuais: quanto o peso atual na classe está acima (+) ou abaixo (−) do ideal.
+      if (temIndependencia && idealClasse !== null) desvio = pesoNaClasse - idealClasse;
+      return { ...a, pesoNaClasse, desvio, temIndependencia, statusControle, metaAlvo, idealClasse };
+    });
+
+    // Cabeçalho de cada classe: meta da estratégia de alocação do cliente vs participação atual
+    // da classe no patrimônio de independência (mesma base do gráfico de alocação do Resumo Geral).
+    const modeloCliente = modelos.find(m => m.id === cliente?.estrategia_padrao_id);
+    const metaPorClasseNorm = new Map<string, number>(
+      (modeloCliente?.classes || []).map((c: any) => [normalizarTexto(c.nome), Number(c.percentual) || 0] as [string, number])
+    );
+    const resumoPorClasse: Record<string, { meta: number; atual: number }> = {};
+    new Set<string>(ativos.map((a: any) => a.tipo_ativo || 'OUTROS')).forEach(classe => {
+      const meta = metaPorClasseNorm.get(normalizarTexto(classe));
+      if (meta === undefined) return;
+      resumoPorClasse[classe] = {
+        meta,
+        atual: patrimonioIndependencia > 0 ? ((totaisPorClasseIndep[classe] || 0) / patrimonioIndependencia) * 100 : 0,
+      };
     });
 
     const desviosCriticos = ativosProcessados.filter((a: any) => a.temIndependencia && Math.abs(a.desvio) > 5).length;
@@ -157,8 +182,8 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
     const dataAtualizacaoMaisRecente = ativos.reduce((max: string | undefined, cur: any) =>
       (cur.atualizado_em && (!max || cur.atualizado_em > max)) ? cur.atualizado_em : max, undefined as string | undefined);
 
-    return { totalCustodia, patrimonioIndependencia, ativosProcessados, desviosCriticos, dataAtualizacaoMaisRecente };
-  }, [ativos, carteiraRec, teses, cliente]);
+    return { totalCustodia, patrimonioIndependencia, ativosProcessados, desviosCriticos, dataAtualizacaoMaisRecente, resumoPorClasse };
+  }, [ativos, carteiraRec, teses, cliente, modelos]);
 
   const ativosExibidos = stats.ativosProcessados
     .filter((a: any) => !filtroDesvio || (a.temIndependencia && Math.abs(a.desvio) > 2))
@@ -195,7 +220,7 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
 
     // aporte_periodo é transiente (não é coluna de ativos) — declarado pelo consultor só para
     // alimentar o histórico mensal de patrimônio/rentabilidade deste ativo especificamente.
-    const { pesoNaClasse, desvio, temIndependencia, statusControle, metaAlvo, aporte_periodo, ...payloadParaBanco } = editing;
+    const { pesoNaClasse, desvio, temIndependencia, statusControle, metaAlvo, idealClasse, aporte_periodo, ...payloadParaBanco } = editing;
     const aporteRealizado = Number(aporte_periodo) || 0;
     try {
       await investimentoService.salvarAtivo({ ...payloadParaBanco, cliente_id: clienteId });
@@ -300,20 +325,21 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
           <Accordion
             key={classe}
             title={classe}
-            subtitle={`${ativosClasse.length} ativos • ${formatarMoeda(ativosClasse.reduce((acc, a) => acc + a.valor_atual, 0))}`}
+            subtitle={`${ativosClasse.length} ativos • ${formatarMoeda(ativosClasse.reduce((acc, a) => acc + a.valor_atual, 0))}${stats.resumoPorClasse[classe] ? ` • Estratégia: meta ${stats.resumoPorClasse[classe].meta.toFixed(1)}% · atual ${stats.resumoPorClasse[classe].atual.toFixed(1)}%` : ''}`}
             defaultOpen={true}
           >
             <div className="bg-surface rounded-xl border border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden mt-3">
               <div className="overflow-x-auto">
-                <table className="w-full text-left table-fixed min-w-[760px]">
+                <table className="w-full text-left table-fixed min-w-[840px]">
                   <colgroup>
-                    <col className="w-[26%]" />
-                    <col className="w-[16%]" />
-                    <col className="w-[13%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[11%]" />
+                    <col className="w-[24%]" />
                     <col className="w-[14%]" />
-                    <col className="w-[8%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[6%]" />
                   </colgroup>
                   <thead>
                     <tr className="bg-surface-2 border-b border-subtle">
@@ -321,7 +347,8 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                       <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Controle</th>
                       <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Status</th>
                       <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Aloc. Classe</th>
-                      <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Desvio Meta</th>
+                      <th title="Alocação ideal do ativo dentro da classe, pela carteira recomendada" className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Aloc. Ideal</th>
+                      <th title="Alocação atual na classe menos a alocação ideal (pontos percentuais)" className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-center">Desvio Meta</th>
                       <th className="px-4 py-3 text-[11px] font-semibold uppercase text-faint tracking-wider text-right">Saldo {filtroObjetivo !== 'todos' ? 'Objetivo' : 'Total'}</th>
                       <th className="px-4 py-3 text-right"></th>
                     </tr>
@@ -333,7 +360,8 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                         <td className="px-4 py-3 text-center"><div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[9px] font-bold uppercase tracking-wider ${a.statusControle === 'Ok' ? 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]' : a.statusControle === 'Fora da estratégia' ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : a.statusControle === 'Fora da faixa' ? 'text-[color:var(--warning)] bg-[rgba(251,191,36,0.12)] border-[rgba(251,191,36,0.25)]' : 'bg-surface-2 text-faint border-subtle'}`}>{a.statusControle === 'Ok' ? <CheckCircle2 size={10} /> : a.statusControle === 'Não recomendado' ? <MinusCircle size={10} /> : <XCircle size={10} />}<span className="truncate">{a.statusControle}</span></div></td>
                         <td className="px-4 py-3 text-center"><Badge variant={a.status === 'Vender' ? 'danger' : 'success'} size="sm">{a.status === 'Vender' ? `Vender → ${DESTINOS_VENDA.find(d => d.key === a.destino_venda)?.label || 'Livre'}` : 'Manter'}</Badge></td>
                         <td className="px-4 py-3 text-center"><span className={`text-[12px] font-bold tracking-tight ${a.temIndependencia ? 'text-main' : 'text-faint'}`}>{a.pesoNaClasse.toFixed(1)}%</span></td>
-                        <td className="px-4 py-3 text-center">{a.temIndependencia && a.metaAlvo > 0 ? (<div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${Math.abs(a.desvio) <= 2 ? 'bg-surface-2 text-faint border-subtle' : a.desvio > 2 ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]'}`}>{a.desvio > 2 ? <ArrowUpRight size={10} /> : a.desvio < -2 ? <ArrowDownRight size={10} /> : null}<span className="text-[10px] font-bold uppercase tracking-wider">{Math.abs(a.desvio) <= 2 ? 'OK' : `${a.desvio > 0 ? '+' : ''}${a.desvio.toFixed(1)}%`}</span></div>) : (<div className="h-0.5 w-3 bg-surface-3 rounded-full mx-auto" />)}</td>
+                        <td className="px-4 py-3 text-center">{a.idealClasse !== null ? (<span className="text-[12px] font-bold tracking-tight text-muted">{a.idealClasse.toFixed(1)}%</span>) : (<div className="h-0.5 w-3 bg-surface-3 rounded-full mx-auto" />)}</td>
+                        <td className="px-4 py-3 text-center">{a.temIndependencia && a.idealClasse !== null ? (<div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border ${Math.abs(a.desvio) <= 2 ? 'bg-surface-2 text-faint border-subtle' : a.desvio > 2 ? 'text-[color:var(--danger)] bg-[rgba(248,113,113,0.12)] border-[rgba(248,113,113,0.25)]' : 'text-[color:var(--primary)] bg-[rgba(16,185,129,0.12)] border-[rgba(16,185,129,0.25)]'}`}>{a.desvio > 2 ? <ArrowUpRight size={10} /> : a.desvio < -2 ? <ArrowDownRight size={10} /> : null}<span className="text-[10px] font-bold uppercase tracking-wider">{Math.abs(a.desvio) <= 2 ? 'OK' : `${a.desvio > 0 ? '+' : ''}${a.desvio.toFixed(1)}%`}</span></div>) : (<div className="h-0.5 w-3 bg-surface-3 rounded-full mx-auto" />)}</td>
                         <td className="px-4 py-3 text-right font-bold text-main tracking-tighter text-[13px]">{formatarMoeda(a.valor_atual)}</td>
                         <td className="px-4 py-3 text-right"><div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all"><button onClick={() => { setEditing(a); setModalOpen(true); }} className="p-1.5 text-faint hover:text-[color:var(--info)] rounded-lg transition-colors"><Edit3 size={14} /></button><button onClick={() => setAtivoParaExcluir(a)} className="p-1.5 text-faint hover:text-[color:var(--danger)] rounded-lg transition-colors"><Trash2 size={14} /></button></div></td>
                       </tr>
