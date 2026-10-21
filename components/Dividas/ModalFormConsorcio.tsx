@@ -6,6 +6,7 @@ import Input from '../UI/Input';
 import InputMoeda from '../UI/InputMoeda';
 import InputPercentual from '../UI/InputPercentual';
 import SidePanel from '../UI/SidePanel';
+import { indexadoresService } from '../../services/indexadoresService';
 import { toLocalDateString } from '../../utils/formatadores';
 
 interface Props {
@@ -31,6 +32,7 @@ const CONTRACT_OPTIONS: { value: ContractType, label: string }[] = [
 
 const INDEX_OPTIONS: { value: MonetaryIndex, label: string }[] = [
     { value: 'INCC', label: 'INCC (Imóveis)' },
+    { value: 'SELIC', label: 'SELIC' },
     { value: 'IPCA', label: 'IPCA' },
     { value: 'IGP-M', label: 'IGP-M' },
     { value: 'fixed', label: 'Fixo' },
@@ -87,6 +89,17 @@ const ModalFormConsorcio: React.FC<Props> = ({ open, onClose, onSave, initialDat
         }
     }, [open, initialData, clienteId]);
 
+    /** undefined = buscando; null = indisponível. */
+    const [taxaMercado, setTaxaMercado] = useState<number | null | undefined>(undefined);
+    const indice = formData.monetary_index;
+    useEffect(() => {
+        if (!open || !indice || indice === 'none' || indice === 'fixed') { setTaxaMercado(undefined); return; }
+        let ativo = true;
+        setTaxaMercado(undefined);
+        indexadoresService.getAcumulado12m(indice).then(v => { if (ativo) setTaxaMercado(v); });
+        return () => { ativo = false; };
+    }, [open, indice]);
+
     // Regras automáticas de negócio, aplicadas em tempo real na UI:
     useEffect(() => {
         setFormData(prev => {
@@ -123,8 +136,9 @@ const ModalFormConsorcio: React.FC<Props> = ({ open, onClose, onSave, initialDat
     const handleSalvar = async () => {
         setSalvando(true);
         try {
+            const { monetary_correction_effective: _descartado, ...dadosPersistiveis } = formData; // campo só em memória
             await onSave({
-                ...formData,
+                ...dadosPersistiveis,
                 real_monthly_cost: formData.real_monthly_cost ?? 0, // recalculado ao exibir no painel de detalhe
             });
         } finally {
@@ -215,13 +229,29 @@ const ModalFormConsorcio: React.FC<Props> = ({ open, onClose, onSave, initialDat
                 </div>
                 <div>
                     <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5">Índice Correção Monetária</label>
-                    <select name="monetary_index" value={formData.monetary_index || 'INCC'} onChange={handleChange} className="w-full bg-surface-2 border border-subtle text-main text-[12px] font-bold rounded-[8px] px-3 h-9 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                    <select name="monetary_index" value={formData.monetary_index || 'INCC'} onChange={(e) => { const novo = e.target.value as MonetaryIndex; setFormData(prev => ({ ...prev, monetary_index: novo, monetary_correction_annual: null })); }} className="w-full bg-surface-2 border border-subtle text-main text-[12px] font-bold rounded-[8px] px-3 h-9 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
                         {INDEX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                 </div>
                 <div>
                     <InputPercentual label="Correção Acumulada (%)" value={formData.monetary_correction_accumulated} onChange={(v) => setFormData(prev => ({ ...prev, monetary_correction_accumulated: v }))} />
                 </div>
+                {formData.monetary_index && formData.monetary_index !== 'none' && (
+                    <div className="col-span-full">
+                        <InputPercentual
+                            label={formData.monetary_index === 'fixed' ? 'Correção anual fixa (% a.a.)' : 'Ajuste manual da projeção (% a.a., opcional)'}
+                            value={formData.monetary_correction_annual ?? undefined}
+                            onChange={(v) => setFormData(prev => ({ ...prev, monetary_correction_annual: v || null }))}
+                            helperText={formData.monetary_index === 'fixed'
+                                ? 'Taxa aplicada no reajuste anual projetado da parcela.'
+                                : taxaMercado === undefined
+                                    ? 'Buscando taxa de mercado…'
+                                    : taxaMercado === null
+                                        ? 'Taxa de mercado indisponível agora — informe um ajuste manual.'
+                                        : `Vazio = usa a taxa de mercado (12m): ${taxaMercado.toFixed(2)}% a.a.`}
+                        />
+                    </div>
+                )}
 
                 <div className="col-span-full border-b border-subtle pb-2 mb-1 mt-3">
                     <h3 className="text-[10px] font-black tracking-widest text-faint uppercase">4. Sorteio e Lance</h3>

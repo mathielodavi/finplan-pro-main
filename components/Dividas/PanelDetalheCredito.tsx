@@ -134,10 +134,15 @@ const PanelDetalheCredito: React.FC<Props> = ({ open, onClose, credito, selicAnu
                             <p className="text-[10px] text-faint uppercase tracking-wider font-bold">Sistema de Amortização</p>
                             <p className="text-[13px] font-bold text-main mt-0.5">{credito.amortization_system === 'sac' ? 'SAC' : 'Price'}</p>
                         </div>
-                        {!!credito.monetary_correction_annual && (
+                        {credito.monetary_index && credito.monetary_index !== 'none' && (
                             <div>
-                                <p className="text-[10px] text-faint uppercase tracking-wider font-bold">Correção Monetária</p>
-                                <p className="text-[13px] font-bold text-main mt-0.5">{Number(credito.monetary_correction_annual).toFixed(2)}% a.a.</p>
+                                <p className="text-[10px] text-faint uppercase tracking-wider font-bold">Indexador ({credito.monetary_index === 'fixed' ? 'Fixo' : credito.monetary_index})</p>
+                                <p className="text-[13px] font-bold text-main mt-0.5">
+                                    {Number(credito.monetary_correction_effective ?? credito.monetary_correction_annual ?? 0).toFixed(2)}% a.a.
+                                    {credito.monetary_index !== 'fixed' && (
+                                        <span className="text-[10px] text-faint font-bold uppercase tracking-wider"> {credito.monetary_correction_annual != null ? '(ajuste manual)' : '(mercado 12m)'}</span>
+                                    )}
+                                </p>
                             </div>
                         )}
                     </div>

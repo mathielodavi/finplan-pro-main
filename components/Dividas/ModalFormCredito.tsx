@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle, Save } from 'lucide-react';
-import { DividaCredito, DebtType, AmortizationSystem, DebtSituacao, TaxaNominalUnidade } from '../../types/dividas';
+import { DividaCredito, DebtType, AmortizationSystem, DebtSituacao, TaxaNominalUnidade, MonetaryIndex } from '../../types/dividas';
+import { indexadoresService, IndiceMercado } from '../../services/indexadoresService';
 import {
+    taxaCorrecaoEfetiva,
     derivarCetAnual,
     calcularCetImplicitoPrice,
     calcularCetImplicitoSac,
@@ -39,6 +41,15 @@ const AMORTIZATION_OPTIONS: { value: AmortizationSystem, label: string }[] = [
     { value: 'sac', label: 'SAC (amortização constante, parcela decrescente)' },
 ];
 
+const INDEX_OPTIONS: { value: MonetaryIndex, label: string }[] = [
+    { value: 'none', label: 'Nenhum' },
+    { value: 'SELIC', label: 'SELIC' },
+    { value: 'IPCA', label: 'IPCA' },
+    { value: 'IGP-M', label: 'IGP-M' },
+    { value: 'INCC', label: 'INCC' },
+    { value: 'fixed', label: 'Fixo (taxa manual)' },
+];
+
 const DEFAULT_FORM: Partial<DividaCredito> = {
     debt_type: 'personal_loan',
     debt_label: '',
@@ -51,7 +62,8 @@ const DEFAULT_FORM: Partial<DividaCredito> = {
     cet_monthly: 0,
     cet_annual: 0,
     amortization_system: 'price',
-    monetary_correction_annual: undefined,
+    monetary_index: 'none',
+    monetary_correction_annual: null,
     start_date: new Date().toISOString().split('T')[0],
 };
 
@@ -73,6 +85,19 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
             cetOrigemEdicao.current = null;
         }
     }, [open, initialData, clienteId]);
+
+    const indexadorDeMercado = !!formData.monetary_index && formData.monetary_index !== 'none' && formData.monetary_index !== 'fixed';
+    const indexadorFixo = formData.monetary_index === 'fixed';
+    /** undefined = buscando; null = indisponível. */
+    const [taxaMercado, setTaxaMercado] = useState<number | null | undefined>(undefined);
+
+    useEffect(() => {
+        if (!open || !indexadorDeMercado) { setTaxaMercado(undefined); return; }
+        let ativo = true;
+        setTaxaMercado(undefined);
+        indexadoresService.getAcumulado12m(formData.monetary_index as IndiceMercado).then(v => { if (ativo) setTaxaMercado(v); });
+        return () => { ativo = false; };
+    }, [open, indexadorDeMercado, formData.monetary_index]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
@@ -112,7 +137,11 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
             return;
         }
 
-        const { saldoDevedor, parcelasAbertas } = calcularSaldoEParcelasAtual(formData as DividaCredito);
+        // Snapshot persistido (outstanding_balance etc.) usa a taxa efetiva vista na tela agora;
+        // o campo transitório em memória nunca vai para o banco.
+        const { monetary_correction_effective: _descartado, ...dadosPersistiveis } = formData;
+        const efetiva = taxaCorrecaoEfetiva(formData as DividaCredito, taxaMercado != null && indexadorDeMercado ? { [formData.monetary_index as IndiceMercado]: taxaMercado } : {});
+        const { saldoDevedor, parcelasAbertas } = calcularSaldoEParcelasAtual({ ...(formData as DividaCredito), monetary_correction_effective: efetiva });
         const startDate = formData.start_date || new Date().toISOString().split('T')[0];
         const endDate = calcularDataFim(startDate, formData.total_installments || 0);
         const totalPaid = Math.round(Math.max(0, (formData.total_installments || 0) - parcelasAbertas) * (formData.installment_value || 0) * 100) / 100;
@@ -120,7 +149,8 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
         setSalvando(true);
         try {
             await onSave({
-                ...formData,
+                ...dadosPersistiveis,
+                monetary_index: formData.monetary_index || 'none',
                 start_date: startDate,
                 outstanding_balance: saldoDevedor,
                 remaining_installments: parcelasAbertas,
@@ -133,7 +163,6 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
         }
     };
 
-    const isFinanciamento = formData.debt_type === 'financing';
     const emAtraso = formData.situacao === 'em_atraso';
 
     return (
@@ -279,13 +308,46 @@ const ModalFormCredito: React.FC<Props> = ({ open, onClose, onSave, initialData,
                     />
                 </div>
 
-                {isFinanciamento && (
-                    <div className="col-span-2">
+                <div className={indexadorDeMercado || indexadorFixo ? '' : 'col-span-2'}>
+                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5">Indexador</label>
+                    <select
+                        name="monetary_index"
+                        value={formData.monetary_index || 'none'}
+                        onChange={(e) => {
+                            const novo = e.target.value as MonetaryIndex;
+                            setFormData(prev => ({ ...prev, monetary_index: novo, monetary_correction_annual: null }));
+                        }}
+                        className="w-full bg-surface-2 border border-subtle text-main text-[12px] font-bold rounded-[8px] px-3 h-9 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    >
+                        {INDEX_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <p className="text-[10px] text-faint mt-1">
+                        {indexadorDeMercado
+                            ? (taxaMercado === undefined
+                                ? 'Buscando taxa de mercado…'
+                                : taxaMercado === null
+                                    ? 'Taxa de mercado indisponível agora — informe um ajuste manual.'
+                                    : `Taxa de mercado (12m): ${taxaMercado.toFixed(2)}% a.a.`)
+                            : 'Corrige o saldo e as projeções futuras da dívida.'}
+                    </p>
+                </div>
+                {indexadorDeMercado && (
+                    <div>
                         <InputPercentual
-                            label="Correção Monetária Anual (%, opcional)"
-                            value={formData.monetary_correction_annual}
-                            onChange={(v) => setFormData(prev => ({ ...prev, monetary_correction_annual: v || undefined }))}
-                            helperText="Relevante para financiamentos indexados (ex.: SFH/TR). Deixe em 0 se não houver correção."
+                            label="Ajuste manual (% a.a., opcional)"
+                            value={formData.monetary_correction_annual ?? undefined}
+                            onChange={(v) => setFormData(prev => ({ ...prev, monetary_correction_annual: v || null }))}
+                            helperText="Vazio = usa a taxa de mercado."
+                        />
+                    </div>
+                )}
+                {indexadorFixo && (
+                    <div>
+                        <InputPercentual
+                            label="Correção anual fixa (% a.a.)"
+                            value={formData.monetary_correction_annual ?? undefined}
+                            onChange={(v) => setFormData(prev => ({ ...prev, monetary_correction_annual: v || null }))}
+                            helperText="Taxa aplicada nas projeções."
                         />
                     </div>
                 )}

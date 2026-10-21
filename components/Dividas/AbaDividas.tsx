@@ -6,7 +6,8 @@ import { selicService } from '../../services/selicService';
 import DashboardDividas from './DashboardDividas';
 import ListaDividas from './ListaDividas';
 import { ordenarAvalanche, ordenarSnowball, ordenarConsorcios } from '../../utils/ordenacaoDividas';
-import { simularQuitacaoCarteira, calcularSaldoEParcelasAtual, calcularComprometimentoRenda } from '../../utils/calculosDividas';
+import { simularQuitacaoCarteira, calcularSaldoEParcelasAtual, calcularComprometimentoRenda, taxaCorrecaoEfetiva } from '../../utils/calculosDividas';
+import { indexadoresService, IndiceMercado } from '../../services/indexadoresService';
 import { CHART_COLORS, CHART_GRID, axisTick, tooltipStyle, tooltipCursor } from '../../utils/chartTheme';
 import { formatarMoeda } from '../../utils/formatadores';
 import Button from '../UI/Button';
@@ -64,19 +65,28 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
             // recalculados aqui (em memória) a partir dos dados cadastrados — nunca lidos
             // como valor manualmente digitado. Todo o resto (risco, alertas, ordenação,
             // dashboard) continua lendo os mesmos nomes de campo, sem precisar mudar.
+            // Indexador: taxa de mercado (BCB, acumulado 12m) dos índices presentes nos contratos.
+            // Falha de rede não quebra nada — sem dado, vale o ajuste manual salvo (ou 0).
+            const indicesUsados = [...crData, ...coData]
+                .map(d => d.monetary_index)
+                .filter((i): i is IndiceMercado => !!i && i !== 'fixed' && i !== 'none');
+            const mercado = await indexadoresService.getTaxasMercado(indicesUsados);
+
             const crEnriquecidos = crData.map(c => {
-                const { saldoDevedor, parcelasAbertas } = calcularSaldoEParcelasAtual(c);
+                const comTaxa = { ...c, monetary_correction_effective: taxaCorrecaoEfetiva(c, mercado) };
+                const { saldoDevedor, parcelasAbertas } = calcularSaldoEParcelasAtual(comTaxa);
                 return {
-                    ...c,
+                    ...comTaxa,
                     outstanding_balance: saldoDevedor,
                     remaining_installments: parcelasAbertas,
                     income_commitment: calcularComprometimentoRenda(c.installment_value, rendaMensalCliente),
                 };
             });
+            const coEnriquecidos = coData.map(c => ({ ...c, monetary_correction_effective: taxaCorrecaoEfetiva(c, mercado) }));
 
             setPrioritizationMethod(metodo);
             setCreditos(crEnriquecidos);
-            setConsorcios(coData);
+            setConsorcios(coEnriquecidos);
         } catch (err) {
             console.error('Erro ao carregar dívidas do cliente', err);
         } finally {
@@ -156,17 +166,18 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
     // para o mesmo aporte extra mensal informado.
     const quitacaoCarteira = useMemo(() => {
         const aporte = Number(aporteExtraSimulacao) || 0;
-        if (creditos.length === 0) return null;
+        if (creditos.length === 0 && consorcios.length === 0) return null;
 
         const ordemAvalanche = ordenarAvalanche(creditos);
+        const ordemConsorcios = ordenarConsorcios(consorcios, prioritizationMethod);
         const ordemSnowball = ordenarSnowball(creditos);
         // Quando a taxa e o saldo decrescem na mesma sequência entre as dívidas, as duas
         // estratégias produzem literalmente a mesma ordem de prioridade — nesse caso a
         // simulação É idêntica para qualquer aporte extra, por construção matemática (não é bug).
         const ordensIdenticas = ordemAvalanche.length > 1 && ordemAvalanche.every((d, i) => d.debt_id === ordemSnowball[i].debt_id);
 
-        const resultadoAvalanche = simularQuitacaoCarteira(ordemAvalanche, aporte);
-        const resultadoSnowball = simularQuitacaoCarteira(ordemSnowball, aporte);
+        const resultadoAvalanche = simularQuitacaoCarteira(ordemAvalanche, aporte, ordemConsorcios);
+        const resultadoSnowball = simularQuitacaoCarteira(ordemSnowball, aporte, ordemConsorcios);
         const mesesMax = Math.max(resultadoAvalanche.serie.length, resultadoSnowball.serie.length, 1);
         const serie = Array.from({ length: mesesMax }, (_, i) => ({
             mes: i + 1,
@@ -175,7 +186,7 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
         }));
 
         return { resultadoAvalanche, resultadoSnowball, serie, ordensIdenticas, ordemPrioridade: ordemAvalanche.map(d => d.debt_label) };
-    }, [creditos, aporteExtraSimulacao]);
+    }, [creditos, consorcios, prioritizationMethod, aporteExtraSimulacao]);
 
     if (loading) {
         return (
@@ -264,7 +275,7 @@ const AbaDividas: React.FC<Props> = ({ clienteId, rendaMensalCliente = 10000 }) 
             />
 
             {/* Simulação de quitação agregada da carteira */}
-            {creditos.length > 0 && (
+            {(creditos.length > 0 || consorcios.length > 0) && (
                 <div className="bg-surface rounded-xl border border-subtle overflow-hidden">
                     <div className="px-5 py-4 border-b border-subtle flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-surface-2/50">
                         <div className="flex items-center gap-3">

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Edit2, Calculator, AlertTriangle, AlertCircle, Info, Trash2 } from 'lucide-react';
 import { DividaConsorcio } from '../../types/dividas';
-import { calcularRiskScoreConsorcioCompleto, calcularCustoEmbutidoTotal, calcularCustoRealMensal, calcularProbabilidadeContemplacao, formatarContemplationStatus } from '../../utils/calculosDividas';
+import { calcularRiskScoreConsorcioCompleto, calcularCustoEmbutidoTotal, calcularCustoRealMensal, calcularProbabilidadeContemplacao, formatarContemplationStatus, projetarParcelasConsorcio } from '../../utils/calculosDividas';
+import { formatarMoeda } from '../../utils/formatadores';
 import { alertasDividaService, AlertSeverity } from '../../services/alertasDividasService';
 import Button from '../UI/Button';
 import Badge from '../UI/Badge';
@@ -44,6 +45,9 @@ const PanelDetalheConsorcio: React.FC<Props> = ({ open, onClose, consorcio, onEd
     const custoEmbutido = calcularCustoEmbutidoTotal(consorcio);
     const custoRealMensal = calcularCustoRealMensal(consorcio);
     const probabilidade = calcularProbabilidadeContemplacao(consorcio);
+    const projecao = consorcio.monetary_index !== 'none' && consorcio.remaining_installments > 0
+        ? projetarParcelasConsorcio(consorcio)
+        : null;
 
     // Simulador de Lance
     const bidPct = simulAmount && simulAmount > 0 ? (Number(simulAmount) / consorcio.credit_letter_value) * 100 : 0;
@@ -153,6 +157,38 @@ const PanelDetalheConsorcio: React.FC<Props> = ({ open, onClose, consorcio, onEd
                         </div>
                     </div>
                 </div>
+
+                {/* Projeção com indexador */}
+                {projecao && (
+                    <div className="bg-surface-2 rounded-xl p-5 border border-subtle space-y-2">
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-faint">
+                            Projeção — {consorcio.monetary_index === 'fixed' ? 'Correção fixa' : consorcio.monetary_index} a {projecao.taxaAnual.toFixed(2)}% a.a.
+                        </h4>
+                        <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-muted">Próximo reajuste da parcela</span>
+                            <span className="text-[12px] font-bold text-main">
+                                {projecao.mesesAteProximoReajuste != null && projecao.mesesAteProximoReajuste > 0 ? `em ${projecao.mesesAteProximoReajuste} ${projecao.mesesAteProximoReajuste === 1 ? 'mês' : 'meses'}` : '—'}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-muted">Custo restante projetado</span>
+                            <span className="text-[12px] font-bold text-main">{formatarMoeda(projecao.custoRestanteProjetado)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-muted">Sem correção</span>
+                            <span className="text-[12px] font-bold text-main">{formatarMoeda(projecao.custoRestanteSemCorrecao)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-muted">Impacto do indexador</span>
+                            <span className="text-[12px] font-bold text-danger">+{formatarMoeda(projecao.custoRestanteProjetado - projecao.custoRestanteSemCorrecao)}</span>
+                        </div>
+                        {projecao.parcelas.length > 0 && (
+                            <p className="text-[9px] text-faint pt-1">
+                                Última parcela projetada: {formatarMoeda(projecao.parcelas[projecao.parcelas.length - 1])} (hoje {formatarMoeda(consorcio.current_installment_value)}).
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 {/* Simulador de Lance */}
                 <div className="bg-surface-2 rounded-xl p-5 border border-subtle">

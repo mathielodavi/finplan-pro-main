@@ -94,7 +94,7 @@ export const alertasDividaService = {
 
         // ALERT CO-02: Correção monetária acumulada YoY delta > 15% 
         // Assumindo monetary_correction_accumulated como proxy pra verificar
-        if (consorcio.monetary_correction_accumulated > 15 && consorcio.monetary_index !== 'none' && consorcio.monetary_index !== 'fixed') {
+        if (consorcio.monetary_correction_accumulated > 15 && consorcio.monetary_index !== 'none' && consorcio.monetary_index !== 'fixed' && consorcio.monetary_index !== 'SELIC') {
             alertas.push({
                 id: 'CO-02',
                 recordId: consorcio.consortium_id as string,
