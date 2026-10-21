@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Edit2, Calculator, AlertTriangle, AlertCircle, Info, Trash2 } from 'lucide-react';
 import { DividaCredito } from '../../types/dividas';
-import { calcularRiskScoreCredito, simularAporteExtra, EstrategiaAporteExtra, calcularSpreadSobreSelic, calcularSaldoAtualEstimado, formatarDebtType } from '../../utils/calculosDividas';
+import { calcularRiskScoreCredito, calcularCetComIndexador,simularAporteExtra, EstrategiaAporteExtra, calcularSpreadSobreSelic, calcularSaldoAtualEstimado, formatarDebtType } from '../../utils/calculosDividas';
 import { alertasDividaService, AlertSeverity } from '../../services/alertasDividasService';
 import Button from '../UI/Button';
 import Badge from '../UI/Badge';
@@ -120,6 +120,12 @@ const PanelDetalheCredito: React.FC<Props> = ({ open, onClose, credito, selicAnu
                             <p className="text-[10px] text-faint uppercase tracking-wider font-bold">CET (Mensal / Anual)</p>
                             <p className="text-[13px] font-bold text-main mt-0.5">{Number(credito.cet_monthly).toFixed(2)}% <span className="text-[10px] text-faint font-bold uppercase tracking-wider">/ {Number(credito.cet_annual).toFixed(2)}%</span></p>
                         </div>
+                        {credito.monetary_index && credito.monetary_index !== 'none' && (
+                            <div>
+                                <p className="text-[10px] text-faint uppercase tracking-wider font-bold">CET com indexador (Mensal / Anual)</p>
+                                <p className="text-[13px] font-bold text-danger mt-0.5">{calcularCetComIndexador(credito).mensal.toFixed(2)}% <span className="text-[10px] text-faint font-bold uppercase tracking-wider">/ {calcularCetComIndexador(credito).anual.toFixed(2)}%</span></p>
+                            </div>
+                        )}
                         <div>
                             <p className="text-[10px] text-faint uppercase tracking-wider font-bold">Spread vs. Selic ({selicAnual.toFixed(2)}% a.a.)</p>
                             <p className={`text-[13px] font-bold mt-0.5 ${spreadSelic > 30 ? 'text-danger' : spreadSelic > 10 ? 'text-warning' : 'text-success'}`}>
