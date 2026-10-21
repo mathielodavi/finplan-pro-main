@@ -114,9 +114,23 @@ export const calcularSpreadSobreSelic = (credito: DividaCredito, selicAnual: num
  * (ex.: cartão rotativo, cheque especial) aumentam — a Selic vem de `services/selicService.ts`
  * (API pública do BCB, sem custo) e é passada como parâmetro para manter esta função pura.
  */
+/**
+ * Custo da dívida COM indexador: o saldo cresce por juros (CET) e pela correção do indexador, então
+ * o custo de crescimento é a composição dos dois. Sem indexador devolve o próprio CET.
+ */
+export const calcularCetComIndexador = (credito: DividaCredito): { mensal: number; anual: number } => {
+    const corrMensal = correcaoMensalDe(credito);
+    const corrAnual = credito.monetary_correction_effective ?? (credito.monetary_correction_annual ?? 0);
+    const mensal = ((1 + (credito.cet_monthly || 0) / 100) * (1 + corrMensal) - 1) * 100;
+    const anual = ((1 + (credito.cet_annual || 0) / 100) * (1 + corrAnual / 100) - 1) * 100;
+    return { mensal, anual };
+};
+
 export const calcularRiskScoreCredito = (credito: DividaCredito, selicAnual: number): number => {
-    // cet_monthly_normalized : 0–100 (0% = 0, >= 15% = 100)
-    let cetNorm = (credito.cet_monthly / 15) * 100;
+    const cetComIndexador = calcularCetComIndexador(credito);
+
+    // cet_monthly_normalized : 0–100 (0% = 0, >= 15% = 100) — já com o efeito do indexador
+    let cetNorm = (cetComIndexador.mensal / 15) * 100;
     if (cetNorm > 100) cetNorm = 100;
     if (cetNorm < 0) cetNorm = 0;
 
@@ -131,7 +145,7 @@ export const calcularRiskScoreCredito = (credito: DividaCredito, selicAnual: num
     if (termNorm < 0) termNorm = 0;
 
     // selic_spread_normalized : 0–100 (spread <= 0pp = 0, >= 60pp = 100)
-    const spread = calcularSpreadSobreSelic(credito, selicAnual);
+    const spread = cetComIndexador.anual - selicAnual;
     let selicNorm = (spread / 60) * 100;
     if (selicNorm > 100) selicNorm = 100;
     if (selicNorm < 0) selicNorm = 0;
@@ -242,7 +256,15 @@ export const calcularProbabilidadeContemplacao = (consorcio: DividaConsorcio): '
  * cálculo completo mora em um único lugar.
  */
 export const calcularRiskScoreConsorcioCompleto = (consorcio: DividaConsorcio, rendaMensalCliente: number): number => {
-    const embeddedCost = calcularCustoEmbutidoTotal(consorcio);
+    // Custo embutido + impacto do indexador sobre o que ainda falta pagar (pp da parcela restante).
+    let impactoIndexador = 0;
+    if (consorcio.remaining_installments > 0 && consorcio.monetary_index && consorcio.monetary_index !== 'none') {
+        const proj = projetarParcelasConsorcio(consorcio);
+        if (proj.custoRestanteSemCorrecao > 0) {
+            impactoIndexador = (proj.custoRestanteProjetado / proj.custoRestanteSemCorrecao - 1) * 100;
+        }
+    }
+    const embeddedCost = calcularCustoEmbutidoTotal(consorcio) + impactoIndexador;
 
     // embedded_cost_normalized : 0–100 (0% = 0, >= 25% = 100)
     let embedNorm = (embeddedCost / 25) * 100;
