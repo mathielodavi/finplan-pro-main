@@ -86,7 +86,7 @@ const ListaDividas: React.FC<Props> = ({
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Dívida / Instituição</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">CET a.a.</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Saldo Devedor</th>
-                                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Parcelas</th>
+                                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Parcelas pagas/totais</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Risco</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Alertas</th>
                                 <th className="px-5 py-3"></th>
@@ -123,7 +123,7 @@ const ListaDividas: React.FC<Props> = ({
                                                 <div className="text-[10px] text-muted font-bold uppercase mt-0.5">Parc: R$ {Number(cred.installment_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                                             </td>
                                             <td className="px-5 py-3">
-                                                <div className="text-[12px] font-bold text-main">{cred.remaining_installments} <span className="text-[10px] text-faint font-bold uppercase">/ {cred.total_installments}</span></div>
+                                                <div className="text-[12px] font-bold text-main">{Math.max(0, cred.total_installments - cred.remaining_installments)} <span className="text-[10px] text-faint font-bold uppercase">/ {cred.total_installments}</span></div>
                                             </td>
                                             <td className="px-5 py-3">
                                                 <Badge variant={riskVariant(score)} size="sm">{score.toFixed(0)}</Badge>
@@ -167,6 +167,7 @@ const ListaDividas: React.FC<Props> = ({
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Custo Embutido</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Carta de Crédito</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Status</th>
+                                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Parcelas pagas/totais</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Risco</th>
                                 <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-faint">Alertas</th>
                                 <th className="px-5 py-3"></th>
@@ -174,7 +175,7 @@ const ListaDividas: React.FC<Props> = ({
                         </thead>
                         <tbody className="divide-y divide-subtle">
                             {consorcios.length === 0 ? (
-                                <tr><td colSpan={8} className="p-8 text-center text-faint text-sm">Nenhum consórcio registrado.</td></tr>
+                                <tr><td colSpan={9} className="p-8 text-center text-faint text-sm">Nenhum consórcio registrado.</td></tr>
                             ) : (
                                 consorcios.map((cons, index) => {
                                     const alertas = alertasDividaService.gerarAlertasConsorcio(cons);
@@ -203,7 +204,9 @@ const ListaDividas: React.FC<Props> = ({
                                                 <Badge variant={cons.contemplation_status.startsWith('contemplated') ? 'success' : 'neutral'} size="sm">
                                                     {formatarContemplationStatus(cons.contemplation_status)}
                                                 </Badge>
-                                                <div className="text-[10px] text-muted font-bold uppercase tracking-wider mt-1.5">{cons.remaining_installments} parc. restantes</div>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="text-[12px] font-bold text-main">{Math.max(0, cons.total_installments - cons.remaining_installments)} <span className="text-[10px] text-faint font-bold uppercase">/ {cons.total_installments}</span></div>
                                             </td>
                                             <td className="px-5 py-3">
                                                 <Badge variant={riskVariant(score)} size="sm">{score.toFixed(0)}</Badge>

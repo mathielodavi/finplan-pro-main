@@ -1,7 +1,7 @@
 export type DebtType = 'personal_loan' | 'financing' | 'credit_card' | 'overdraft' | 'other';
 export type AssetType = 'real_estate' | 'vehicle' | 'heavy_equipment' | 'services' | 'other';
 export type ContractType = 'reduced_installment' | 'fixed_installment';
-export type MonetaryIndex = 'IPCA' | 'INCC' | 'IGP-M' | 'fixed' | 'none';
+export type MonetaryIndex = 'IPCA' | 'INCC' | 'IGP-M' | 'SELIC' | 'fixed' | 'none';
 export type ContemplationStatus = 'not_contemplated' | 'contemplated_by_draw' | 'contemplated_by_bid' | 'awaiting_confirmation';
 export type BidStrategy = 'none' | 'own_resources' | 'fgts' | 'credit_bid' | 'mixed';
 export type PrioritizationMethod = 'avalanche' | 'snowball';
@@ -35,8 +35,13 @@ export interface DividaCredito {
     income_commitment: number; // calculated
     /** Sistema de amortização: price (parcela fixa) ou sac (amortização constante, parcela decrescente). */
     amortization_system: AmortizationSystem;
-    /** Correção monetária anual (%), relevante principalmente para financiamentos indexados (TR/IPCA). */
-    monetary_correction_annual?: number;
+    /** Indexador de correção do saldo ('none' = sem correção; 'fixed' = taxa manual em `monetary_correction_annual`). */
+    monetary_index: MonetaryIndex;
+    /** Ajuste manual da correção (% a.a.). Para 'fixed' é a própria taxa; para índices de mercado,
+     * vazio = usar o acumulado de 12 meses do mercado. */
+    monetary_correction_annual?: number | null;
+    /** Calculado em memória (NÃO persistir): taxa efetiva usada nas projeções (ajuste manual ou mercado). */
+    monetary_correction_effective?: number;
     collateral?: string;
     notes?: string;
     created_at?: string;
@@ -59,6 +64,10 @@ export interface DividaConsorcio {
     insurance_monthly?: number;
     monetary_index: MonetaryIndex;
     monetary_correction_accumulated: number;
+    /** Ajuste manual da correção projetada (% a.a.). Vazio = acumulado de 12 meses do mercado; 'fixed' = taxa manual. */
+    monetary_correction_annual?: number | null;
+    /** Calculado em memória (NÃO persistir): taxa efetiva usada nas projeções. */
+    monetary_correction_effective?: number;
     contemplation_status: ContemplationStatus;
     contemplation_date?: string;
     asset_released: boolean;

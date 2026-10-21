@@ -1,4 +1,31 @@
-import { DividaCredito, DividaConsorcio, ContemplationStatus, DebtType } from '../types/dividas';
+import { DividaCredito, DividaConsorcio, ContemplationStatus, DebtType, MonetaryIndex } from '../types/dividas';
+
+// ==========================================
+// 0. INDEXADOR (correção monetária das projeções)
+// ==========================================
+
+/**
+ * Taxa de correção (% a.a.) efetiva de um contrato: 'none' → 0; 'fixed' → taxa manual; índice de
+ * mercado (IPCA/IGP-M/INCC/SELIC) → ajuste manual, se informado, senão o acumulado de 12 meses do
+ * mercado; sem dado de mercado nem ajuste, 0 (projeção sem correção, nunca quebra).
+ */
+export const taxaCorrecaoEfetiva = (
+    item: { monetary_index?: MonetaryIndex; monetary_correction_annual?: number | null },
+    mercado: Partial<Record<MonetaryIndex, number>>
+): number => {
+    const idx = item.monetary_index || 'none';
+    if (idx === 'none') return 0;
+    const manual = item.monetary_correction_annual;
+    const temManual = manual !== null && manual !== undefined && isFinite(Number(manual));
+    if (idx === 'fixed') return temManual ? Number(manual) : 0;
+    return temManual ? Number(manual) : (mercado[idx] ?? 0);
+};
+
+/** Correção anual (%) → mensal equivalente (decimal), preferindo a taxa efetiva já calculada. */
+const correcaoMensalDe = (item: { monetary_correction_effective?: number; monetary_correction_annual?: number | null }): number => {
+    const anual = item.monetary_correction_effective ?? (item.monetary_correction_annual ?? 0);
+    return anual ? Math.pow(1 + anual / 100, 1 / 12) - 1 : 0;
+};
 
 // ==========================================
 // 1. HELPERS GENÉRICOS
@@ -131,6 +158,48 @@ export const calcularCustoEmbutidoTotal = (consorcio: DividaConsorcio): number =
     }
 
     return consorcio.admin_fee_total + reserveEffect + insurancePct;
+};
+
+export interface ProjecaoConsorcio {
+    /** Valor de cada parcela restante (mês 1 = próxima), com o reajuste anual do indexador. */
+    parcelas: number[];
+    custoRestanteProjetado: number;
+    custoRestanteSemCorrecao: number;
+    /** Em quantos meses (a partir de hoje) ocorre o próximo reajuste; null sem correção ou sem parcelas. */
+    mesesAteProximoReajuste: number | null;
+    taxaAnual: number;
+}
+
+/**
+ * Projeta as parcelas restantes do consórcio com reajuste ANUAL pelo indexador: o valor da parcela
+ * atual sobe em degrau a cada aniversário do contrato (`start_date`), à taxa efetiva do contrato
+ * (ajuste manual ou acumulado de 12 meses do mercado). Sem taxa, a projeção é só parcela × restantes.
+ */
+export const projetarParcelasConsorcio = (consorcio: DividaConsorcio, hoje: Date = new Date()): ProjecaoConsorcio => {
+    const taxaAnual = consorcio.monetary_correction_effective ?? (consorcio.monetary_correction_annual ?? 0);
+    const restantes = Math.max(0, consorcio.remaining_installments || 0);
+    const parcelaAtual = consorcio.current_installment_value || 0;
+
+    const inicio = new Date(consorcio.start_date);
+    const decorridos = isNaN(inicio.getTime())
+        ? 0
+        : Math.max(0, (hoje.getFullYear() - inicio.getFullYear()) * 12 + (hoje.getMonth() - inicio.getMonth()));
+
+    const parcelas: number[] = [];
+    let mesesAteProximoReajuste: number | null = null;
+    for (let i = 1; i <= restantes; i++) {
+        const degraus = Math.floor((decorridos + i) / 12) - Math.floor(decorridos / 12);
+        if (degraus > 0 && taxaAnual && mesesAteProximoReajuste === null) mesesAteProximoReajuste = i;
+        parcelas.push(parcelaAtual * Math.pow(1 + taxaAnual / 100, degraus));
+    }
+
+    return {
+        parcelas,
+        custoRestanteProjetado: parcelas.reduce((a, p) => a + p, 0),
+        custoRestanteSemCorrecao: parcelaAtual * restantes,
+        mesesAteProximoReajuste,
+        taxaAnual,
+    };
 };
 
 // RULE B4: real_monthly_cost = (total_paid_to_date / months_elapsed) × (1 + monetary_correction_accumulated / 100)
@@ -310,9 +379,7 @@ export const calcularSaldoAtualEstimado = (credito: DividaCredito, hoje: Date = 
 
     const mesesClamped = Math.min(mesesDecorridos, credito.total_installments);
     const taxaMensal = (credito.cet_monthly || 0) / 100;
-    const correcaoMensal = credito.monetary_correction_annual
-        ? Math.pow(1 + credito.monetary_correction_annual / 100, 1 / 12) - 1
-        : 0;
+    const correcaoMensal = correcaoMensalDe(credito);
     const sistema = credito.amortization_system || 'price';
 
     const cronogramaCompleto = gerarCronogramaAmortizacao({
@@ -353,7 +420,7 @@ export interface SaldoAtualCalculado {
  */
 export const calcularSaldoEParcelasAtual = (
     credito: Pick<DividaCredito, 'contracted_value' | 'installment_value' | 'total_installments' |
-        'start_date' | 'cet_monthly' | 'amortization_system' | 'monetary_correction_annual' |
+        'start_date' | 'cet_monthly' | 'amortization_system' | 'monetary_correction_annual' | 'monetary_correction_effective' |
         'situacao' | 'parcela_ultimo_pagamento'>,
     hoje: Date = new Date()
 ): SaldoAtualCalculado => {
@@ -363,8 +430,7 @@ export const calcularSaldoEParcelasAtual = (
     }
 
     const taxaMensal = (credito.cet_monthly || 0) / 100;
-    const correcaoMensal = credito.monetary_correction_annual
-        ? Math.pow(1 + credito.monetary_correction_annual / 100, 1 / 12) - 1 : 0;
+    const correcaoMensal = correcaoMensalDe(credito);
     const sistema = credito.amortization_system || 'price';
 
     const cronograma = gerarCronogramaAmortizacao({
@@ -426,9 +492,7 @@ export const simularAporteExtra = (
     estrategia: EstrategiaAporteExtra
 ): ResultadoSimulacaoAporte => {
     const taxaMensal = (credito.cet_monthly || 0) / 100;
-    const correcaoMensal = credito.monetary_correction_annual
-        ? Math.pow(1 + credito.monetary_correction_annual / 100, 1 / 12) - 1
-        : 0;
+    const correcaoMensal = correcaoMensalDe(credito);
     const sistema = credito.amortization_system || 'price';
 
     const cronogramaBase = gerarCronogramaAmortizacao({
@@ -500,15 +564,37 @@ export interface ResultadoQuitacaoCarteira {
  * dívida e direcionando o aporte extra mensal (mais o valor liberado pelas dívidas já
  * quitadas, em cascata — efeito "bola de neve") para a primeira dívida ainda aberta na
  * ordem recebida (já ordenada pelo chamador via `ordenarAvalanche`/`ordenarSnowball`).
+ *
+ * Indexador: o saldo de cada crédito é corrigido todo mês pela taxa efetiva do contrato antes dos
+ * juros (mesma regra do cronograma de amortização). Consórcios entram DEPOIS dos créditos (na
+ * ordem recebida em `consorciosOrdenados`) como dívida sem juros: saldo = parcelas restantes ×
+ * parcela atual, corrigido mensalmente pelo indexador, e parcela mínima reajustada na mesma taxa
+ * (aproximação mensal do reajuste anual que `projetarParcelasConsorcio` calcula em degraus).
  */
 export const simularQuitacaoCarteira = (
     dividasOrdenadas: DividaCredito[],
-    aporteExtraMensal: number
+    aporteExtraMensal: number,
+    consorciosOrdenados: DividaConsorcio[] = []
 ): ResultadoQuitacaoCarteira => {
     const LIMITE_MESES = 600; // 50 anos — guarda de segurança contra loop infinito
-    const saldos = dividasOrdenadas.map(d => d.outstanding_balance);
-    const taxas = dividasOrdenadas.map(d => (d.cet_monthly || 0) / 100);
-    const parcelasMinimas = dividasOrdenadas.map(d => d.installment_value);
+    const saldos = [
+        ...dividasOrdenadas.map(d => d.outstanding_balance),
+        ...consorciosOrdenados.map(c => (c.remaining_installments || 0) * (c.current_installment_value || 0)),
+    ];
+    const taxas = [
+        ...dividasOrdenadas.map(d => (d.cet_monthly || 0) / 100),
+        ...consorciosOrdenados.map(() => 0),
+    ];
+    const parcelasMinimas = [
+        ...dividasOrdenadas.map(d => d.installment_value),
+        ...consorciosOrdenados.map(c => c.current_installment_value || 0),
+    ];
+    const correcoes = [
+        ...dividasOrdenadas.map(d => correcaoMensalDe(d)),
+        ...consorciosOrdenados.map(c => correcaoMensalDe(c)),
+    ];
+    // Só a parcela do consórcio é reajustada pelo indexador; a parcela do crédito segue fixa.
+    const reajustaParcela = [...dividasOrdenadas.map(() => false), ...consorciosOrdenados.map(() => true)];
     const quitada = saldos.map(s => s <= 0.01);
 
     const serie: PontoQuitacaoCarteira[] = [];
@@ -524,6 +610,8 @@ export const simularQuitacaoCarteira = (
         // 1. Juros do mês + parcela mínima em cada dívida ainda aberta.
         for (let i = 0; i < saldos.length; i++) {
             if (quitada[i]) continue;
+            saldos[i] = saldos[i] * (1 + correcoes[i]); // correção do indexador antes dos juros
+            if (reajustaParcela[i]) parcelasMinimas[i] = parcelasMinimas[i] * (1 + correcoes[i]);
             const juros = saldos[i] * taxas[i];
             jurosTotaisPagos += juros;
             saldos[i] = saldos[i] + juros - parcelasMinimas[i];
