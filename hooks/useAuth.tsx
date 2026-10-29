@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import * as authService from '../services/authService';
 import { supabase } from '../services/supabaseClient';
+import { invalidarVisaoGeral } from '../utils/cacheVisaoGeral';
 
 interface AuthContextType {
   user: User | null;
@@ -30,6 +31,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Escutar mudanças no estado de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Logout/troca de conta: a Visão Geral em cache pertence à conta anterior.
+      if (!session?.user) invalidarVisaoGeral();
       setUser(session?.user ?? null);
       setLoading(false);
     });
@@ -65,6 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     await authService.signOut();
+    invalidarVisaoGeral();
     setUser(null);
   };
 

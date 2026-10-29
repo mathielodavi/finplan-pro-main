@@ -4,19 +4,59 @@ import { calcularTermometro } from '../utils/termometroUtils';
 import { dividasService } from './dividasService';
 import { protecaoService } from './protecaoService';
 import { inicioEfetivoContrato } from '../utils/contratoHeranca';
+import { aoInvalidarVisaoGeral } from '../utils/cacheVisaoGeral';
+
+const TAMANHO_PAGINA = 1000; // limite de linhas por resposta do PostgREST/Supabase
+
+/** Busca todas as linhas de uma consulta, paginando com range() — evita o truncamento em 1.000 linhas. */
+const buscarTodos = async <T = any>(montar: () => any): Promise<T[]> => {
+  const linhas: T[] = [];
+  for (let inicio = 0; ; inicio += TAMANHO_PAGINA) {
+    const { data, error } = await montar().range(inicio, inicio + TAMANHO_PAGINA - 1);
+    if (error) throw error;
+    linhas.push(...((data || []) as T[]));
+    if (!data || data.length < TAMANHO_PAGINA) return linhas;
+  }
+};
+
+/**
+ * Leituras-base da Visão Geral (clientes, contratos, reuniões), compartilhadas pelas funções que
+ * a tela dispara juntas: uma única requisição por tabela por carga, em vez de ~7 repetidas. A
+ * promessa vive só alguns segundos (o suficiente para uma carga) e é descartada ao invalidar.
+ */
+interface BaseVisaoGeral { clientes: any[]; contratos: any[]; reunioes: any[] }
+const BASE_TTL_MS = 5000;
+let baseEmCurso: { promessa: Promise<BaseVisaoGeral>; criadaEm: number } | null = null;
+aoInvalidarVisaoGeral(() => { baseEmCurso = null; });
+
+const carregarBase = (): Promise<BaseVisaoGeral> => {
+  if (baseEmCurso && Date.now() - baseEmCurso.criadaEm < BASE_TTL_MS) return baseEmCurso.promessa;
+  const promessa = Promise.all([
+    buscarTodos(() => supabase.from('clientes')
+      .select('id, nome, patrimonio_total, status, telefone, email, em_agenda_externa, estado, origem_id, etiquetas_tags')
+      .order('id')),
+    buscarTodos(() => supabase.from('contratos').select('*, clientes(nome, status)').order('id')),
+    buscarTodos(() => supabase.from('reunioes').select('*').order('data_reuniao', { ascending: false }).order('id')),
+  ]).then(([clientes, contratos, reunioes]) => ({ clientes, contratos, reunioes }));
+  baseEmCurso = { promessa, criadaEm: Date.now() };
+  // Falha não fica em cache: a próxima chamada tenta de novo.
+  promessa.catch(() => { if (baseEmCurso?.promessa === promessa) baseEmCurso = null; });
+  return promessa;
+};
+
+/** Contratos de planejamento ativos/concluídos com data_fim, ordenados por data_fim (asc) — mesmo filtro da antiga consulta. */
+const planejamentoComFim = (contratos: any[]) => contratos
+  .filter(c => c.tipo === 'planejamento' && (c.status === 'ativo' || c.status === 'concluido') && c.data_fim)
+  .sort((a, b) => String(a.data_fim).localeCompare(String(b.data_fim)));
 
 export const dashboardService = {
   async getSummaryKPIs() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const [{ data: { user } }, base] = await Promise.all([supabase.auth.getUser(), carregarBase()]);
     if (!user) throw new Error("Não autenticado");
 
-    // Buscamos todos os dados necessários
-    const { data: allClientes } = await supabase.from('clientes').select('id, nome, patrimonio_total, status, telefone, email, em_agenda_externa');
-    const { data: allContratos } = await supabase.from('contratos').select('*');
-    const { data: reunioes } = await supabase.from('reunioes').select('*');
-
-    const clientes = allClientes || [];
-    const contratos = allContratos || [];
+    const clientes = base.clientes;
+    const contratos = base.contratos;
+    const reunioes = base.reunioes;
 
     // --- REGRAS DE NEGÓCIO ---
 
@@ -114,9 +154,9 @@ export const dashboardService = {
     // Inicial" preenchido no onboarding (ver Situação Inicial em FormularioCliente.tsx) — um
     // valor estático e informativo, não a carteira real do cliente, que fica em `ativos`.
     const idsClientesAtivos = clientes.filter(c => c.status === 'Ativo').map(c => c.id);
-    const { data: ativosPatrimonio } = idsClientesAtivos.length > 0
-      ? await supabase.from('ativos').select('valor_atual').in('cliente_id', idsClientesAtivos)
-      : { data: [] as any[] };
+    const ativosPatrimonio = idsClientesAtivos.length > 0
+      ? await buscarTodos<{ valor_atual: number }>(() => supabase.from('ativos').select('valor_atual').in('cliente_id', idsClientesAtivos).order('id'))
+      : [];
     const aum = (ativosPatrimonio || []).reduce((acc, a) => acc + (Number(a.valor_atual) || 0), 0);
 
     return {
@@ -138,10 +178,8 @@ export const dashboardService = {
   },
 
   async getTermometroStats() {
-    const { data: clientesAll } = await supabase.from('clientes').select('id, nome, status');
-    const { data: contratos } = await supabase.from('contratos').select('cliente_id, tipo');
-    const { data: reunioes, error: re } = await supabase.from('reunioes').select('*').order('data_reuniao', { ascending: false });
-    if (re) console.error("ERRO REUNIOES Supabase:", re);
+    // Reuniões vêm ordenadas por data_reuniao desc (a 1ª realizada/agendada encontrada é a mais recente).
+    const { clientes: clientesAll, contratos, reunioes } = await carregarBase();
 
     const stats = { ENGAJADO: 0, RECUPERAR: 0, GHOSTING: 0, 'SEM TERMÔMETRO': 0 };
     const clientesPorStatus: Record<string, { id: string; nome: string }[]> = { ENGAJADO: [], RECUPERAR: [], GHOSTING: [], 'SEM TERMÔMETRO': [] };
@@ -165,57 +203,53 @@ export const dashboardService = {
 
   async getIncomeProjection() {
     const hoje = new Date();
-    const projections = [];
+    const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-    for (let i = 0; i < 6; i++) {
-      // Normaliza mês/ano pelo construtor Date (lida com a virada de dez→jan),
-      // evitando meses inválidos (ex.: "2026-13") que zeravam a coluna de Janeiro.
+    // 6 meses a partir do atual. O construtor Date normaliza a virada de dez→jan, evitando meses
+    // inválidos (ex.: "2026-13") que zeravam a coluna de Janeiro.
+    const meses = Array.from({ length: 6 }, (_, i) => {
       const base = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
-      const targetYear = base.getFullYear();
-      const targetMonth = base.getMonth();
+      return {
+        chave: ymd(base).slice(0, 7),
+        mes: base.toLocaleDateString('pt-BR', { month: 'short', timeZone: 'America/Sao_Paulo' }).toUpperCase(),
+        valor: 0,
+        planejamento: 0,
+        extra: 0,
+      };
+    });
+    const primeiroDia = `${meses[0].chave}-01`;
+    const ultimoDia = ymd(new Date(hoje.getFullYear(), hoje.getMonth() + 6, 0));
 
-      const lastDayDate = new Date(targetYear, targetMonth + 1, 0);
-      const firstDay = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01T00:00:00.000Z`;
-      const lastDay = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(lastDayDate.getDate()).padStart(2, '0')}T23:59:59.999Z`;
-
-      const { data: parcelas, error } = await supabase
+    // Uma única consulta para a janela inteira (antes: 6 consultas em série, uma por mês).
+    let parcelas: any[] = [];
+    try {
+      parcelas = await buscarTodos(() => supabase
         .from('financeiro_parcelas')
         .select(`
-          valor_previsto,
+          id, valor_previsto, data_vencimento,
           contratos!inner (tipo, repasse_percentual)
         `)
-        .gte('data_vencimento', firstDay)
-        .lte('data_vencimento', lastDay)
+        .gte('data_vencimento', primeiroDia)
+        .lte('data_vencimento', ultimoDia)
         .neq('status', 'cancelado')
-        .in('contratos.tipo', ['planejamento', 'extra']);
-
-      if (error) console.error("ERRO PARCELAS Supabase:", error);
-
-      let planejamento = 0;
-      let extra = 0;
-      let total = 0;
-
-      parcelas?.forEach(p => {
-        const repasse = (p.contratos as any)?.repasse_percentual || 100;
-        const valorLiquido = p.valor_previsto * (repasse / 100);
-        total += valorLiquido;
-        if ((p.contratos as any).tipo === 'planejamento') {
-          planejamento += valorLiquido;
-        } else {
-          extra += valorLiquido;
-        }
-      });
-
-      const dateLabel = base;
-      projections.push({
-        mes: dateLabel.toLocaleDateString('pt-BR', { month: 'short', timeZone: 'America/Sao_Paulo' }).toUpperCase(),
-        valor: total,
-        planejamento,
-        extra
-      });
+        .in('contratos.tipo', ['planejamento', 'extra'])
+        .order('id'));
+    } catch (error) {
+      console.error("ERRO PARCELAS Supabase:", error);
     }
 
-    return projections;
+    const porChave = new Map(meses.map(m => [m.chave, m]));
+    parcelas.forEach(p => {
+      const alvo = porChave.get(String(p.data_vencimento).slice(0, 7));
+      if (!alvo) return;
+      const repasse = (p.contratos as any)?.repasse_percentual || 100;
+      const valorLiquido = p.valor_previsto * (repasse / 100);
+      alvo.valor += valorLiquido;
+      if ((p.contratos as any).tipo === 'planejamento') alvo.planejamento += valorLiquido;
+      else alvo.extra += valorLiquido;
+    });
+
+    return meses.map(({ mes, valor, planejamento, extra }) => ({ mes, valor, planejamento, extra }));
   },
 
   // Saldo de valores a receber em aberto vencidos ATÉ o mês anterior ao corrente
@@ -228,24 +262,26 @@ export const dashboardService = {
     const [y, m] = fmt.format(new Date()).split('-').map(Number);
     const primeiroDiaMesCorrente = `${y}-${String(m).padStart(2, '0')}-01`;
 
-    const { data: parcelas, error } = await supabase
-      .from('financeiro_parcelas')
-      .select(`
-        id, valor_previsto, data_vencimento, status,
-        clientes ( nome ),
-        contratos!inner ( tipo, repasse_percentual, descricao )
-      `)
-      .lt('data_vencimento', primeiroDiaMesCorrente)
-      .not('status', 'in', '("pago","cancelado")')
-      .in('contratos.tipo', ['planejamento', 'extra'])
-      .order('data_vencimento', { ascending: true });
-
-    if (error) {
+    let parcelas: any[];
+    try {
+      parcelas = await buscarTodos(() => supabase
+        .from('financeiro_parcelas')
+        .select(`
+          id, valor_previsto, data_vencimento, status,
+          clientes ( nome ),
+          contratos!inner ( tipo, repasse_percentual, descricao )
+        `)
+        .lt('data_vencimento', primeiroDiaMesCorrente)
+        .not('status', 'in', '("pago","cancelado")')
+        .in('contratos.tipo', ['planejamento', 'extra'])
+        .order('data_vencimento', { ascending: true })
+        .order('id'));
+    } catch (error) {
       console.error('ERRO RECEBIVEIS Supabase:', error);
       return { total: 0, itens: [] as any[] };
     }
 
-    const itens = (parcelas || []).map((p: any) => {
+    const itens = parcelas.map((p: any) => {
       const repasse = p.contratos?.repasse_percentual || 100;
       return {
         id: p.id,
@@ -272,16 +308,10 @@ export const dashboardService = {
     const hojeStr = formatter.format(agora);
     const hoje = new Date(`${hojeStr}T00:00:00-03:00`);
 
-    const { data: contratos } = await supabase
-      .from('contratos')
-      .select('*, clientes(nome, status)')
-      .in('status', ['ativo', 'concluido'])
-      .eq('tipo', 'planejamento')
-      .not('data_fim', 'is', null)
-      .order('data_fim', { ascending: true });
+    const contratos = planejamentoComFim((await carregarBase()).contratos);
 
     // Regra: Apenas clientes ativos
-    return (contratos || [])
+    return contratos
       .filter(c => (c.clientes as any)?.status === 'Ativo')
       .map(c => {
         const [y, m, d] = c.data_fim.split('-').map(Number);
@@ -328,15 +358,7 @@ export const dashboardService = {
     const hojeStr = formatter.format(agora);
     const hoje = new Date(`${hojeStr}T00:00:00-03:00`);
 
-    const { data: contratos } = await supabase
-      .from('contratos')
-      .select('*, clientes(nome, status)')
-      .in('status', ['ativo', 'concluido'])
-      .eq('tipo', 'planejamento')
-      .not('data_fim', 'is', null)
-      .order('data_fim', { ascending: true });
-
-    const lista = contratos || [];
+    const lista = planejamentoComFim((await carregarBase()).contratos);
 
     return lista
       .filter(c => !(c as any).resolvido_renovacao) // decisão já registrada via o fluxo de Renovação → fora
@@ -371,8 +393,8 @@ export const dashboardService = {
    * - churnPrecoce12m: % acumulado em janela móvel de 12 meses
    */
   async getChurnHistory() {
-    const { data: allContratos } = await supabase.from('contratos').select('*, clientes(nome)');
-    const contratosPlan = (allContratos || []).filter((c: any) => c.tipo === 'planejamento');
+    const { contratos: allContratos } = await carregarBase();
+    const contratosPlan = allContratos.filter((c: any) => c.tipo === 'planejamento');
 
     const hoje = new Date();
     const result: any[] = [];
@@ -614,16 +636,15 @@ export const dashboardService = {
    * clientes ATIVOS entram no cálculo, em linha com os demais KPIs da Visão Geral.
    */
   async getLTVMetrics() {
-    const { data: allContratos } = await supabase.from('contratos').select('id, cliente_id, tipo, repasse_percentual, prazo_meses, data_inicio');
-    const { data: allClientes } = await supabase.from('clientes').select('id, nome, status');
-    const { data: allParcelas } = await supabase
-      .from('financeiro_parcelas')
-      .select('contrato_id, cliente_id, valor_previsto, valor_pago, status, data_vencimento')
-      .neq('status', 'cancelado');
-
-    const contratos = allContratos || [];
-    const clientes = allClientes || [];
-    const parcelas = allParcelas || [];
+    // Parcelas paginadas: a base já passa de 1.000 linhas, e uma consulta única era truncada.
+    const [{ contratos, clientes }, parcelas] = await Promise.all([
+      carregarBase(),
+      buscarTodos(() => supabase
+        .from('financeiro_parcelas')
+        .select('id, contrato_id, cliente_id, valor_previsto, valor_pago, status, data_vencimento')
+        .neq('status', 'cancelado')
+        .order('id')),
+    ]);
 
     // Mapa de repasse por contrato
     const contratoMap = new Map<string, { cliente_id: string; tipo: string; repasse: number; prazo_meses: number; data_inicio: string }>();
@@ -727,10 +748,11 @@ export const dashboardService = {
    * clientes. Fonte única da fórmula: dividasService.getSaldoDevedorPorCliente().
    */
   async getEndividamentoTotal() {
-    const { data: allClientes } = await supabase.from('clientes').select('id, status');
-    const idsAtivos = new Set((allClientes || []).filter(c => c.status === 'Ativo').map(c => c.id));
-
-    const saldos = await dividasService.getSaldoDevedorPorCliente();
+    const [{ clientes: allClientes }, saldos] = await Promise.all([
+      carregarBase(),
+      dividasService.getSaldoDevedorPorCliente(),
+    ]);
+    const idsAtivos = new Set(allClientes.filter(c => c.status === 'Ativo').map(c => c.id));
     return Array.from(saldos.entries())
       .filter(([clienteId]) => idsAtivos.has(clienteId))
       .reduce((acc, [, v]) => acc + v, 0);
@@ -743,15 +765,15 @@ export const dashboardService = {
    * de clientes).
    */
   async getCoberturaProtecao() {
-    const { data: allClientes } = await supabase.from('clientes').select('id, status');
-    const { data: allContratos } = await supabase.from('contratos').select('cliente_id, tipo');
+    const [{ clientes: allClientes, contratos: allContratos }, scores] = await Promise.all([
+      carregarBase(),
+      protecaoService.getScoresPorCliente(),
+    ]);
 
-    const idsComPlanejamento = new Set((allContratos || []).filter(c => c.tipo === 'planejamento').map(c => c.cliente_id));
-    const clientesAlvo = (allClientes || []).filter(c => c.status === 'Ativo' && idsComPlanejamento.has(c.id));
+    const idsComPlanejamento = new Set(allContratos.filter(c => c.tipo === 'planejamento').map(c => c.cliente_id));
+    const clientesAlvo = allClientes.filter(c => c.status === 'Ativo' && idsComPlanejamento.has(c.id));
 
     if (clientesAlvo.length === 0) return 0;
-
-    const scores = await protecaoService.getScoresPorCliente();
     const valores = clientesAlvo.map(c => scores.get(c.id) ?? 0);
 
     return valores.reduce((acc, s) => acc + s, 0) / valores.length;
@@ -762,7 +784,7 @@ export const dashboardService = {
    * Usado pelo mapa de bolhas em Atendimento.
    */
   async getDistribuicaoGeografica() {
-    const { data: clientes } = await supabase.from('clientes').select('id, nome, estado, status').not('estado', 'is', null);
+    const clientes = (await carregarBase()).clientes.filter((c: any) => c.estado != null);
 
     const porEstado = new Map<string, { ativos: number; inativos: number; clientes: { id: string; nome: string; status: string }[] }>();
     (clientes || []).forEach((c: any) => {
@@ -794,10 +816,9 @@ export const dashboardService = {
    * Usado pelo gráfico de barras da Visão Geral.
    */
   async getClientesPorOrigem() {
-    const [{ data: clientes }, { data: origens }, { data: contratos }] = await Promise.all([
-      supabase.from('clientes').select('id, nome, origem_id, status, etiquetas_tags'),
+    const [{ clientes, contratos }, { data: origens }] = await Promise.all([
+      carregarBase(),
       supabase.from('origens').select('id, nome'),
-      supabase.from('contratos').select('cliente_id, tipo'),
     ]);
 
     const origemNome = new Map((origens || []).map((o: any) => [o.id, o.nome]));

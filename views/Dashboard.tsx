@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ComposedChart, Bar, Line, Legend } from 'recharts';
 import { dashboardService } from '../services/dashboardService';
@@ -13,6 +13,8 @@ import { calendarioService } from '../services/calendarioService';
 import { inadimplenciaService, ResumoInadimplencia } from '../services/inadimplenciaService';
 import { useProntuarioNav } from '../context/ProntuarioNavContext';
 import { toast } from '../utils/toast';
+import { lerCacheVisaoGeral, gravarCacheVisaoGeral, versaoVisaoGeral } from '../utils/cacheVisaoGeral';
+import { useAuth } from '../hooks/useAuth';
 
 import Badge from '../components/UI/Badge';
 import SidePanel from '../components/UI/SidePanel';
@@ -74,23 +76,35 @@ const VISAO_TABS = [
   { id: 'financeiro', label: 'Financeiro', icon: <DollarSign size={16} /> },
 ];
 
+/** Snapshot completo de uma carga da Visão Geral (o que vai para o cache da sessão). */
+interface DadosVisaoGeral {
+  summary: any; term: any[]; proj: any[]; exp: any[]; churn: any[]; ltv: any;
+  endividamento: number; protecao: number; geo: any[]; origemContratos: any[];
+  vencidosData: any[]; recebiveis: { total: number; itens: any[] };
+}
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { setNav } = useProntuarioNav();
   const [activeTab, setActiveTab] = useState('atendimento');
-  const [loading, setLoading] = useState(true);
-  const [kpis, setKpis] = useState<any>(null);
-  const [termometroData, setTermometroData] = useState<any[]>([]);
-  const [projecaoData, setProjecaoData] = useState<any[]>([]);
-  const [vencimentos, setVencimentos] = useState<any[]>([]);
-  const [churnData, setChurnData] = useState<any[]>([]);
-  const [ltvData, setLtvData] = useState<any>(null);
-  const [endividamentoTotal, setEndividamentoTotal] = useState(0);
-  const [coberturaProtecao, setCoberturaProtecao] = useState(0);
-  const [geoData, setGeoData] = useState<any[]>([]);
-  const [clientesPorOrigem, setClientesPorOrigem] = useState<any[]>([]);
-  const [vencidos, setVencidos] = useState<any[]>([]);
-  const [receivables, setReceivables] = useState<{ total: number; itens: any[] }>({ total: 0, itens: [] });
+  // Último resultado da sessão (se não foi invalidado por alguma escrita): pinta na hora e revalida.
+  const { user } = useAuth();
+  const [cacheInicial] = useState(() => lerCacheVisaoGeral<DadosVisaoGeral>(user?.id));
+  const [loading, setLoading] = useState(!cacheInicial);
+  const [atualizando, setAtualizando] = useState(false);
+  const [kpis, setKpis] = useState<any>(cacheInicial?.summary ?? null);
+  const kpisRef = useRef<any>(cacheInicial?.summary ?? null);
+  const [termometroData, setTermometroData] = useState<any[]>(cacheInicial?.term ?? []);
+  const [projecaoData, setProjecaoData] = useState<any[]>(cacheInicial?.proj ?? []);
+  const [vencimentos, setVencimentos] = useState<any[]>(cacheInicial?.exp ?? []);
+  const [churnData, setChurnData] = useState<any[]>(cacheInicial?.churn ?? []);
+  const [ltvData, setLtvData] = useState<any>(cacheInicial?.ltv ?? null);
+  const [endividamentoTotal, setEndividamentoTotal] = useState(cacheInicial?.endividamento ?? 0);
+  const [coberturaProtecao, setCoberturaProtecao] = useState(cacheInicial?.protecao ?? 0);
+  const [geoData, setGeoData] = useState<any[]>(cacheInicial?.geo ?? []);
+  const [clientesPorOrigem, setClientesPorOrigem] = useState<any[]>(cacheInicial?.origemContratos ?? []);
+  const [vencidos, setVencidos] = useState<any[]>(cacheInicial?.vencidosData ?? []);
+  const [receivables, setReceivables] = useState<{ total: number; itens: any[] }>(cacheInicial?.recebiveis ?? { total: 0, itens: [] });
   const [receivablesOpen, setReceivablesOpen] = useState(false);
   const [consultaCarteiraOpen, setConsultaCarteiraOpen] = useState(false);
   // Conciliação/cancelamento de recebíveis dentro do drawer
@@ -155,8 +169,11 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Com dados na tela (cache ou carga anterior), a recarga é em segundo plano — sem spinner global.
   const loadData = async () => {
-    setLoading(true);
+    if (kpisRef.current) setAtualizando(true);
+    else setLoading(true);
+    const versaoInicio = versaoVisaoGeral();
     try {
       const [summary, term, proj, exp, churn, ltv, endividamento, protecao, geo, origemContratos, vencidosData, recebiveis] = await Promise.all([
         dashboardService.getSummaryKPIs(),
@@ -172,23 +189,32 @@ const Dashboard: React.FC = () => {
         dashboardService.getContratosVencidos(),
         dashboardService.getReceivablesEmAberto()
       ]);
-      setKpis(summary);
-      setTermometroData(term);
-      setProjecaoData(proj);
-      setVencimentos(exp);
-      setChurnData(churn);
-      setLtvData(ltv);
-      setEndividamentoTotal(endividamento);
-      setCoberturaProtecao(protecao);
-      setGeoData(geo);
-      setClientesPorOrigem(origemContratos);
-      setVencidos(vencidosData);
-      setReceivables(recebiveis);
+      const dados: DadosVisaoGeral = { summary, term, proj, exp, churn, ltv, endividamento, protecao, geo, origemContratos, vencidosData, recebiveis };
+      aplicarDados(dados);
+      // Se houve escrita durante a carga, estes dados podem já estar velhos: não vão para o cache.
+      if (versaoVisaoGeral() === versaoInicio) gravarCacheVisaoGeral(dados, user?.id);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+      setAtualizando(false);
     }
+  };
+
+  const aplicarDados = (d: DadosVisaoGeral) => {
+    kpisRef.current = d.summary;
+    setKpis(d.summary);
+    setTermometroData(d.term);
+    setProjecaoData(d.proj);
+    setVencimentos(d.exp);
+    setChurnData(d.churn);
+    setLtvData(d.ltv);
+    setEndividamentoTotal(d.endividamento);
+    setCoberturaProtecao(d.protecao);
+    setGeoData(d.geo);
+    setClientesPorOrigem(d.origemContratos);
+    setVencidos(d.vencidosData);
+    setReceivables(d.recebiveis);
   };
 
   useEffect(() => { loadData(); }, []);
@@ -314,7 +340,7 @@ const Dashboard: React.FC = () => {
     loadData();
   };
 
-  if (loading) return (
+  if (loading || !kpis) return (
     <div className="flex flex-col items-center justify-center py-40 gap-6">
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[color:var(--primary)]"></div>
       <p className="text-faint font-semibold uppercase tracking-[0.2em] text-[10px]">Consolidando inteligência...</p>
@@ -576,6 +602,12 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-5 animate-fade-in pb-20">
+      {atualizando && (
+        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 bg-surface border border-subtle rounded-full px-3 py-1.5 shadow-[var(--shadow-float)]">
+          <RefreshCw size={12} className="animate-spin text-[color:var(--primary)]" />
+          <span className="text-[11px] font-medium text-muted">Atualizando…</span>
+        </div>
+      )}
 
       {/* ════════ SEÇÃO 1 — ATENDIMENTO ════════ */}
       {activeTab === 'atendimento' && (
