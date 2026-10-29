@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 import { calcularTermometro } from '../utils/termometroUtils';
 import { dividasService } from './dividasService';
 import { protecaoService } from './protecaoService';
+import { inicioEfetivoContrato } from '../utils/contratoHeranca';
 
 export const dashboardService = {
   async getSummaryKPIs() {
@@ -64,7 +65,8 @@ export const dashboardService = {
     const dataPrimeiroContrato = contratos
       .filter(c => c.tipo === 'planejamento' && c.data_inicio)
       .reduce<Date | null>((min, c) => {
-        const [y, m, d] = c.data_inicio.split('-').map(Number);
+        // Herdado: a atuação começa na herança, não na data-base do dono anterior.
+        const [y, m, d] = inicioEfetivoContrato(c).split('-').map(Number);
         const dt = new Date(y, m - 1, d, 12, 0, 0);
         return !min || dt < min ? dt : min;
       }, null);
@@ -94,7 +96,7 @@ export const dashboardService = {
     seisMesesAtras.setMonth(seisMesesAtras.getMonth() - 6);
 
     const contratosRecentes = contratos.filter(c => {
-      const [y, m, d] = c.data_inicio.split('-').map(Number);
+      const [y, m, d] = inicioEfetivoContrato(c).split('-').map(Number);
       const dataInicio = new Date(y, m - 1, d, 12, 0, 0);
       return dataInicio >= seisMesesAtras && dataInicio <= hoje;
     });
@@ -413,6 +415,8 @@ export const dashboardService = {
     });
 
     const todosClienteIds = [...new Set(contratosPlan.map(c => c.cliente_id))];
+    // Entrada efetiva na base: contrato herdado só conta a partir da data de herança.
+    const ini = (c: any) => new Date(inicioEfetivoContrato(c));
 
     for (let i = 7; i >= 0; i--) {
       const mesRef = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
@@ -420,17 +424,30 @@ export const dashboardService = {
       const inicioMes = new Date(mesRef.getFullYear(), mesRef.getMonth(), 1);
       const fimMes = new Date(mesRef.getFullYear(), mesRef.getMonth() + 1, 0, 23, 59, 59);
 
-      // ── 1. NOVOS CLIENTES: primeiro contrato iniciou neste mês ──
+      // ── 1. NOVOS CLIENTES: primeiro contrato iniciou neste mês (herdados vão para "Herdados") ──
       let novosClientes = 0;
       const listaNovos: any[] = [];
       todosClienteIds.forEach(clienteId => {
         const contratosCliente = contratosPlan.filter(c => c.cliente_id === clienteId);
         const primeiroContrato = [...contratosCliente]
-          .sort((a, b) => new Date(a.data_inicio).getTime() - new Date(b.data_inicio).getTime())[0];
-        const dataPrimeiro = new Date(primeiroContrato.data_inicio);
+          .sort((a, b) => ini(a).getTime() - ini(b).getTime())[0];
+        if (primeiroContrato.data_heranca) return;
+        const dataPrimeiro = ini(primeiroContrato);
         if (dataPrimeiro >= inicioMes && dataPrimeiro <= fimMes) {
           novosClientes++;
           listaNovos.push(getClientDetails(clienteId));
+        }
+      });
+
+      // ── 1b. HERDADOS: contratos assumidos de outro planejador, no mês da herança ──
+      let herdados = 0;
+      const listaHerdados: any[] = [];
+      contratosPlan.forEach(c => {
+        if (!c.data_heranca) return;
+        const dataHeranca = ini(c);
+        if (dataHeranca >= inicioMes && dataHeranca <= fimMes && !listaHerdados.some(x => x.id === c.cliente_id)) {
+          herdados++;
+          listaHerdados.push(getClientDetails(c.cliente_id));
         }
       });
 
@@ -440,13 +457,13 @@ export const dashboardService = {
       todosClienteIds.forEach(clienteId => {
         const contratosCliente = contratosPlan
           .filter(c => c.cliente_id === clienteId)
-          .sort((a, b) => new Date(a.data_inicio).getTime() - new Date(b.data_inicio).getTime());
+          .sort((a, b) => ini(a).getTime() - ini(b).getTime());
 
         contratosCliente.forEach((c, idx) => {
           if (idx === 0) return;
-          // Resgates (renovação tardia) são contabilizados na categoria própria, não aqui.
-          if (c.is_resgate) return;
-          const dataInicio = new Date(c.data_inicio);
+          // Resgates (renovação tardia) e herdados são contabilizados em categorias próprias.
+          if (c.is_resgate || c.data_heranca) return;
+          const dataInicio = ini(c);
           if (dataInicio >= inicioMes && dataInicio <= fimMes) {
             // Evitar duplicidade caso haja mais de um contrato no mesmo mês
             if (!listaRenovacoes.some(x => x.id === clienteId)) {
@@ -461,9 +478,9 @@ export const dashboardService = {
       let resgates = 0;
       const listaResgates: any[] = [];
       todosClienteIds.forEach(clienteId => {
-        const contratosCliente = contratosPlan.filter(c => c.cliente_id === clienteId && c.is_resgate);
+        const contratosCliente = contratosPlan.filter(c => c.cliente_id === clienteId && c.is_resgate && !c.data_heranca);
         contratosCliente.forEach(c => {
-          const dataInicio = new Date(c.data_inicio);
+          const dataInicio = ini(c);
           if (dataInicio >= inicioMes && dataInicio <= fimMes) {
             if (!listaResgates.some(x => x.id === clienteId)) {
               resgates++;
@@ -475,7 +492,7 @@ export const dashboardService = {
 
       // ── 3. ATIVOS (Snapshot Fim do Mês) ──
       const contratosVigentesNoFimDoMes = contratosComFim.filter(c => {
-        const dataInicio = new Date(c.data_inicio);
+        const dataInicio = ini(c);
         if (dataInicio > fimMes) return false;
 
         if (c.status === 'ativo') return true;
@@ -500,6 +517,7 @@ export const dashboardService = {
       const baseParaDistratos = new Set([
         ...Array.from(ativosAnterioresSet),
         ...listaNovos.map(c => c.id),
+        ...listaHerdados.map(c => c.id),
         ...listaRenovacoes.map(c => c.id)
       ]);
       
@@ -517,7 +535,7 @@ export const dashboardService = {
 
       // ── 6. CHURN PRECOCE ACUMULADO: clientes sem ativo cujo último foi cancelado ──
       const contratosPlanAteMes = contratosPlan.filter(c =>
-        new Date(c.data_inicio) <= fimMes
+        ini(c) <= fimMes
       );
       const clienteIdsAteMes = [...new Set(contratosPlanAteMes.map(c => c.cliente_id))];
       const baseTotalClientes = clienteIdsAteMes.length;
@@ -529,7 +547,7 @@ export const dashboardService = {
         if (temAtivo) return;
 
         const ultimoContrato = [...contratosCliente]
-          .sort((a, b) => new Date(b.data_inicio).getTime() - new Date(a.data_inicio).getTime())[0];
+          .sort((a, b) => ini(b).getTime() - ini(a).getTime())[0];
 
         if (ultimoContrato.status === 'cancelado') {
           clientesChurnPrecoce++;
@@ -541,7 +559,7 @@ export const dashboardService = {
       // ── 7. CHURN PRECOCE 12m: janela móvel ──
       const inicio12m = new Date(mesRef.getFullYear(), mesRef.getMonth() - 11, 1);
       const contratosJanela12m = contratosPlan.filter(c =>
-        new Date(c.data_inicio) >= inicio12m && new Date(c.data_inicio) <= fimMes
+        ini(c) >= inicio12m && ini(c) <= fimMes
       );
       const clienteIds12m = [...new Set(contratosJanela12m.map(c => c.cliente_id))];
       let clientesChurnPrecoce12m = 0;
@@ -552,7 +570,7 @@ export const dashboardService = {
         if (temAtivo) return;
 
         const ultimoContrato = [...contratosCliente]
-          .sort((a, b) => new Date(b.data_inicio).getTime() - new Date(a.data_inicio).getTime())[0];
+          .sort((a, b) => ini(b).getTime() - ini(a).getTime())[0];
 
         if (ultimoContrato.status === 'cancelado') {
           clientesChurnPrecoce12m++;
@@ -567,6 +585,7 @@ export const dashboardService = {
           mes: mesLabel,
           ativos: totalAtivos,
           novos: novosClientes,
+          herdados,
           renovacoes,
           resgates,
           distratos,
@@ -574,6 +593,7 @@ export const dashboardService = {
           churnPrecoce: Math.round(churnPrecoce * 10) / 10,
           churnPrecoce12m: Math.round(churnPrecoce12m * 10) / 10,
           clientesNovos: listaNovos,
+          clientesHerdados: listaHerdados,
           clientesRenovacoes: listaRenovacoes,
           clientesResgates: listaResgates,
           clientesDistratos: listaDistratos

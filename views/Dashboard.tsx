@@ -851,6 +851,9 @@ const Dashboard: React.FC = () => {
                   <Bar dataKey="novos" name="Novos" fill={CHART_COLORS.info} radius={[3, 3, 0, 0]} barSize={12} style={{ cursor: 'pointer' }} onClick={(data: any) => {
                     if (data?.payload?.clientesNovos?.length > 0) setModalClientes({ isOpen: true, type: 'Novos', mes: data.payload.mes, list: data.payload.clientesNovos });
                   }} />
+                  <Bar dataKey="herdados" name="Herdados" fill={CHART_COLORS.neutral} radius={[3, 3, 0, 0]} barSize={12} style={{ cursor: 'pointer' }} onClick={(data: any) => {
+                    if (data?.payload?.clientesHerdados?.length > 0) setModalClientes({ isOpen: true, type: 'Herdados', mes: data.payload.mes, list: data.payload.clientesHerdados });
+                  }} />
                   <Bar dataKey="renovacoes" name="Renovações" fill={CHART_COLORS.warning} radius={[3, 3, 0, 0]} barSize={12} style={{ cursor: 'pointer' }} onClick={(data: any) => {
                     if (data?.payload?.clientesRenovacoes?.length > 0) setModalClientes({ isOpen: true, type: 'Renovações', mes: data.payload.mes, list: data.payload.clientesRenovacoes });
                   }} />

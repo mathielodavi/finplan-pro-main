@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 import { Contrato, TipoEncerramento } from '../types/contrato';
 import { toLocalDateString } from '../utils/formatadores';
 import { financeiroService } from './financeiroService';
+import { parcelaDoHerdeiro } from '../utils/contratoHeranca';
 
 /** Fim natural do contrato = data_inicio + prazo_meses. */
 const fimNatural = (dataInicio: string, prazoMeses: number): Date => {
@@ -141,10 +142,19 @@ const gerarParcelasFinanceiras = async (contrato: Contrato, valorRestante: numbe
   } else {
     // Lógica padrão para Planejamento
     const numParcelasTotal = contrato.forma_pagamento === 'vista' ? 1 : contrato.prazo_meses;
-    const valorParcela = valorRestante / (numParcelasTotal || 1);
+    const herdado = contrato.tipo === 'planejamento' && !!contrato.data_heranca;
+    // Herdado: mesmo faseamento e valor por parcela do acordo original; só as parcelas com
+    // competência a partir da herança são do planejador atual (as pagas estão entre elas).
+    const valorParcela = herdado
+      ? (contrato.valor || 0) / (numParcelasTotal || 1)
+      : valorRestante / (numParcelasTotal || 1);
+    let elegiveisPuladas = 0;
 
     for (let i = 0; i < numParcelasTotal; i++) {
-      if (i < numPagas) continue;
+      if (herdado) {
+        if (!parcelaDoHerdeiro(contrato.data_inicio, i, contrato.data_heranca)) continue;
+        if (elegiveisPuladas < numPagas) { elegiveisPuladas++; continue; }
+      } else if (i < numPagas) continue;
 
       const vencimento = new Date(baseDate);
       vencimento.setDate(baseDate.getDate() + (contrato.prazo_recebimento_dias || 0));
@@ -189,7 +199,8 @@ export const criarContrato = async (contrato: Partial<Contrato>) => {
   };
 
   // Resgate: novo contrato de planejamento reativando cliente >1 mês após distrato anterior.
-  if (payload.tipo === 'planejamento' && payload.status === 'ativo' && payload.cliente_id && payload.data_inicio) {
+  // Contrato herdado não é resgate: o cliente chega de outro planejador.
+  if (payload.tipo === 'planejamento' && payload.status === 'ativo' && payload.cliente_id && payload.data_inicio && !payload.data_heranca) {
     payload.is_resgate = await detectarResgate(payload.cliente_id, payload.data_inicio);
   }
   // Se já é criado encerrado (cancelado), classifica o encerramento.
@@ -225,7 +236,8 @@ export const atualizarContrato = async (id: string, dados: Partial<Contrato>) =>
     (dados.data_inicio !== undefined && dados.data_inicio !== contratoAntigo.data_inicio) ||
     (dados.forma_pagamento !== undefined && dados.forma_pagamento !== contratoAntigo.forma_pagamento) ||
     (dados.prazo_recebimento_dias !== undefined && dados.prazo_recebimento_dias !== contratoAntigo.prazo_recebimento_dias) ||
-    (dados.status !== undefined && dados.status !== contratoAntigo.status);
+    (dados.status !== undefined && dados.status !== contratoAntigo.status) ||
+    (dados.data_heranca !== undefined && (dados.data_heranca || null) !== (contratoAntigo.data_heranca || null));
 
   // Classificação de encerramento (distratos) ao transicionar para cancelado/concluído.
   const merged = { ...contratoAntigo, ...dados } as Contrato;

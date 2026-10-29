@@ -8,6 +8,7 @@ import CampoMoeda from '../UI/CampoMoeda';
 import Badge from '../UI/Badge';
 import { FileText, Plus, Clock, CheckCircle2, Calendar, ArrowRight, ArrowLeft, Zap } from 'lucide-react';
 import { toast } from '../../utils/toast';
+import { parcelaDoHerdeiro } from '../../utils/contratoHeranca';
 
 interface ContratoFormDrawerProps {
   open: boolean;
@@ -31,7 +32,9 @@ const defaultForm = () => ({
   data_inicio: new Date().toISOString().split('T')[0],
   descricao: '',
   status: 'ativo' as any,
-  data_cancelamento: ''
+  data_cancelamento: '',
+  herdado: false,
+  data_heranca: ''
 });
 
 /**
@@ -85,7 +88,8 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
         padrao_id: c.padrao_id || '', ticket_mensal: Math.round(derivedTicket * 100) / 100,
         prazo_meses: c.prazo_meses, prazo_recebimento_dias: c.prazo_recebimento_dias || 30,
         repasse_percentual: c.repasse_percentual || 100, data_inicio: c.data_inicio,
-        descricao: c.descricao, status: c.status, data_cancelamento: c.data_fim || ''
+        descricao: c.descricao, status: c.status, data_cancelamento: c.data_fim || '',
+        herdado: !!c.data_heranca, data_heranca: c.data_heranca || ''
       });
       setStep(2);
     } else {
@@ -119,6 +123,15 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
       }));
     }
   }, [padroesPlanejamento, padroesExtras]);
+
+  // Contrato herdado: só planejamento, com data de herança válida (após a data-base, até hoje).
+  const hojeIso = toLocalDateString(new Date());
+  const heranca = formContrato.categoria === 'planejamento' && formContrato.herdado;
+  const herancaInvalida = heranca && (
+    !formContrato.data_heranca ||
+    formContrato.data_heranca <= formContrato.data_inicio ||
+    formContrato.data_heranca > hojeIso
+  );
 
   const fluxoProjetado = useMemo(() => {
     const parcelas = [];
@@ -182,24 +195,29 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
       ? formContrato.ticket_mensal * formContrato.prazo_meses
       : formContrato.ticket_mensal;
 
+    const dataHeranca = heranca ? formContrato.data_heranca : null;
     for (let i = 0; i < numParcelas; i++) {
       const vencimento = new Date(baseDate);
       vencimento.setDate(baseDate.getDate() + formContrato.prazo_recebimento_dias);
       vencimento.setMonth(vencimento.getMonth() + i);
+      const donoAnterior = !parcelaDoHerdeiro(formContrato.data_inicio, i, dataHeranca);
       parcelas.push({
         num: i + 1,
         tipo: formContrato.forma_pagamento === 'vista' ? 'À VISTA' : 'PARCELA',
         vencimento: toLocalDateString(vencimento),
         valorBruto: valorParcelaBruto,
         valorLiquido: valorParcelaBruto * netTransfer,
-        repasseLabel: `NET ${formContrato.repasse_percentual}%`,
-        ordemSort: i + 1
+        repasseLabel: donoAnterior ? 'DONO ANTERIOR — NÃO CONTABILIZADA' : `NET ${formContrato.repasse_percentual}%`,
+        ordemSort: i + 1,
+        donoAnterior
       });
     }
     return parcelas;
-  }, [formContrato, padroesExtras]);
+  }, [formContrato, padroesExtras, heranca]);
 
-  const receitaLiquidaTotal = useMemo(() => fluxoProjetado.reduce((acc, curr) => acc + curr.valorLiquido, 0), [fluxoProjetado]);
+  // Expectativa líquida = só o que o planejador atual recebe (exclui parcelas do dono anterior).
+  // O valor bruto do contrato continua sendo o acordo inteiro.
+  const receitaLiquidaTotal = useMemo(() => fluxoProjetado.reduce((acc, curr: any) => acc + (curr.donoAnterior ? 0 : curr.valorLiquido), 0), [fluxoProjetado]);
   const valorTotalBruto = useMemo(() => fluxoProjetado.reduce((acc, curr) => acc + curr.valorBruto, 0), [fluxoProjetado]);
 
   const handleFinalizarAcordo = async () => {
@@ -219,7 +237,8 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
         prazo_meses: formContrato.prazo_meses, prazo_recebimento_dias: formContrato.prazo_recebimento_dias,
         descricao: formContrato.descricao, data_inicio: formContrato.data_inicio,
         status: formContrato.status, data_fim: dataFim,
-        padrao_id: formContrato.padrao_id || null
+        padrao_id: formContrato.padrao_id || null,
+        data_heranca: heranca ? formContrato.data_heranca : null
       };
       if (formContrato.id) await atualizarContrato(formContrato.id, payload);
       else await criarContrato(payload);
@@ -362,6 +381,45 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
                       <input type="date" required value={formContrato.data_inicio} onChange={e => setFormContrato({ ...formContrato, data_inicio: e.target.value })} className={`${inputStyle} pl-9`} />
                     </div>
                   </div>
+                  {formContrato.categoria === 'planejamento' && (
+                    <div className="sm:col-span-2 bg-surface-2 p-3 rounded-lg border border-subtle space-y-3">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formContrato.herdado}
+                          onChange={e => setFormContrato({
+                            ...formContrato,
+                            herdado: e.target.checked,
+                            data_heranca: e.target.checked ? (formContrato.data_heranca || hojeIso) : ''
+                          })}
+                          className="w-4 h-4 rounded border-subtle"
+                        />
+                        <span className="text-[12px] font-semibold text-main">Contrato herdado</span>
+                      </label>
+                      {formContrato.herdado && (
+                        <div>
+                          <label className={labelStyle}>Data em que foi herdado <span className="text-[color:var(--danger)]">*</span></label>
+                          <div className="relative">
+                            <Calendar size={14} className="absolute left-3 top-[11px] text-faint" />
+                            <input
+                              type="date"
+                              required
+                              min={formContrato.data_inicio}
+                              max={hojeIso}
+                              value={formContrato.data_heranca}
+                              onChange={e => setFormContrato({ ...formContrato, data_heranca: e.target.value })}
+                              className={`${inputStyle} pl-9`}
+                            />
+                          </div>
+                          {herancaInvalida ? (
+                            <p className="text-[11px] text-[color:var(--danger)] font-medium mt-1.5">A data de herança deve ser posterior à data-base do acordo e não pode estar no futuro.</p>
+                          ) : (
+                            <p className="text-[11px] text-faint mt-1.5">Recebimentos de competência anterior a esta data ficam com o dono anterior e não entram nos controles financeiros. Na movimentação da base, o contrato conta como "Herdado" a partir desta data.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className={labelStyle}>Forma de Pagamento</label>
                     <div className="flex bg-surface-2 p-1 rounded-lg h-9 border border-subtle">
@@ -428,7 +486,7 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
                   )}
                   <button
                     onClick={() => setStep(3)}
-                    disabled={!formContrato.padrao_id || formContrato.ticket_mensal <= 0}
+                    disabled={!formContrato.padrao_id || formContrato.ticket_mensal <= 0 || herancaInvalida}
                     className="flex-1 h-9 rounded-lg text-[#0b0e14] font-semibold text-[12px] transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ backgroundColor: 'var(--primary)' }}
                   >
@@ -466,8 +524,8 @@ const ContratoFormDrawer: React.FC<ContratoFormDrawerProps> = ({ open, onClose, 
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-subtle">
-                        {fluxoProjetado.map((parc, idx) => (
-                          <tr key={idx} className={`hover:bg-surface-2 transition-colors ${parc.tipo === 'BÔNUS' ? 'bg-surface-2/50' : ''}`}>
+                        {fluxoProjetado.map((parc: any, idx) => (
+                          <tr key={idx} className={`hover:bg-surface-2 transition-colors ${parc.tipo === 'BÔNUS' ? 'bg-surface-2/50' : ''} ${parc.donoAnterior ? 'opacity-40 line-through' : ''}`}>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2.5">
                                 {parc.tipo === 'BÔNUS' ? <Zap size={13} className="text-indigo-500" /> : <Clock size={13} className="text-faint" />}

@@ -30,6 +30,9 @@ export interface Contrato {
   // Classificação de encerramento (distratos) e resgate (renovação tardia)
   tipo_encerramento?: TipoEncerramento | null;
   is_resgate?: boolean;
+  /** Contrato herdado de outro planejador: data em que foi assumido (nulo = contrato próprio).
+   * Parcelas com competência anterior a esta data ficam com o dono anterior. */
+  data_heranca?: string | null;
   // true quando o advisor já tomou uma decisão explícita (renovar / confirmar não
   // renovação) via o fluxo de Renovação — usado para tirar o contrato da lista de
   // "Vencidos" mesmo quando a classificação de tipo_encerramento já existe (ex.: via
