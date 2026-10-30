@@ -14,6 +14,20 @@ function ehMesmoDia(a: Date, b: Date): boolean {
 }
 
 /**
+ * Vínculo com o calendário externo da reunião exibida. Se ela for manual, mas o cliente tiver outra
+ * reunião agendada vinculada no mesmo dia, é o mesmo compromisso registrado duas vezes — vale o
+ * vínculo (e o link) da outra, em vez de mostrar o ícone apagado.
+ */
+export function vinculoCalendario(reuniao: any | null, reunioes: any[]): { uid: string | null; link: string | null } {
+  if (!reuniao) return { uid: null, link: null };
+  if (reuniao.calendario_evento_uid) return { uid: reuniao.calendario_evento_uid, link: reuniao.link_reuniao || null };
+  const dia = new Date(reuniao.data_reuniao);
+  const gemea = (reunioes || []).find((r: any) =>
+    r.status === 'agendada' && r.calendario_evento_uid && ehMesmoDia(new Date(r.data_reuniao), dia));
+  return { uid: gemea?.calendario_evento_uid || null, link: gemea?.link_reuniao || reuniao.link_reuniao || null };
+}
+
+/**
  * Categoriza a situação de agenda de UM cliente a partir das suas reuniões.
  * Prioridade: atrasada (late) > próxima futura (upcoming) > sem nenhuma agendada (pending).
  * Usada tanto pela Agenda do Dashboard quanto pelo indicador "Próxima Ação" da lista de clientes.

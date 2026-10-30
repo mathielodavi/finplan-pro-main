@@ -1,5 +1,6 @@
 
 import { supabase } from './supabaseClient';
+import { invalidarVisaoGeral } from '../utils/cacheVisaoGeral';
 
 export type CalendarioProvedor = 'google' | 'microsoft' | 'ics';
 
@@ -11,7 +12,15 @@ export interface CalendarioConexao {
   ativo: boolean;
   ultima_sync: string | null;
   ultimo_erro: string | null;
+  ultimo_diagnostico?: DiagnosticoCalendario | null;
   criado_em?: string;
+}
+
+/** Resultado da última sincronização: gravado pela edge function, visível só ao dono da conexão. */
+export interface DiagnosticoCalendario {
+  eventos_futuros: number;
+  clientes_casados: number;
+  sem_cliente: { data: string; titulo: string; motivo: string }[];
 }
 
 export const calendarioService = {
@@ -52,7 +61,14 @@ export const calendarioService = {
   /** Dispara a sincronização imediatamente (sem esperar o cron), via edge function. */
   async sincronizarAgora(): Promise<{ ok: boolean; erro?: string }> {
     const { data, error } = await supabase.functions.invoke('sync-calendarios', { body: {} });
+    // A function grava em reunioes/clientes pelo lado do servidor, sem passar pelo fetch do cliente.
+    invalidarVisaoGeral();
     if (error) return { ok: false, erro: error.message };
-    return { ok: true, ...data };
+    // A function responde 200 mesmo com falha em uma conexão: o erro real vem em `conexoes_com_erro`.
+    if (data?.conexoes_com_erro > 0) {
+      const erro = data.detalhes?.find((d: any) => !d.ok)?.erro;
+      return { ok: false, erro: erro || 'Falha ao sincronizar o calendário.' };
+    }
+    return { ok: true };
   },
 };

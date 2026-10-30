@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
 import { PlanoSaude, protecaoService, ClienteSeguro, DependenteSeguro } from '../../services/protecaoService';
+import SeletorContratoProtecao from './SeletorContratoProtecao';
 
 const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
 const lbl = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
@@ -170,6 +171,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
                                         <div>
                                             <p className="text-[12px] font-bold text-main tracking-tight leading-none mb-1">{p.operadora || '—'}</p>
                                             <p className="text-[10px] font-bold text-faint tracking-wider uppercase">{p.cobertura}</p>
+                                            {p.contrato_id && <p className="text-[10px] font-bold text-[color:var(--primary)] tracking-wider uppercase mt-0.5">Contrato comigo</p>}
                                         </div>
                                         <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(p.mensalidade || 0)}</p>
                                         <div className="flex gap-1">
@@ -223,6 +225,9 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
                                     value={(form.mensalidade || 0) > 0 ? (form.mensalidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}
                                     onChange={e => { const n = e.target.value.replace(/\D/g, ''); setForm(f => ({ ...f, mensalidade: n ? parseInt(n) / 100 : 0 })); }}
                                     className={inp} placeholder="0,00" />
+                            </div>
+                            <div className="md:col-span-2">
+                                <SeletorContratoProtecao clienteId={dados.cliente_id} value={form.contrato_id} onChange={v => setForm(f => ({ ...f, contrato_id: v }))} labelClass={lbl} inputClass={inp} />
                             </div>
                         </div>
 

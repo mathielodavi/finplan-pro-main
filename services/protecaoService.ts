@@ -2,6 +2,31 @@
 import { supabase } from './supabaseClient';
 import { calcularScoreProtecaoCliente } from '../utils/protecaoUtils';
 import { calcularTaxaRealMensal } from '../utils/calculosFinanceiros';
+import { toLocalDateString } from '../utils/formatadores';
+
+/** `padroes_contrato_extra.tipo` dos contratos extras que representam proteção do cliente. */
+const TIPOS_PADRAO_PROTECAO = ['Seguros', 'Planos de Saúde'];
+
+const idsPadroesProtecao = async (): Promise<Set<string>> => {
+    const { data, error } = await supabase.from('padroes_contrato_extra').select('id').in('tipo', TIPOS_PADRAO_PROTECAO);
+    if (error) throw error;
+    return new Set((data || []).map((p: any) => p.id));
+};
+
+export interface ContratoProtecao { id: string; descricao: string }
+export type GrupoProtecao = 'sem' | 'com_contrato' | 'sem_contrato';
+export interface ApoliceResumo { id: string; tipo: string; rotulo: string; contratoId?: string | null }
+export interface ProtecaoCliente {
+    id: string;
+    nome: string;
+    grupo: GrupoProtecao;
+    apolices: ApoliceResumo[];
+    contratos: ContratoProtecao[];
+    /** Contratos de proteção ativos que nenhuma apólice vinculou. */
+    contratosSemApolice: number;
+    /** Apólices sem contrato vinculado, de cliente que tem contrato ativo. */
+    apolicesSemVinculo: number;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +144,7 @@ export interface ParametrosCalculo {
 export interface PlanoSaude {
     id?: string;
     cliente_id: string;
+    contrato_id?: string | null; // contrato extra que originou a apólice (opcional)
     membro: string; // 'cliente', 'conjuge', ou nome do dependente
     operadora?: string;
     cobertura?: 'Nacional' | 'Estadual' | 'Municipal' | string;
@@ -134,6 +160,7 @@ export interface PlanoSaude {
 export interface SeguroVida {
     id?: string;
     cliente_id: string;
+    contrato_id?: string | null; // contrato extra que originou a apólice (opcional)
     membro: string; // 'cliente', 'conjuge', ou nome do dependente
     seguradora?: string;
     modalidade?: 'individual' | 'grupo';
@@ -155,6 +182,7 @@ export interface SeguroVida {
 export interface SeguroExtra {
     id?: string;
     cliente_id: string;
+    contrato_id?: string | null; // contrato extra que originou a apólice (opcional)
     tipo_seguro?: string;
     descricao?: string;
     inicio_vigencia?: string;
@@ -435,7 +463,8 @@ export const protecaoService = {
             supabase.from('clientes_seguros').select('*').in('cliente_id', clienteIds),
             supabase.from('dependentes_seguros').select('cliente_id, nome_dependente').in('cliente_id', clienteIds),
             supabase.from('planos_saude').select('cliente_id, membro').in('cliente_id', clienteIds),
-            supabase.from('seguros_vida').select('cliente_id, membro, cobertura_morte').in('cliente_id', clienteIds),
+            // Todas as coberturas usadas pelo pilar Vida: sem elas a soma dá 0 e o score trava em 83,3.
+            supabase.from('seguros_vida').select('cliente_id, membro, cobertura_morte, cobertura_doencas_graves, cobertura_invalidez, cobertura_cirurgia, dit').in('cliente_id', clienteIds),
             supabase.from('ativos').select('cliente_id, valor_atual, distribuicao_objetivos').in('cliente_id', clienteIds),
             supabase.from('parametros_calculo').select('taxa_juros_aa, ipca_projetado_aa').maybeSingle(),
         ]);
@@ -461,5 +490,80 @@ export const protecaoService = {
         });
 
         return scores;
+    },
+
+    // ─── Contratos de proteção ────────────────────────────────────────────────
+
+    /** Contratos extras ativos de proteção do cliente (para vincular a uma apólice). */
+    async getContratosProtecaoCliente(clienteId: string): Promise<ContratoProtecao[]> {
+        const [{ data: contratos, error }, ids] = await Promise.all([
+            supabase.from('contratos').select('id, descricao, padrao_id, status')
+                .eq('cliente_id', clienteId).eq('tipo', 'extra').eq('status', 'ativo'),
+            idsPadroesProtecao(),
+        ]);
+        if (error) throw error;
+        return (contratos || [])
+            .filter((c: any) => ids.has(c.padrao_id))
+            .map((c: any) => ({ id: c.id, descricao: c.descricao || 'Contrato extra' }));
+    },
+
+    /**
+     * Situação de proteção dos clientes ativos com planejamento (mesma base do KPI):
+     * tem proteção quem tem apólice vigente OU contrato extra de proteção ativo. Separa quem tem
+     * contrato ativo com o planejador de quem tem só apólice.
+     */
+    async getProtecaoClientes(): Promise<ProtecaoCliente[]> {
+        const [{ data: clientesAll }, { data: contratosAll }, idsProtecao] = await Promise.all([
+            supabase.from('clientes').select('id, nome, status').eq('status', 'Ativo'),
+            supabase.from('contratos').select('id, cliente_id, tipo, status, descricao, padrao_id'),
+            idsPadroesProtecao(),
+        ]);
+
+        const contratos = contratosAll || [];
+        const comPlanejamento = new Set(contratos.filter((c: any) => c.tipo === 'planejamento').map((c: any) => c.cliente_id));
+        const clientes = (clientesAll || []).filter(c => comPlanejamento.has(c.id));
+        if (clientes.length === 0) return [];
+
+        // RLS dessas tabelas é ampla: filtrar sempre pelos clientes visíveis.
+        const ids = clientes.map(c => c.id);
+        const [{ data: vida }, { data: saude }, { data: extras }] = await Promise.all([
+            supabase.from('seguros_vida').select('id, cliente_id, seguradora, membro, fim_vigencia, contrato_id').in('cliente_id', ids),
+            supabase.from('planos_saude').select('id, cliente_id, operadora, membro, contrato_id').in('cliente_id', ids),
+            supabase.from('seguros_extras').select('id, cliente_id, tipo_seguro, descricao, fim_vigencia, contrato_id').in('cliente_id', ids),
+        ]);
+
+        const hoje = toLocalDateString(new Date());
+        const vigente = (a: { fim_vigencia?: string | null }) => !a.fim_vigencia || a.fim_vigencia >= hoje;
+
+        const apolices = new Map<string, ApoliceResumo[]>();
+        const adicionar = (clienteId: string, a: ApoliceResumo) =>
+            apolices.set(clienteId, [...(apolices.get(clienteId) || []), a]);
+
+        (vida || []).filter(vigente).forEach((a: any) =>
+            adicionar(a.cliente_id, { id: a.id, tipo: 'Vida', rotulo: a.seguradora || 'Seguro de vida', contratoId: a.contrato_id }));
+        (saude || []).forEach((a: any) =>
+            adicionar(a.cliente_id, { id: a.id, tipo: 'Saúde', rotulo: a.operadora || 'Plano de saúde', contratoId: a.contrato_id }));
+        (extras || []).filter(vigente).forEach((a: any) =>
+            adicionar(a.cliente_id, { id: a.id, tipo: a.tipo_seguro || 'Seguro', rotulo: a.descricao || a.tipo_seguro || 'Seguro', contratoId: a.contrato_id }));
+
+        const contratosProtecao = contratos.filter((c: any) => c.tipo === 'extra' && c.status === 'ativo' && idsProtecao.has(c.padrao_id));
+
+        return clientes.map(c => {
+            const doCliente = apolices.get(c.id) || [];
+            const contratosCli = contratosProtecao
+                .filter((ct: any) => ct.cliente_id === c.id)
+                .map((ct: any) => ({ id: ct.id, descricao: ct.descricao || 'Contrato extra' }));
+            const vinculados = new Set(doCliente.map(a => a.contratoId).filter(Boolean));
+            const grupo: GrupoProtecao = contratosCli.length > 0 ? 'com_contrato' : doCliente.length > 0 ? 'sem_contrato' : 'sem';
+            return {
+                id: c.id,
+                nome: c.nome,
+                grupo,
+                apolices: doCliente,
+                contratos: contratosCli,
+                contratosSemApolice: contratosCli.filter(ct => !vinculados.has(ct.id)).length,
+                apolicesSemVinculo: contratosCli.length > 0 ? doCliente.filter(a => !a.contratoId).length : 0,
+            };
+        });
     },
 };

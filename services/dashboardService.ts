@@ -759,24 +759,13 @@ export const dashboardService = {
   },
 
   /**
-   * % da base com proteção: média, entre clientes ativos com planejamento, da pontuação de
-   * proteção (0-100) de cada cliente. Fonte única da fórmula:
-   * protecaoService.getScoresPorCliente() (também usada pela coluna "Proteção" da listagem
-   * de clientes).
+   * % da base com proteção: clientes ativos com planejamento que têm apólice vigente OU contrato
+   * extra de proteção ativo. Fonte única da regra: protecaoService.getProtecaoClientes().
    */
   async getCoberturaProtecao() {
-    const [{ clientes: allClientes, contratos: allContratos }, scores] = await Promise.all([
-      carregarBase(),
-      protecaoService.getScoresPorCliente(),
-    ]);
-
-    const idsComPlanejamento = new Set(allContratos.filter(c => c.tipo === 'planejamento').map(c => c.cliente_id));
-    const clientesAlvo = allClientes.filter(c => c.status === 'Ativo' && idsComPlanejamento.has(c.id));
-
-    if (clientesAlvo.length === 0) return 0;
-    const valores = clientesAlvo.map(c => scores.get(c.id) ?? 0);
-
-    return valores.reduce((acc, s) => acc + s, 0) / valores.length;
+    const clientes = await protecaoService.getProtecaoClientes();
+    if (clientes.length === 0) return 0;
+    return (clientes.filter(c => c.grupo !== 'sem').length / clientes.length) * 100;
   },
 
   /**

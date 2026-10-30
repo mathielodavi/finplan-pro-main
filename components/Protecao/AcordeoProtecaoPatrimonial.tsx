@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Home, ChevronDown, ChevronUp, Plus, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
 import { SeguroExtra, protecaoService, ClienteSeguro } from '../../services/protecaoService';
+import SeletorContratoProtecao from './SeletorContratoProtecao';
 
 const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
 const lbl = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
@@ -141,7 +142,10 @@ const AcordeoProtecaoPatrimonial: React.FC<Props> = ({ dados, defaultAberto }) =
                                     return (
                                         <div key={e.id} className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-center px-4 py-2.5 hover:bg-surface-2 transition-colors">
                                             <p className="text-[12px] font-bold text-main tracking-tight">{e.tipo_seguro || '—'}</p>
-                                            <p className="text-[12px] font-medium text-muted truncate tracking-tight">{e.descricao || '—'}</p>
+                                            <div className="min-w-0">
+                                                <p className="text-[12px] font-medium text-muted truncate tracking-tight">{e.descricao || '—'}</p>
+                                                {e.contrato_id && <p className="text-[10px] font-bold text-[color:var(--primary)] tracking-wider uppercase mt-0.5">Contrato comigo</p>}
+                                            </div>
                                             <p className="text-[10px] font-bold text-faint uppercase tracking-wider whitespace-nowrap">{vigencia}</p>
                                             <p className="text-[13px] font-bold text-[color:var(--primary)] tracking-tight">{fmtMoeda(e.mensalidade || 0)}</p>
                                             <div className="flex gap-1">
@@ -189,6 +193,9 @@ const AcordeoProtecaoPatrimonial: React.FC<Props> = ({ dados, defaultAberto }) =
                                     <label className={lbl}>Fim da Vigência</label>
                                     <input type="date" value={form.fim_vigencia || ''} onChange={e => setForm(f => ({ ...f, fim_vigencia: e.target.value }))} className={inp} />
                                 </div>
+                            </div>
+                            <div>
+                                <SeletorContratoProtecao clienteId={dados.cliente_id} value={form.contrato_id} onChange={v => setForm(f => ({ ...f, contrato_id: v }))} labelClass={lbl} inputClass={inp} />
                             </div>
                             <div>
                                 <label className={lbl}>Mensalidade (R$)</label>
