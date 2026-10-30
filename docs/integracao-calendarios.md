@@ -77,12 +77,19 @@ Heurística em ordem de prioridade (a primeira que casar decide):
    do texto, em qualquer ordem — não o nome completo como substring exata. Isso
    cobre o caso comum de o nome no CRM ter mais partes do que o digitado no
    calendário (ex.: CRM "Cynthia Honorato **Val**", evento só "Cynthia Honorato").
-   **Salvaguarda de segurança**: se o evento já tem uma lista de participantes
-   conhecida (`ATTENDEE`) e o e-mail do cliente não está nela, o match por nome é
-   descartado — evita casar com a reunião de outra pessoa que só menciona o nome do
-   cliente de passagem.
-3. **Telefone** do cliente presente na descrição do evento (fallback, menor
-   confiabilidade — números costumam aparecer sem formatação padronizada).
+   **Salvaguarda de segurança**: se o evento tem outros convidados (`ATTENDEE`, sem
+   contar o organizador nem o próprio consultor) e o e-mail do cliente não está entre
+   eles, o match por nome é descartado — evita casar com a reunião de outra pessoa que
+   só menciona o nome do cliente de passagem. Um compromisso criado pelo consultor,
+   sem convidados e com o nome do cliente no título, casa normalmente.
+3. **Telefone** do cliente presente no título ou na descrição do evento (fallback,
+   menor confiabilidade — números costumam aparecer sem formatação padronizada).
+
+Quando vários eventos casam, vale o **mais próximo**. O que fica sem cliente nos
+próximos 60 dias vai para `calendario_conexoes.ultimo_diagnostico` (com o motivo) e
+aparece em Configurações > Perfil, para o consultor entender por que não vinculou. Essa
+coluna é protegida pela RLS da conexão: a resposta da function traz só contagens,
+porque ela processa todos os consultores.
 
 ### Reunião automática (`reunioes`)
 
@@ -92,8 +99,9 @@ do evento), refletindo direto no "Próxima Ação"/atraso-próxima da lista de c
 não é só um badge informativo. Rastreamento via `reunioes.calendario_evento_uid`
 (UID do VEVENT) com índice único parcial por `cliente_id`: no máximo **uma** reunião
 "gerenciada pelo sync" por cliente, sempre atualizada (nunca duplicada) a cada nova
-sincronização. Reuniões criadas manualmente pelo consultor (`calendario_evento_uid`
-`NULL`) nunca são tocadas pelo sync. Se o cliente deixar de casar com qualquer evento,
+sincronização. Sem reunião gerenciada, o sync **adota** um agendamento manual do
+cliente em vez de duplicar: de preferência o do mesmo dia do evento, depois o próximo
+futuro e, por último, o mais antigo. Se o cliente deixar de casar com qualquer evento,
 a reunião existente **não é cancelada automaticamente** (fora do escopo desta rodada).
 
 ### Fuso horário
@@ -104,18 +112,19 @@ IANA como `America/Sao_Paulo`) e converte para UTC de verdade (-03:00 fixo — B
 não observa horário de verão desde 2019). TZIDs não reconhecidos caem no
 comportamento anterior (horário "flutuante", sem conversão).
 
-### Link de chamada (Teams)
+### Link de chamada
 
-Extraído de `X-MICROSOFT-SKYPETEAMSMEETINGURL` (propriedade dedicada que o
-Outlook/Exchange inclui em reuniões do Teams) ou, na ausência dela, por regex sobre a
-`DESCRIPTION` procurando uma URL `teams.microsoft.com/l/meetup-join/...`. Guardado em
+Extraído de `X-MICROSOFT-SKYPETEAMSMEETINGURL` (Teams, Outlook/Exchange) ou
+`X-GOOGLE-CONFERENCE` (Google Meet) ou, na ausência delas, por regex sobre a
+`DESCRIPTION` procurando uma URL do Teams, Google Meet ou Zoom. Guardado em
 `reunioes.link_reuniao`. Na mensagem de WhatsApp da categoria "Próximas"
 ([utils/whatsappUtils.ts](../utils/whatsappUtils.ts) `montarMensagemAgenda`), quando
 presente, é anexado um parágrafo extra: "Utilize o link ao lado para acessar nossa
 chamada: `<LINK>`".
 
-Apenas eventos com `DTSTART >= hoje` são considerados (feeds ICS podem conter anos de
-histórico; não há necessidade de olhar para o passado).
+Apenas eventos de hoje em diante são considerados (feeds ICS podem conter anos de
+histórico; não há necessidade de olhar para o passado). Séries (`RRULE`) entram pela
+próxima ocorrência, respeitando `EXDATE`, exceções (`RECURRENCE-ID`) e `STATUS:CANCELLED`.
 
 ## 3. Edge function `sync-calendarios` (esqueleto)
 
@@ -128,13 +137,13 @@ erro por item, resposta JSON estruturada):
 2. Para cada conexão, dentro de um `try/catch` isolado (uma falha não deve
    interromper o processamento das demais conexões):
    a. `fetch(ics_url)` → texto ICS.
-   b. **Implementado com parser manual de `VEVENT`** (sem `ical.js`) — unfold de linhas
-      dobradas, `DTSTART` em `DATE`/`DATE-TIME` (UTC ou "flutuante", sem suporte a
-      `RRULE`/recorrência), `SUMMARY`, `DESCRIPTION` e `ATTENDEE`/`ORGANIZER`
-      (`mailto:`). Evita depender de uma lib externa via esm.sh dentro da edge function;
-      suficiente para o caso de uso (visualização de eventos únicos/futuros, sem precisar
-      expandir séries recorrentes).
-   c. Filtra `VEVENT`s com `DTSTART >= hoje`.
+   b. **Implementado com parser manual de `VEVENT`** (sem `ical.js`,
+      em `supabase/functions/sync-calendarios/logica.ts`) — unfold de linhas dobradas,
+      `DTSTART` em `DATE`/`DATE-TIME` (UTC ou "flutuante"), `SUMMARY`, `DESCRIPTION`,
+      `ATTENDEE`/`ORGANIZER` (`mailto:`) e `RRULE` básica (`FREQ`, `INTERVAL`, `COUNT`,
+      `UNTIL`, `BYDAY`, `BYMONTHDAY`). Evita depender de uma lib externa via esm.sh
+      dentro da edge function.
+   c. Mantém eventos de hoje em diante, trocando cada série pela próxima ocorrência.
    d. Busca `clientes` do mesmo `consultor_id` (`SELECT id, nome, email, telefone FROM
       clientes WHERE consultor_id = :consultor_id`).
    e. Para cada cliente, tenta casar com algum evento pela heurística da seção 2.
@@ -221,16 +230,17 @@ Elementos da seção:
 
 ## 6. UI de exibição (Atendimento / Pautas)
 
-Em cada item das Pautas ([views/Dashboard.tsx](../views/Dashboard.tsx), lista de
-`agendaHibrida`), renderizar via [Badge.tsx](../components/UI/Badge.tsx):
+Cada item das Pautas ([views/Dashboard.tsx](../views/Dashboard.tsx), lista de
+`agendaHibrida`) tem um ícone de calendário que reflete a **reunião exibida**:
 
-- **"Em agenda"** (`variant="success"`) quando `cliente.em_agenda_externa === true`.
-- **"Fora da agenda"** (`variant="neutral"`) caso contrário.
+- **Verde e clicável:** reunião vinculada (`calendario_evento_uid`) com link de chamada.
+- **Verde, sem clique:** vinculada, sem link de chamada.
+- **Cinza apagado:** reunião manual, sem vínculo, ou cliente sem reunião.
 
-A tag só deve aparecer se o consultor logado tiver uma `calendario_conexoes` ativa —
-caso contrário, omitir completamente (não exibir "Fora da agenda" para todo mundo
-apenas porque a integração nunca foi configurada, o que sugeriria um dado que não
-existe).
+Se a reunião exibida for manual e houver outra reunião agendada vinculada no mesmo dia,
+vale o vínculo dela (`vinculoCalendario`, em [utils/agendaUtils.ts](../utils/agendaUtils.ts)).
+`clientes.em_agenda_externa` só alimenta o aviso "não encontrada no calendário" dos
+clientes sem reunião, quando há conexão ativa.
 
 ## Alternativas consideradas
 
@@ -247,8 +257,5 @@ existe).
 3. ✅ Edge function `sync-calendarios` criada e implantada (ativa no projeto).
 4. ✅ Cron do sync periódico agendado a cada 6h, autenticado via secret no Supabase Vault.
 5. ✅ Seção "Calendário externo" em `PerfilConfig.tsx`.
-6. ✅ Badges "Em agenda"/"Fora da agenda" nas Pautas do Dashboard.
-
-Sem uma URL ICS real configurada por um consultor, o fluxo fim-a-fim (parse de um feed de
-verdade, matching contra a base de clientes) não pôde ser testado nesta rodada — a
-verificação foi feita por leitura de código, `tsc --noEmit` e `npm run build`.
+6. ✅ Ícone de vínculo com calendário nas Pautas do Dashboard.
+7. ✅ Diagnóstico da sincronização em `calendario_conexoes.ultimo_diagnostico`.

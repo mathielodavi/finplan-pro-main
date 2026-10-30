@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { investimentoService } from '../../services/investimentoService';
 import { formatarMoeda, normalizarTexto } from '../../utils/formatadores';
-import SidePanel from '../UI/SidePanel';
-import { Search, Landmark, TrendingUp, Briefcase, ChevronRight } from 'lucide-react';
+import PainelConsulta, { CarregandoConsulta, VazioConsulta } from '../UI/PainelConsulta';
+import { Landmark, TrendingUp, Briefcase, ChevronRight } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -34,9 +34,6 @@ const iconePorOrigem = (origem?: string) => {
   if (origem === 'fundo') return <Briefcase size={13} />;
   return <Landmark size={13} />;
 };
-
-const segBtn = (active: boolean) =>
-  `flex-1 h-8 px-2.5 flex items-center justify-center rounded-md text-[11px] font-semibold transition-all ${active ? 'bg-surface-3 text-primary' : 'text-faint hover:text-muted active:bg-surface-3/60'}`;
 
 /**
  * Consulta de Carteira — busca um ativo entre as carteiras de TODOS os clientes.
@@ -155,42 +152,25 @@ const ConsultaCarteiraDrawer: React.FC<Props> = ({ open, onClose }) => {
   const totalBase = useMemo(() => carteiras.reduce((acc, c) => acc + (c.patrimonio || 0), 0), [carteiras]);
 
   return (
-    <SidePanel
+    <PainelConsulta
       open={open}
       onClose={onClose}
-      title="Consulta de Carteira"
-      subtitle={buscaAtiva
+      titulo="Consulta de Carteira"
+      subtitulo={buscaAtiva
         ? `${listaBusca.length} cliente(s) com o ativo buscado`
         : `${carteiras.length} cliente(s) · ${formatarMoeda(totalBase)}`}
-      widthClass="max-w-lg"
+      termo={termo}
+      onTermo={setTermo}
+      placeholder="Buscar por nome, ticker, CNPJ ou instituição..."
+      opcoes={[{ id: 'alfabetica', label: 'Ordem alfabética' }, { id: 'patrimonio', label: 'Maior patrimônio' }]}
+      opcaoAtiva={ordem}
+      onOpcao={id => setOrdem(id as Ordem)}
     >
-      <div className="space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-faint pointer-events-none" />
-          <input
-            type="text"
-            value={termo}
-            onChange={e => setTermo(e.target.value)}
-            placeholder="Buscar por nome, ticker, CNPJ ou instituição..."
-            className="w-full pl-9 pr-3 h-10 bg-surface-2 border border-subtle rounded-lg outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium text-[13px] text-main placeholder:text-faint"
-          />
-        </div>
-
-        <div className="flex bg-surface-2 p-0.5 rounded-lg border border-subtle">
-          <button type="button" onClick={() => setOrdem('alfabetica')} className={segBtn(ordem === 'alfabetica')}>Ordem alfabética</button>
-          <button type="button" onClick={() => setOrdem('patrimonio')} className={segBtn(ordem === 'patrimonio')}>Maior patrimônio</button>
-        </div>
-
         {buscaAtiva ? (
           buscando ? (
-            <div className="py-16 flex flex-col items-center justify-center gap-3">
-              <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[color:var(--primary)]" />
-              <p className="text-faint text-[11px] font-bold uppercase tracking-widest">Buscando...</p>
-            </div>
+            <CarregandoConsulta texto="Buscando..." />
           ) : listaBusca.length === 0 ? (
-            <div className="py-16 text-center">
-              <p className="text-faint text-[12px]">Nenhum cliente possui ativo correspondente a "{termoLimpo}".</p>
-            </div>
+            <VazioConsulta texto={`Nenhum cliente possui ativo correspondente a "${termoLimpo}".`} />
           ) : (
             <div className="space-y-2">
               {listaBusca.map(c => (
@@ -231,14 +211,9 @@ const ConsultaCarteiraDrawer: React.FC<Props> = ({ open, onClose }) => {
             </div>
           )
         ) : carregandoLista ? (
-          <div className="py-16 flex flex-col items-center justify-center gap-3">
-            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[color:var(--primary)]" />
-            <p className="text-faint text-[11px] font-bold uppercase tracking-widest">Carregando carteiras...</p>
-          </div>
+          <CarregandoConsulta texto="Carregando carteiras..." />
         ) : listaBase.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-faint text-[12px]">Nenhum cliente ativo com carteira de investimentos cadastrada.</p>
-          </div>
+          <VazioConsulta texto="Nenhum cliente ativo com carteira de investimentos cadastrada." />
         ) : (
           <div className="rounded-lg border border-subtle divide-y divide-subtle overflow-hidden">
             {listaBase.map(c => (
@@ -260,8 +235,7 @@ const ConsultaCarteiraDrawer: React.FC<Props> = ({ open, onClose }) => {
             ))}
           </div>
         )}
-      </div>
-    </SidePanel>
+    </PainelConsulta>
   );
 };
 

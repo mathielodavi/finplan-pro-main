@@ -5,6 +5,7 @@ import { SeguroVida, protecaoService, ClienteSeguro, DependenteSeguro } from '..
 import { calcularCoberturaVida } from '../../utils/calculosFinanceiros';
 import CampoMonetario from './CampoMonetario';
 import Badge from '../UI/Badge';
+import SeletorContratoProtecao from './SeletorContratoProtecao';
 
 const inp = "w-full px-3 h-9 bg-surface-2 border border-subtle rounded-[8px] font-bold text-main text-[12px] outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-surface focus:border-[color:var(--primary)] transition-all shadow-sm";
 const lbl = "block text-[10px] font-bold text-faint uppercase tracking-wider mb-1.5";
@@ -255,7 +256,10 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, suces
                                 {seguros.map(s => (
                                     <div key={s.id} className="grid grid-cols-[1fr_1fr_auto_auto_auto_auto] gap-3 items-center px-4 py-2.5 hover:bg-surface-2 transition-colors">
                                         <p className="text-[12px] font-bold text-main capitalize tracking-tight">{s.membro}</p>
-                                        <p className="text-[12px] font-bold text-main tracking-tight">{s.seguradora || '—'}</p>
+                                        <div className="min-w-0">
+                                            <p className="text-[12px] font-bold text-main tracking-tight">{s.seguradora || '—'}</p>
+                                            {s.contrato_id && <p className="text-[10px] font-bold text-[color:var(--primary)] tracking-wider uppercase mt-0.5">Contrato comigo</p>}
+                                        </div>
                                         <Badge variant={s.modalidade === 'grupo' ? 'info' : 'neutral'} size="sm">
                                             {s.modalidade === 'grupo' ? <Users size={10} /> : <User size={10} />}
                                             {s.modalidade === 'grupo' ? 'Grupo' : 'Individual'}
@@ -304,6 +308,9 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, suces
                             <div className="md:col-span-2">
                                 <label className={lbl}>Seguradora</label>
                                 <input value={form.seguradora || ''} onChange={e => setForm(f => ({ ...f, seguradora: e.target.value }))} className={inp} placeholder="Ex: Porto Seguro, Itaú Vida..." />
+                            </div>
+                            <div className="md:col-span-2">
+                                <SeletorContratoProtecao clienteId={dados.cliente_id} value={form.contrato_id} onChange={v => setForm(f => ({ ...f, contrato_id: v }))} labelClass={lbl} inputClass={inp} />
                             </div>
                         </div>
 

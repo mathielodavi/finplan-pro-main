@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { obterClientePorId, Cliente } from '../services/clienteService';
 import { reuniaoService, Reuniao } from '../services/reuniaoService';
 import { obterContratosPorCliente } from '../services/contratoService';
@@ -36,7 +36,11 @@ const ProntuarioPage: React.FC = () => {
   const { setNav } = useProntuarioNav();
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
-  const [activeTab, setActiveTab] = useState('resumo');
+  // Aba inicial pode vir na URL (?aba=dividas), usada pelos links das consultas da Visão Geral.
+  const [searchParams] = useSearchParams();
+  const abaDaUrl = searchParams.get('aba');
+  const veioPorLink = TABS.some(t => t.id === abaDaUrl);
+  const [activeTab, setActiveTab] = useState(veioPorLink ? abaDaUrl! : 'resumo');
   const [loading, setLoading] = useState(true);
   const [modalPDF, setModalPDF] = useState(false);
   const [contratos, setContratos] = useState<any[]>([]);
@@ -120,7 +124,7 @@ const ProntuarioPage: React.FC = () => {
         {activeTab === 'resumo' && <AbaResumo cliente={cliente} onUpdate={loadData} />}
         {activeTab === 'atendimento' && <AbaAtendimento clienteId={cliente.id!} />}
         {activeTab === 'protecao' && (
-          <StepperProtecao clienteId={cliente.id!} nomeCliente={cliente.nome} />
+          <StepperProtecao clienteId={cliente.id!} nomeCliente={cliente.nome} abrirNoResumo={veioPorLink && abaDaUrl === 'protecao'} />
         )}
         {activeTab === 'investimentos' && <AbaInvestimentos clienteId={cliente.id!} />}
         {activeTab === 'dividas' && <AbaDividas clienteId={cliente.id!} rendaMensalCliente={cliente.renda_mensal || 0} />}

@@ -303,6 +303,29 @@ const PerfilConfig: React.FC = () => {
           </div>
         )}
 
+        {conexao?.ultimo_diagnostico && (
+          <div className="px-4 py-3 rounded-[8px] bg-surface-2 border border-subtle space-y-2">
+            <p className="text-[12px] text-main font-medium">
+              {conexao.ultimo_diagnostico.clientes_casados} cliente(s) vinculado(s) · {conexao.ultimo_diagnostico.eventos_futuros} evento(s) futuro(s) lido(s)
+            </p>
+            {conexao.ultimo_diagnostico.sem_cliente.length > 0 && (
+              <details>
+                <summary className="text-[11px] font-semibold text-muted cursor-pointer">
+                  {conexao.ultimo_diagnostico.sem_cliente.length} compromisso(s) dos próximos 60 dias sem cliente identificado
+                </summary>
+                <ul className="mt-2 space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar">
+                  {conexao.ultimo_diagnostico.sem_cliente.map((e, i) => (
+                    <li key={i} className="text-[11px] leading-snug">
+                      <span className="text-main font-medium">{formatarData(e.data)} · {e.titulo}</span>
+                      <span className="block text-faint">{e.motivo}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+
         {msgCalendario && (
           <div className={`px-4 py-3 rounded-[8px] text-[10px] font-bold uppercase tracking-wider flex items-center gap-3 border animate-slide-up ${msgCalendario.type === 'success' ? 'bg-primary/10 text-primary border-subtle' : 'bg-danger/10 text-danger border-subtle'}`}>
             {msgCalendario.type === 'success' ? '✓' : '⚠'} {msgCalendario.text}

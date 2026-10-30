@@ -1,5 +1,57 @@
 import { supabase } from './supabaseClient';
 import { DividaCredito, DividaConsorcio, PrioritizationMethod } from '../types/dividas';
+import { indexadoresService, IndiceMercado } from './indexadoresService';
+import { calcularSaldoEParcelasAtual, formatarDebtType, taxaCorrecaoEfetiva } from '../utils/calculosDividas';
+
+export interface LinhaDivida {
+    id: string;
+    cliente_id: string;
+    rotulo: string;
+    tipo: string;
+    instituicao: string;
+    saldo: number;
+}
+
+export interface DividasCliente {
+    id: string;
+    nome: string;
+    saldo: number;
+    linhas: LinhaDivida[];
+}
+
+/** Créditos e consórcios de todos os clientes, com o saldo atual de cada um. */
+const carregarDividas = async (): Promise<LinhaDivida[]> => {
+    const [{ data: creditos, error: errCred }, { data: consorcios, error: errCons }] = await Promise.all([
+        supabase.from('dividas_credito').select('*'),
+        supabase.from('dividas_consorcio').select('consortium_id, cliente_id, consortium_label, administrator, credit_letter_value, total_paid_to_date'),
+    ]);
+    if (errCred) throw errCred;
+    if (errCons) throw errCons;
+
+    const indices = (creditos || [])
+        .map((c: DividaCredito) => c.monetary_index)
+        .filter((i): i is IndiceMercado => !!i && i !== 'fixed' && i !== 'none');
+    const mercado = await indexadoresService.getTaxasMercado(indices);
+
+    return [
+        ...(creditos || []).map((c: DividaCredito): LinhaDivida => ({
+            id: c.debt_id!,
+            cliente_id: c.cliente_id,
+            rotulo: c.debt_label || 'Crédito',
+            tipo: formatarDebtType(c.debt_type),
+            instituicao: c.institution || '',
+            saldo: calcularSaldoEParcelasAtual({ ...c, monetary_correction_effective: taxaCorrecaoEfetiva(c, mercado) }).saldoDevedor,
+        })),
+        ...(consorcios || []).map((c: any): LinhaDivida => ({
+            id: c.consortium_id,
+            cliente_id: c.cliente_id,
+            rotulo: c.consortium_label || 'Consórcio',
+            tipo: 'Consórcio',
+            instituicao: c.administrator || '',
+            saldo: Math.max(0, (Number(c.credit_letter_value) || 0) - (Number(c.total_paid_to_date) || 0)),
+        })),
+    ];
+};
 
 export const dividasService = {
     // ---- Prioritization Method ----
@@ -146,23 +198,34 @@ export const dividasService = {
 
     /**
      * Saldo devedor (créditos + consórcios) de TODOS os clientes, em lote.
-     * Mesma fórmula usada por cliente em components/Dividas/DashboardDividas.tsx.
+     * Mesma fórmula da aba Dívidas do prontuário: o saldo de crédito é recalculado na hora (data e
+     * indexador), não lido do valor gravado, que só muda quando o cadastro é salvo.
      */
     getSaldoDevedorPorCliente: async (): Promise<Map<string, number>> => {
-        const [{ data: creditos }, { data: consorcios }] = await Promise.all([
-            supabase.from('dividas_credito').select('cliente_id, outstanding_balance'),
-            supabase.from('dividas_consorcio').select('cliente_id, credit_letter_value, total_paid_to_date'),
-        ]);
-
+        const linhas = await carregarDividas();
         const saldos = new Map<string, number>();
-        const soma = (clienteId: string, valor: number) => saldos.set(clienteId, (saldos.get(clienteId) || 0) + valor);
-
-        (creditos || []).forEach((c: any) => soma(c.cliente_id, Number(c.outstanding_balance) || 0));
-        (consorcios || []).forEach((c: any) => {
-            const saldo = (Number(c.credit_letter_value) || 0) - (Number(c.total_paid_to_date) || 0);
-            soma(c.cliente_id, Math.max(0, saldo));
-        });
-
+        linhas.forEach(l => saldos.set(l.cliente_id, (saldos.get(l.cliente_id) || 0) + l.saldo));
         return saldos;
-    }
+    },
+
+    /** Dívidas por cliente ativo, maior saldo primeiro (drawer do KPI "Endividamento Total"). */
+    getDividasClientes: async (): Promise<DividasCliente[]> => {
+        const [linhas, { data: clientes, error }] = await Promise.all([
+            carregarDividas(),
+            supabase.from('clientes').select('id, nome').eq('status', 'Ativo'),
+        ]);
+        if (error) throw error;
+
+        const nomes = new Map((clientes || []).map((c: any) => [c.id, c.nome as string]));
+        const porCliente = new Map<string, DividasCliente>();
+        linhas.forEach(l => {
+            const nome = nomes.get(l.cliente_id);
+            if (!nome || l.saldo <= 0) return;
+            const atual = porCliente.get(l.cliente_id) || { id: l.cliente_id, nome, saldo: 0, linhas: [] };
+            atual.saldo += l.saldo;
+            atual.linhas.push(l);
+            porCliente.set(l.cliente_id, atual);
+        });
+        return Array.from(porCliente.values()).sort((a, b) => b.saldo - a.saldo);
+    },
 };

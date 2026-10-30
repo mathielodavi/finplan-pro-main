@@ -6,7 +6,7 @@ import { dashboardService } from '../services/dashboardService';
 import { reuniaoService } from '../services/reuniaoService';
 import { formatarMoeda, formatarData, paraDatetimeLocal, deDatetimeLocalParaISO } from '../utils/formatadores';
 import { CHART_COLORS, CHART_TERMOMETRO, CHART_GRID, axisTick, tooltipStyle, tooltipCursor } from '../utils/chartTheme';
-import { categorizarAgendaCliente } from '../utils/agendaUtils';
+import { categorizarAgendaCliente, vinculoCalendario } from '../utils/agendaUtils';
 import { montarLinkWhatsApp, montarMensagemAgenda } from '../utils/whatsappUtils';
 import { encerrarContratoPlanejamento } from '../services/contratoService';
 import { calendarioService } from '../services/calendarioService';
@@ -22,6 +22,8 @@ import Confirmacao from '../components/Confirmacao';
 import InputMoeda from '../components/UI/InputMoeda';
 import ContratoFormDrawer from '../components/Contratos/ContratoFormDrawer';
 import ConsultaCarteiraDrawer from '../components/Carteira/ConsultaCarteiraDrawer';
+import ConsultaDividasDrawer from '../components/Dividas/ConsultaDividasDrawer';
+import ConsultaProtecaoDrawer from '../components/Protecao/ConsultaProtecaoDrawer';
 import MapaBrasil from '../components/Dashboard/MapaBrasil';
 import { financeiroService } from '../services/financeiroService';
 import { Users, ShieldCheck, TrendingDown, DollarSign, BarChart3, ChevronLeft, ChevronRight, AlertCircle, Clock, CalendarX, CalendarCheck, Crown, X, Wallet, CreditCard, HeartPulse, MessageCircle, RefreshCw, CheckCircle2, Phone, Mail, Video, Check, Ban } from 'lucide-react';
@@ -107,6 +109,8 @@ const Dashboard: React.FC = () => {
   const [receivables, setReceivables] = useState<{ total: number; itens: any[] }>(cacheInicial?.recebiveis ?? { total: 0, itens: [] });
   const [receivablesOpen, setReceivablesOpen] = useState(false);
   const [consultaCarteiraOpen, setConsultaCarteiraOpen] = useState(false);
+  const [consultaDividasOpen, setConsultaDividasOpen] = useState(false);
+  const [consultaProtecaoOpen, setConsultaProtecaoOpen] = useState(false);
   // Conciliação/cancelamento de recebíveis dentro do drawer
   const [recConciliando, setRecConciliando] = useState<string | null>(null);
   const [recValor, setRecValor] = useState(0);
@@ -248,6 +252,7 @@ const Dashboard: React.FC = () => {
       const reunioesDoCli = todasReunioes.filter((r: any) => r.cliente_id === cli.id);
       const { categoria, reuniao: reuniaoExibida, qtdAtrasadas, atencaoHoje } = categorizarAgendaCliente(reunioesDoCli, agora);
       const inad = inadimplenciaMap.get(cli.id);
+      const vinculo = vinculoCalendario(reuniaoExibida, reunioesDoCli);
 
       return {
         id: `cli-${cli.id}`,
@@ -256,8 +261,8 @@ const Dashboard: React.FC = () => {
         cliente_tel: cli.telefone || null,
         cliente_email: cli.email || null,
         em_agenda_externa: !!cli.em_agenda_externa,
-        link_reuniao: reuniaoExibida?.link_reuniao || null,
-        calendario_evento_uid: reuniaoExibida?.calendario_evento_uid || null,
+        link_reuniao: vinculo.link,
+        calendario_evento_uid: vinculo.uid,
         categoria,
         atencaoHoje,
         reuniao_id: reuniaoExibida?.id || null,
@@ -356,8 +361,22 @@ const Dashboard: React.FC = () => {
       onClick: () => setConsultaCarteiraOpen(true),
       title: 'Consultar carteiras — buscar um ativo entre todos os clientes',
     },
-    { label: 'Endividamento Total', value: formatarMoeda(endividamentoTotal), icon: <CreditCard />, color: CHART_COLORS.danger },
-    { label: 'Base com Proteção', value: `${coberturaProtecao.toFixed(0)}%`, icon: <HeartPulse />, color: CHART_COLORS.primary },
+    {
+      label: 'Endividamento Total',
+      value: formatarMoeda(endividamentoTotal),
+      icon: <CreditCard />,
+      color: CHART_COLORS.danger,
+      onClick: () => setConsultaDividasOpen(true),
+      title: 'Consultar dívidas — por cliente, instituição ou tipo',
+    },
+    {
+      label: 'Base com Proteção',
+      value: `${coberturaProtecao.toFixed(0)}%`,
+      icon: <HeartPulse />,
+      color: CHART_COLORS.primary,
+      onClick: () => setConsultaProtecaoOpen(true),
+      title: '% de clientes ativos com planejamento que têm apólice vigente ou contrato de proteção ativo',
+    },
   ];
 
   const kpisContratos = [
@@ -777,7 +796,10 @@ const Dashboard: React.FC = () => {
                       const temReuniao = r.categoria !== 'pending';
                       const vinculada = temReuniao && !!r.calendario_evento_uid;
                       const clicavel = temReuniao && !!r.link_reuniao;
-                      const titulo = !temReuniao ? 'Sem reunião agendada' : vinculada ? 'Vinculada ao calendário externo' : 'Reunião manual (não vinculada ao calendário externo)';
+                      const titulo = !temReuniao ? 'Sem reunião agendada'
+                        : !vinculada ? 'Reunião manual (não vinculada ao calendário externo)'
+                        : clicavel ? 'Vinculada ao calendário externo — abrir reunião'
+                        : 'Vinculada ao calendário externo, sem link de reunião';
                       return (
                         <a
                           href={clicavel ? r.link_reuniao : undefined}
@@ -785,8 +807,8 @@ const Dashboard: React.FC = () => {
                           rel="noopener noreferrer"
                           onClick={(e) => { if (!clicavel) e.preventDefault(); }}
                           title={titulo}
-                          className={`h-7 w-7 flex items-center justify-center rounded-lg border border-subtle transition-colors ${clicavel ? 'hover:bg-surface-3' : 'opacity-40 cursor-not-allowed'}`}
-                          style={{ color: !temReuniao ? 'var(--text-faint)' : vinculada ? 'var(--success)' : 'var(--text-faint)' }}
+                          className={`h-7 w-7 flex items-center justify-center rounded-lg border border-subtle transition-colors ${clicavel ? 'hover:bg-surface-3' : vinculada ? 'cursor-default' : 'opacity-40 cursor-not-allowed'}`}
+                          style={{ color: vinculada ? 'var(--success)' : 'var(--text-faint)' }}
                         >
                           <CalendarCheck size={14} />
                         </a>
@@ -1181,6 +1203,8 @@ const Dashboard: React.FC = () => {
 
       {/* Consulta de Carteira — busca de ativo entre todos os clientes (KPI Patrimônio sob Gestão) */}
       <ConsultaCarteiraDrawer open={consultaCarteiraOpen} onClose={() => setConsultaCarteiraOpen(false)} />
+      <ConsultaDividasDrawer open={consultaDividasOpen} onClose={() => setConsultaDividasOpen(false)} />
+      <ConsultaProtecaoDrawer open={consultaProtecaoOpen} onClose={() => setConsultaProtecaoOpen(false)} />
 
       {/* Confirmação de cancelamento de recebível */}
       <Confirmacao

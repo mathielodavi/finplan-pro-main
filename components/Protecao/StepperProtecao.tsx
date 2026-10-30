@@ -13,6 +13,8 @@ import EtapaSucessao from './EtapaSucessao';
 import DashboardProtecao from './DashboardProtecao';
 
 interface StepperProtecaoProps {
+    /** Abre direto no Resumo (link da Visão Geral), sem marcar o levantamento como concluído. */
+    abrirNoResumo?: boolean;
     clienteId: string;
     nomeCliente?: string;
 }
@@ -25,7 +27,7 @@ const ETAPAS = [
     { id: 5, label: 'Sucessão' },
 ];
 
-const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeCliente }) => {
+const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeCliente, abrirNoResumo }) => {
     const [etapa, setEtapa] = useState(1);
     const [dados, setDados] = useState<ClienteSeguro>({ cliente_id: clienteId });
     const [dependentes, setDependentes] = useState<DependenteSeguro[]>([]);
@@ -142,7 +144,8 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
 
                 // Exibe o dashboard se já marcou completo ou se é um cliente legado
                 // que já havia preenchido até a etapa 5
-                if (d.completo || (d.etapa_atual === 5 && d.funeral_cliente !== undefined)) {
+                // (abrirNoResumo só muda a visão: não grava `completo` no levantamento)
+                if (abrirNoResumo || d.completo || (d.etapa_atual === 5 && d.funeral_cliente !== undefined)) {
                     setConcluido(true);
                 }
             } catch (err) {
