@@ -67,7 +67,7 @@ const EtapaEducacao: React.FC<Props> = ({ dependentes, onChange, parametros }) =
                 <div className="rounded-2xl border border-dashed border-subtle py-16 flex flex-col items-center gap-3 text-faint">
                     <GraduationCap size={32} strokeWidth={1.5} />
                     <p className="text-sm font-bold">Nenhum dependente cadastrado</p>
-                    <p className="text-xs">Volte à Etapa 2 e adicione os dependentes primeiro.</p>
+                    <p className="text-xs">Adicione os familiares no quadrante Família, na aba Estratégia.</p>
                 </div>
             ) : (
                 <div className="space-y-3">

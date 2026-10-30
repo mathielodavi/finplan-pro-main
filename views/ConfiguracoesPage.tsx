@@ -2,18 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useProntuarioNav } from '../context/ProntuarioNavContext';
-import { User, FileText, Activity, Landmark } from 'lucide-react';
+import { User, FileText, Landmark } from 'lucide-react';
 
 // Sub-componentes
 import PerfilConfig from '../components/Configuracoes/PerfilConfig';
 import ContratosConfig from '../components/Configuracoes/ContratosConfig';
-import AcompanhamentoConfig from '../components/Configuracoes/AcompanhamentoConfig';
 import InvestimentosConfig from '../components/Configuracoes/InvestimentosConfig';
 
 const CONFIGURACOES_TABS = [
   { id: 'perfil', label: 'Meu Perfil', icon: <User size={16} /> },
   { id: 'contratos', label: 'Contratos', icon: <FileText size={16} /> },
-  { id: 'acompanhamento', label: 'Metodologia', icon: <Activity size={16} /> },
   { id: 'investimentos', label: 'Mercado', icon: <Landmark size={16} /> },
 ];
 
@@ -35,7 +33,6 @@ const ConfiguracoesPage: React.FC = () => {
         <div className="p-8">
           {activeTab === 'perfil' && <PerfilConfig />}
           {activeTab === 'contratos' && <ContratosConfig />}
-          {activeTab === 'acompanhamento' && <AcompanhamentoConfig />}
           {activeTab === 'investimentos' && <InvestimentosConfig />}
         </div>
       </div>

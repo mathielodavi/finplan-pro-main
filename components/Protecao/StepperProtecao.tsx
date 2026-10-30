@@ -1,33 +1,34 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Check, Clock, Save } from 'lucide-react';
 import { protecaoService, ClienteSeguro, DependenteSeguro, ParametrosCalculo } from '../../services/protecaoService';
 import { obterClientePorId } from '../../services/clienteService';
+import { Familiar, PARENTESCO_CONJUGE, familiaService, identidadeDoConjuge, membroDoFamiliar } from '../../services/familiaService';
 import { useProntuarioNav } from '../../context/ProntuarioNavContext';
 import { useAutoSave } from './useAutoSave';
 import EtapaDadosPessoais from './EtapaDadosPessoais';
-import EtapaDependentes from './EtapaDependentes';
 import EtapaEducacao from './EtapaEducacao';
 import EtapaPadraoVida from './EtapaPadraoVida';
 import EtapaSucessao from './EtapaSucessao';
 import DashboardProtecao from './DashboardProtecao';
 
 interface StepperProtecaoProps {
-    /** Abre direto no Resumo (link da Visão Geral), sem marcar o levantamento como concluído. */
-    abrirNoResumo?: boolean;
     clienteId: string;
     nomeCliente?: string;
 }
 
 const ETAPAS = [
-    { id: 1, label: 'Dados Pessoais' },
-    { id: 2, label: 'Dependentes' },
-    { id: 3, label: 'Educação' },
-    { id: 4, label: 'Padrão de Vida' },
-    { id: 5, label: 'Sucessão' },
+    { id: 1, label: 'Saúde e Hábitos' },
+    { id: 2, label: 'Educação' },
+    { id: 3, label: 'Padrão de Vida' },
+    { id: 4, label: 'Sucessão' },
 ];
 
-const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeCliente, abrirNoResumo }) => {
+const ULTIMA_ETAPA = ETAPAS.length;
+const VISAO_FAMILIA = 'familia';
+const primeiroNome = (nome?: string) => nome?.trim().split(/\s+/)[0] || '';
+
+const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeCliente }) => {
     const [etapa, setEtapa] = useState(1);
     const [dados, setDados] = useState<ClienteSeguro>({ cliente_id: clienteId });
     const [dependentes, setDependentes] = useState<DependenteSeguro[]>([]);
@@ -37,7 +38,10 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
         perc_custos_inventario: 20,
     });
     const [loading, setLoading] = useState(true);
-    const [concluido, setConcluido] = useState(false);
+    // O painel é a tela da aba; o wizard só abre pelo botão Editar levantamento.
+    const [editando, setEditando] = useState(false);
+    const [familiares, setFamiliares] = useState<Familiar[]>([]);
+    const [visao, setVisao] = useState(VISAO_FAMILIA);
 
     // Espelham `dados`/`dependentes` para uso dentro do closure do submenu do header (registrado
     // num efeito que não pode depender deles sem re-registrar a cada tecla digitada).
@@ -49,18 +53,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
     const saveFnDados = useCallback((d: ClienteSeguro) => protecaoService.update(clienteId, d), [clienteId]);
     const { save, saveImmediate, saving, savedAt, savedAtLabel, saveError } = useAutoSave<ClienteSeguro>({ saveFn: saveFnDados });
 
-    const saveFnDependentes = useCallback((deps: DependenteSeguro[]) => protecaoService.salvarDependentes(
-        clienteId,
-        deps.map(d => ({
-            ordem: d.ordem,
-            nome_dependente: d.nome_dependente,
-            data_nascimento_dep: d.data_nascimento_dep,
-            parentesco: d.parentesco,
-            cobertura_anos: d.cobertura_anos,
-            auxilio_mensal: d.auxilio_mensal,
-            total_calculado: d.total_calculado,
-        }))
-    ), [clienteId]);
+    const saveFnDependentes = useCallback((deps: DependenteSeguro[]) => protecaoService.salvarDependentes(deps), []);
     const { save: saveDependentes, saveImmediate: saveDependentesImmediate, saving: savingDeps, savedAt: savedAtDeps, saveError: saveErrorDeps } = useAutoSave<DependenteSeguro[]>({ saveFn: saveFnDependentes });
 
     // Indicador único de status, combinando os dois autosaves (campos do cliente + dependentes) —
@@ -74,80 +67,80 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
 
     const { setSubnav } = useProntuarioNav();
 
-    // Publica as etapas (+ Resumo) como submenu no header enquanto Proteção estiver ativa
+    const membros = useMemo(() => [
+        { chave: 'cliente', nome: nomeCliente || 'Titular' },
+        ...familiares.map(f => ({ chave: membroDoFamiliar(f), nome: f.nome })),
+    ], [nomeCliente, familiares]);
+
+    // Grava o que está no debounce antes de trocar de tela: navegar não pode perder a última
+    // edição. Fica em ref para o submenu do header não ser registrado de novo a cada render.
+    const descarregarEdicoes = () => Promise.allSettled([
+        saveImmediate(dadosRef.current),
+        saveDependentesImmediate(dependentesRef.current),
+    ]);
+    const descarregarRef = useRef(descarregarEdicoes);
+    descarregarRef.current = descarregarEdicoes;
+
+    // Submenu do header: família e cada familiar no painel; etapas no wizard.
     useEffect(() => {
-        setSubnav({
-            items: [...ETAPAS.map(e => ({ id: String(e.id), label: e.label })), { id: 'resumo', label: 'Resumo' }],
-            activeId: concluido ? 'resumo' : String(etapa),
-            onSelect: (id: string) => {
-                // Flush das duas frentes de autosave antes de trocar de tela pelo submenu do
-                // header — mesmo motivo do `irParaEtapa`: navegar não pode deixar a última edição
-                // presa só no debounce.
-                saveImmediate(dadosRef.current).catch(() => {});
-                saveDependentesImmediate(dependentesRef.current).catch(() => {});
-                if (id === 'resumo') {
-                    setConcluido(true);
-                    setDados(prev => ({ ...prev, completo: true }));
-                    protecaoService.update(clienteId, { completo: true }).catch(console.error);
-                } else {
-                    const n = Math.max(1, Math.min(5, parseInt(id)));
-                    setConcluido(false);
-                    setEtapa(n);
-                    protecaoService.update(clienteId, { etapa_atual: n }).catch(console.error);
-                }
-            },
-        });
+        setSubnav(editando
+            ? {
+                items: [...ETAPAS.map(e => ({ id: String(e.id), label: e.label })), { id: 'painel', label: 'Painel' }],
+                activeId: String(etapa),
+                onSelect: (id: string) => {
+                    descarregarRef.current();
+                    if (id === 'painel') setEditando(false);
+                    else setEtapa(Math.max(1, Math.min(ULTIMA_ETAPA, parseInt(id))));
+                },
+            }
+            : {
+                items: [
+                    { id: VISAO_FAMILIA, label: 'Família' },
+                    ...membros.map(m => ({ id: m.chave, label: primeiroNome(m.nome) || m.nome })),
+                ],
+                activeId: visao,
+                onSelect: setVisao,
+            });
         return () => setSubnav(null);
-    }, [etapa, concluido, clienteId, setSubnav]);
+    }, [editando, etapa, visao, membros, setSubnav]);
 
     // ─── Carrega os dados iniciais ────────────────────────────────────────────────
     useEffect(() => {
         const init = async () => {
             setLoading(true);
             try {
-                const [d, deps, params, cli] = await Promise.all([
+                const [d, deps, params, cli, membrosFamilia] = await Promise.all([
                     protecaoService.getOrCreate(clienteId),
                     protecaoService.getDependentes(clienteId),
                     protecaoService.getParametros(),
                     obterClientePorId(clienteId).catch(() => null),
+                    familiaService.listar(clienteId),
                 ]);
 
-                // Vincula identificação do titular ao cadastro do cliente (fonte única):
-                // e-mail, telefone, estado e data de nascimento sempre vêm de `clientes`.
+                // Identificação vem do cadastro (cliente + família), fonte única. O levantamento
+                // guarda um espelho, lido pelos cálculos, pelo score e pelo PDF.
                 let dadosIniciais = d;
                 if (cli) {
-                    const vinculo: any = {
+                    const conjuge = membrosFamilia.find(f => f.parentesco === PARENTESCO_CONJUGE);
+                    const vinculo: Record<string, any> = {
+                        nome_cliente: cli.nome || null,
                         email_cliente: cli.email || null,
                         telefone_cliente: cli.telefone || null,
                         estado_cliente: cli.estado || null,
                         data_nascimento_cliente: cli.data_nascimento || null,
+                        cpf_cliente: cli.cpf || null,
+                        profissao_cliente: cli.profissao || null,
+                        ...(conjuge ? identidadeDoConjuge(conjuge) : { casado_cliente: false }),
                     };
                     dadosIniciais = { ...d, ...vinculo };
                     // Espelha no levantamento se estiver divergente, mantendo o banco vinculado.
-                    const divergente = (d.email_cliente || null) !== vinculo.email_cliente
-                        || (d.telefone_cliente || null) !== vinculo.telefone_cliente
-                        || (d.estado_cliente || null) !== vinculo.estado_cliente
-                        || (d.data_nascimento_cliente || null) !== vinculo.data_nascimento_cliente;
-                    if (divergente) protecaoService.update(clienteId, vinculo).catch(console.error);
+                    const divergente = Object.keys(vinculo).some(k => ((d as any)[k] ?? null) !== (vinculo[k] ?? null));
+                    if (divergente) protecaoService.update(clienteId, vinculo as Partial<ClienteSeguro>).catch(console.error);
                 }
                 setDados(dadosIniciais);
-                setDependentes(deps.length > 0 ? deps : [{
-                    cliente_id: clienteId,
-                    ordem: 0,
-                    nome_dependente: '',
-                    parentesco: 'Filho(a)',
-                    cobertura_anos: 10,
-                    auxilio_mensal: 0,
-                }]);
+                setDependentes(deps);
                 setParametros(params);
-                if (d.etapa_atual) setEtapa(d.etapa_atual > 5 ? 5 : d.etapa_atual);
-
-                // Exibe o dashboard se já marcou completo ou se é um cliente legado
-                // que já havia preenchido até a etapa 5
-                // (abrirNoResumo só muda a visão: não grava `completo` no levantamento)
-                if (abrirNoResumo || d.completo || (d.etapa_atual === 5 && d.funeral_cliente !== undefined)) {
-                    setConcluido(true);
-                }
+                setFamiliares(membrosFamilia);
             } catch (err) {
                 console.error('[StepperProtecao] Erro ao carregar:', err);
             } finally {
@@ -179,45 +172,41 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
     }, [saveDependentes]);
 
     // ─── Navegação ───────────────────────────────────────────────────────────────
-    // Flush das duas frentes de autosave antes de trocar de etapa/concluir: garante que a última
-    // edição (ainda dentro da janela do debounce) esteja gravada antes de seguir em frente, em vez
-    // de depender só do timer ou do flush-ao-desmontar para não perder nada.
     const irParaEtapa = async (novaEtapa: number) => {
-        const clamp = Math.max(1, Math.min(5, novaEtapa));
-        setEtapa(clamp);
-        await Promise.allSettled([
-            saveImmediate(dados),
-            saveDependentesImmediate(dependentes),
-            protecaoService.update(clienteId, { etapa_atual: clamp }),
-        ]);
+        setEtapa(Math.max(1, Math.min(ULTIMA_ETAPA, novaEtapa)));
+        await descarregarEdicoes();
+    };
+
+    const abrirWizard = () => {
+        setEtapa(1);
+        setEditando(true);
     };
 
     const proximo = async () => {
-        if (etapa < 5) {
+        if (etapa < ULTIMA_ETAPA) {
             irParaEtapa(etapa + 1);
         } else {
-            setConcluido(true);
-            await Promise.allSettled([
-                saveImmediate({ ...dados, completo: true }),
-                saveDependentesImmediate(dependentes),
-            ]);
+            setEditando(false);
             setDados(prev => ({ ...prev, completo: true }));
+            await Promise.allSettled([
+                saveImmediate({ ...dadosRef.current, completo: true }),
+                saveDependentesImmediate(dependentesRef.current),
+            ]);
         }
     };
 
     const voltar = () => {
-        if (concluido) { setConcluido(false); return; }
         if (etapa > 1) irParaEtapa(etapa - 1);
+        else { descarregarEdicoes(); setEditando(false); }
     };
 
     // Completude por etapa (baseada em dados preenchidos, não na posição atual)
     const temDados = (id: number): boolean => {
         switch (id) {
-            case 1: return !!dados.data_nascimento_cliente || !!dados.cpf_cliente || !!dados.profissao_cliente;
-            case 2: return dependentes.some(d => d.nome_dependente?.trim());
-            case 3: return dependentes.some(d => (d.auxilio_mensal || 0) > 0 || (d.total_calculado || 0) > 0);
-            case 4: return (dados.renda_cliente || 0) > 0 || (dados.despesas_obrigatorias || 0) > 0;
-            case 5: return (dados.bens_cliente || 0) > 0 || (dados.funeral_cliente || 0) > 0 || (dados.investimentos_cliente || 0) > 0;
+            case 1: return !!dados.peso_cliente || !!dados.altura_cliente;
+            case 2: return dependentes.some(d => (d.auxilio_mensal || 0) > 0 || (d.total_calculado || 0) > 0);
+            case 3: return (dados.renda_cliente || 0) > 0 || (dados.despesas_obrigatorias || 0) > 0;
+            case 4: return (dados.bens_cliente || 0) > 0 || (dados.funeral_cliente || 0) > 0 || (dados.investimentos_cliente || 0) > 0;
             default: return false;
         }
     };
@@ -234,7 +223,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
     return (
         <div className="space-y-6">
             {/* ── Stepper Visual ─────────────────────────────────────────────────── */}
-            {!concluido && (
+            {editando && (
                 <div className="flex items-center gap-0">
                     {ETAPAS.map((e, i) => {
                         const ativa = e.id === etapa;
@@ -286,38 +275,30 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
             </div>
 
             {/* ── Conteúdo da Etapa ──────────────────────────────────────────────── */}
-            {concluido ? (
+            {!editando ? (
                 <DashboardProtecao
                     dados={dados}
                     dependentes={dependentes}
                     parametros={parametros}
                     nomeCliente={nomeCliente}
-                    onEditar={voltar}
+                    onEditar={abrirWizard}
+                    membros={membros}
+                    membroAtivo={visao === VISAO_FAMILIA ? null : visao}
+                    onAtualizar={campos => setDados(prev => ({ ...prev, ...campos }))}
                 />
             ) : (
                 <>
                     {etapa === 1 && (
-                        <EtapaDadosPessoais
-                            dados={dados}
-                            onChange={handleChange}
-                            onChangeMultiple={handleChangeMultiple}
-                        />
+                        <EtapaDadosPessoais dados={dados} onChange={handleChange} />
                     )}
                     {etapa === 2 && (
-                        <EtapaDependentes
-                            clienteId={clienteId}
-                            dependentes={dependentes}
-                            onChange={handleChangeDependentes}
-                        />
-                    )}
-                    {etapa === 3 && (
                         <EtapaEducacao
                             dependentes={dependentes}
                             onChange={handleChangeDependentes}
                             parametros={parametros}
                         />
                     )}
-                    {etapa === 4 && (
+                    {etapa === 3 && (
                         <EtapaPadraoVida
                             dados={dados}
                             onChange={handleChange}
@@ -325,7 +306,7 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                             parametros={parametros}
                         />
                     )}
-                    {etapa === 5 && (
+                    {etapa === 4 && (
                         <EtapaSucessao
                             dados={dados}
                             onChange={handleChange}
@@ -337,16 +318,15 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
                     <div className="flex justify-between pt-6 border-t border-[color:var(--border)]">
                         <button
                             onClick={voltar}
-                            disabled={etapa === 1}
-                            className="px-5 h-[40px] flex items-center justify-center rounded-lg border border-subtle text-[color:var(--text-muted)] font-semibold text-[11px] uppercase tracking-widest hover:bg-surface-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="px-5 h-[40px] flex items-center justify-center rounded-lg border border-subtle text-[color:var(--text-muted)] font-semibold text-[11px] uppercase tracking-widest hover:bg-surface-2 transition-all"
                         >
-                            ← Voltar
+                            {etapa === 1 ? '← Painel' : '← Voltar'}
                         </button>
                         <button
                             onClick={proximo}
                             className="px-6 h-[40px] flex items-center justify-center rounded-lg bg-[color:var(--primary)] text-white font-bold text-[11px] uppercase tracking-widest hover:opacity-90 transition-all shadow-sm"
                         >
-                            {etapa === 5 ? 'Ver Resumo →' : 'Próximo →'}
+                            {etapa === ULTIMA_ETAPA ? 'Concluir →' : 'Próximo →'}
                         </button>
                     </div>
                 </>

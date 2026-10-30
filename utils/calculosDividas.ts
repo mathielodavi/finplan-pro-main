@@ -429,6 +429,33 @@ export interface SaldoAtualCalculado {
     parcelasAbertas: number;
 }
 
+type CreditoCronograma = Pick<DividaCredito, 'contracted_value' | 'installment_value' | 'total_installments' |
+    'start_date' | 'cet_monthly' | 'amortization_system' | 'monetary_correction_annual' | 'monetary_correction_effective' |
+    'situacao' | 'parcela_ultimo_pagamento'>;
+
+const cronogramaDoCredito = (credito: CreditoCronograma): CronogramaAmortizacao => {
+    const sistema = credito.amortization_system || 'price';
+    return gerarCronogramaAmortizacao({
+        saldo: credito.contracted_value,
+        meses: credito.total_installments,
+        taxaMensal: (credito.cet_monthly || 0) / 100,
+        sistema,
+        parcelaFixa: sistema === 'price' ? credito.installment_value : undefined,
+        correcaoMensal: correcaoMensalDe(credito),
+    });
+};
+
+/** Última parcela já vencida do cronograma: 0 quando o contrato ainda não andou. */
+const mesAncoraDoCredito = (credito: CreditoCronograma, hoje: Date): number => {
+    const total = credito.total_installments || 0;
+    if (credito.situacao === 'em_atraso') return Math.min(Math.max(0, credito.parcela_ultimo_pagamento || 0), total);
+    if (!credito.start_date) return 0;
+    const inicio = new Date(credito.start_date);
+    if (isNaN(inicio.getTime())) return 0;
+    const mesesDecorridos = (hoje.getFullYear() - inicio.getFullYear()) * 12 + (hoje.getMonth() - inicio.getMonth());
+    return Math.min(Math.max(0, mesesDecorridos), total);
+};
+
 /**
  * Fonte ÚNICA e autoritativa de saldo devedor / parcelas em aberto — substitui a entrada
  * manual removida do formulário. Ancora o cronograma real (Price/SAC) em:
@@ -441,9 +468,7 @@ export interface SaldoAtualCalculado {
  * nunca recalcula a taxa por conta própria.
  */
 export const calcularSaldoEParcelasAtual = (
-    credito: Pick<DividaCredito, 'contracted_value' | 'installment_value' | 'total_installments' |
-        'start_date' | 'cet_monthly' | 'amortization_system' | 'monetary_correction_annual' | 'monetary_correction_effective' |
-        'situacao' | 'parcela_ultimo_pagamento'>,
+    credito: CreditoCronograma,
     hoje: Date = new Date()
 ): SaldoAtualCalculado => {
     const totalInstallments = credito.total_installments || 0;
@@ -451,30 +476,10 @@ export const calcularSaldoEParcelasAtual = (
         return { saldoDevedor: credito.contracted_value || 0, parcelasAbertas: totalInstallments };
     }
 
-    const taxaMensal = (credito.cet_monthly || 0) / 100;
-    const correcaoMensal = correcaoMensalDe(credito);
-    const sistema = credito.amortization_system || 'price';
-
-    const cronograma = gerarCronogramaAmortizacao({
-        saldo: credito.contracted_value, meses: totalInstallments, taxaMensal, sistema,
-        parcelaFixa: sistema === 'price' ? credito.installment_value : undefined,
-        correcaoMensal,
-    });
-
-    let mesAncora: number;
-    if (credito.situacao === 'em_atraso') {
-        mesAncora = Math.min(Math.max(0, credito.parcela_ultimo_pagamento || 0), totalInstallments);
-    } else {
-        if (!credito.start_date) return { saldoDevedor: credito.contracted_value, parcelasAbertas: totalInstallments };
-        const inicio = new Date(credito.start_date);
-        if (isNaN(inicio.getTime())) return { saldoDevedor: credito.contracted_value, parcelasAbertas: totalInstallments };
-        const mesesDecorridos = (hoje.getFullYear() - inicio.getFullYear()) * 12 + (hoje.getMonth() - inicio.getMonth());
-        mesAncora = Math.min(Math.max(0, mesesDecorridos), totalInstallments);
-    }
-
+    const mesAncora = mesAncoraDoCredito(credito, hoje);
     if (mesAncora <= 0) return { saldoDevedor: credito.contracted_value, parcelasAbertas: totalInstallments };
 
-    const ponto = cronograma.parcelas[mesAncora - 1];
+    const ponto = cronogramaDoCredito(credito).parcelas[mesAncora - 1];
     // Arredonda a centavos — o cronograma acumula erro de ponto flutuante a cada mês
     // (juros compostos), e o saldo aqui vira valor "oficial" exibido na tela.
     const saldoDevedor = Math.round((ponto ? ponto.saldo : 0) * 100) / 100;
@@ -482,6 +487,19 @@ export const calcularSaldoEParcelasAtual = (
         saldoDevedor,
         parcelasAbertas: Math.max(0, totalInstallments - mesAncora),
     };
+};
+
+/**
+ * Soma das parcelas a pagar nos próximos 12 meses, com juros, a partir da mesma posição do
+ * cronograma usada no saldo. Base do Passivo Circulante do balanço patrimonial.
+ */
+export const parcelasProximos12Meses = (credito: CreditoCronograma, hoje: Date = new Date()): number => {
+    if ((credito.total_installments || 0) <= 0 || !credito.contracted_value) return 0;
+    const mesAncora = mesAncoraDoCredito(credito, hoje);
+    const soma = cronogramaDoCredito(credito).parcelas
+        .slice(mesAncora, mesAncora + 12)
+        .reduce((acc, p) => acc + p.parcela, 0);
+    return Math.round(soma * 100) / 100;
 };
 
 /** Soma `meses` a `dataInicio` (YYYY-MM-DD) e devolve a data resultante no mesmo formato. */

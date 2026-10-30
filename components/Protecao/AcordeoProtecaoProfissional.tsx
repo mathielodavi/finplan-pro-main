@@ -21,9 +21,13 @@ const EXTRA_VAZIO: Omit<SeguroExtra, 'id' | 'cliente_id'> = {
 interface Props {
     dados: ClienteSeguro;
     defaultAberto?: boolean;
+    /** Abre o formulário de nova apólice já com este tipo selecionado. */
+    tipoNovo?: string;
+    /** Membros da família, para indicar o titular da proteção profissional. */
+    membros?: { chave: string; nome: string }[];
 }
 
-const AcordeoProtecaoProfissional: React.FC<Props> = ({ dados, defaultAberto }) => {
+const AcordeoProtecaoProfissional: React.FC<Props> = ({ dados, defaultAberto, tipoNovo, membros = [] }) => {
     const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [extras, setExtras] = useState<SeguroExtra[]>([]);
     const [loading, setLoading] = useState(false);
@@ -35,6 +39,13 @@ const AcordeoProtecaoProfissional: React.FC<Props> = ({ dados, defaultAberto }) 
     useEffect(() => {
         if (aberto) loadExtras();
     }, [aberto]);
+
+    useEffect(() => {
+        if (tipoNovo) {
+            setForm({ ...EXTRA_VAZIO, cliente_id: dados.cliente_id, tipo_seguro: tipoNovo });
+            setModal(true);
+        }
+    }, []);
 
     const loadExtras = async () => {
         setLoading(true);
@@ -197,15 +208,31 @@ const AcordeoProtecaoProfissional: React.FC<Props> = ({ dados, defaultAberto }) 
                             <div>
                                 <SeletorContratoProtecao clienteId={dados.cliente_id} value={form.contrato_id} onChange={v => setForm(f => ({ ...f, contrato_id: v }))} labelClass={lbl} inputClass={inp} />
                             </div>
-                            <div>
-                                <label className={lbl}>Mensalidade (R$)</label>
-                                <div className="relative">
-                                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-faint">R$</span>
-                                    <input type="text"
-                                        value={(form.mensalidade || 0) > 0 ? (form.mensalidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}
-                                        onChange={e => { const n = e.target.value.replace(/\D/g, ''); setForm(f => ({ ...f, mensalidade: n ? parseInt(n) / 100 : 0 })); }}
-                                        className={`${inp} pl-9`} placeholder="0,00" />
+                            {form.tipo_seguro === 'Responsabilidade Civil' && membros.length > 0 && (
+                                <div>
+                                    <label className={lbl}>Titular</label>
+                                    <select value={form.membro || ''} onChange={e => setForm(f => ({ ...f, membro: e.target.value || null }))} className={inp}>
+                                        <option value="">Não informado</option>
+                                        {membros.map(m => <option key={m.chave} value={m.chave}>{m.nome}</option>)}
+                                    </select>
                                 </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    { campo: 'valor_cobertura' as const, rotulo: 'Valor de cobertura (R$)' },
+                                    { campo: 'mensalidade' as const, rotulo: 'Mensalidade (R$)' },
+                                ].map(({ campo, rotulo }) => (
+                                    <div key={campo}>
+                                        <label className={lbl}>{rotulo}</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-faint">R$</span>
+                                            <input type="text"
+                                                value={(form[campo] || 0) > 0 ? (form[campo] || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}
+                                                onChange={e => { const n = e.target.value.replace(/\D/g, ''); setForm(f => ({ ...f, [campo]: n ? parseInt(n) / 100 : 0 })); }}
+                                                className={`${inp} pl-9`} placeholder="0,00" />
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
 

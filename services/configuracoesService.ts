@@ -112,62 +112,6 @@ export const configService = {
     if (error) throw error;
   },
 
-  // --- ACOMPANHAMENTO ---
-  async getAcompanhamentos() {
-    const targetId = await getTargetId();
-    const { data: headers, error: hError } = await supabase.from('padroes_acompanhamento').select('*').eq('empresa_id', targetId);
-    if (hError) throw hError;
-    return await Promise.all((headers || []).map(async (h) => {
-      const [fases, itens] = await Promise.all([
-        supabase.from('padroes_acompanhamento_fases').select('*').eq('padrao_acompanhamento_id', h.id),
-        supabase.from('padroes_acompanhamento_itens').select('*').eq('padrao_acompanhamento_id', h.id)
-      ]);
-      return { ...h, fases: fases.data || [], itens: itens.data || [] };
-    }));
-  },
-
-  async saveAcompanhamento(header: any, fases: any[], itens: any[]) {
-    const targetId = await getTargetId();
-    const headerPayload: any = { ...header, empresa_id: targetId };
-    if (!headerPayload.id) delete headerPayload.id;
-
-    const { data: hData, error: hError } = header.id
-      ? await supabase.from('padroes_acompanhamento').update(headerPayload).eq('id', header.id).select().single()
-      : await supabase.from('padroes_acompanhamento').insert([headerPayload]).select().single();
-
-    if (hError) throw hError;
-
-    if (header.id) {
-      await supabase.from('padroes_acompanhamento_itens').delete().eq('padrao_acompanhamento_id', hData.id);
-      await supabase.from('padroes_acompanhamento_fases').delete().eq('padrao_acompanhamento_id', hData.id);
-    }
-
-    const phaseMapping: Record<string, string> = {};
-    for (const phase of fases) {
-      const { data: savedPhase } = await supabase.from('padroes_acompanhamento_fases').insert([{
-        padrao_acompanhamento_id: hData.id,
-        nome_fase: phase.nome_fase,
-        ordem: phase.ordem
-      }]).select().single();
-      if (savedPhase && (phase.tempId || phase.id)) phaseMapping[phase.tempId || phase.id] = savedPhase.id;
-    }
-
-    const itemsPayload = itens.map(it => ({
-      padrao_acompanhamento_id: hData.id,
-      fase_id: it.fase_temp_id ? phaseMapping[it.fase_temp_id] : (it.fase_id ? (phaseMapping[it.fase_id] || it.fase_id) : null),
-      descricao: it.descricao,
-      ordem: it.ordem
-    }));
-
-    if (itemsPayload.length > 0) await supabase.from('padroes_acompanhamento_itens').insert(itemsPayload);
-    return hData;
-  },
-
-  async deleteAcompanhamento(id: string) {
-    const { error } = await supabase.from('padroes_acompanhamento').delete().eq('id', id);
-    if (error) throw error;
-  },
-
   // --- INVESTIMENTOS ---
   async getAssetAllocations() {
     const targetId = await getTargetId();

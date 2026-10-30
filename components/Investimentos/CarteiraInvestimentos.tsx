@@ -6,6 +6,7 @@ import { carteiraRecomendadaService } from '../../services/carteiraRecomendadaSe
 import { cambioService, MOEDAS_SUPORTADAS, MoedaCodigo } from '../../services/cambioService';
 import { formatarMoeda, formatarCNPJ, formatarData, diasDesde, normalizarTexto } from '../../utils/formatadores';
 import { somarPesosPorFaixaClasse, idealNaClasse } from '../../utils/alocacaoIdeal';
+import { prazoPadraoAtivo } from '../../utils/balanco';
 import Modal from '../Modal';
 import SidePanel from '../UI/SidePanel';
 import Badge from '../UI/Badge';
@@ -415,6 +416,19 @@ const CarteiraInvestimentos = ({ clienteId, cliente, ativos, onRefresh }: any) =
                   {classesNormalizadas.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+            </div>
+            <div>
+              <label className={fLabel}>Prazo de liquidação</label>
+              <select
+                value={editing?.prazo_liquidacao || ''}
+                onChange={e => setEditing({ ...editing, prazo_liquidacao: e.target.value || null })}
+                className={fInput}
+              >
+                <option value="">Automático ({prazoPadraoAtivo(editing || {}) === 'curto' ? 'curto prazo' : 'médio e longo prazo'})</option>
+                <option value="curto">Curto prazo</option>
+                <option value="longo">Médio e longo prazo</option>
+              </select>
+              <p className="text-[10px] text-faint mt-1.5">Define a linha do ativo no balanço patrimonial. No automático, Caixa e ativos da reserva de emergência ficam em curto prazo.</p>
             </div>
             {editing?.status === 'Vender' && (
               <div>

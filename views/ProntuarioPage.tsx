@@ -8,12 +8,11 @@ import { investimentoService } from '../services/investimentoService';
 import { useClienteContext } from '../context/ClienteContext';
 import { useProntuarioNav } from '../context/ProntuarioNavContext';
 import Button from '../components/UI/Button';
-import { TrendingUp, History, ClipboardList, Wallet, Shield, CreditCard, Download } from 'lucide-react';
+import { TrendingUp, History, Wallet, Shield, CreditCard, Download } from 'lucide-react';
 
 // Abas
 import AbaResumo from '../components/Prontuario/AbaResumo';
 import AbaReunioes from '../components/Prontuario/AbaReunioes';
-import AbaAtendimento from '../components/Prontuario/AbaAtendimento';
 import AbaInvestimentos from '../components/Prontuario/AbaInvestimentos';
 import ModalGerarRelatorio from '../components/Relatorios/ModalGerarRelatorio';
 import StepperProtecao from '../components/Protecao/StepperProtecao';
@@ -22,7 +21,6 @@ import AbaDividas from '../components/Dividas/AbaDividas';
 
 const TABS = [
   { id: 'resumo', label: 'Estratégia', icon: <TrendingUp size={16} /> },
-  { id: 'atendimento', label: 'Checklist', icon: <ClipboardList size={16} /> },
   { id: 'protecao', label: 'Proteção', icon: <Shield size={16} /> },
   { id: 'investimentos', label: 'Patrimônio', icon: <Wallet size={16} /> },
   { id: 'dividas', label: 'Dívidas', icon: <CreditCard size={16} /> },
@@ -39,8 +37,7 @@ const ProntuarioPage: React.FC = () => {
   // Aba inicial pode vir na URL (?aba=dividas), usada pelos links das consultas da Visão Geral.
   const [searchParams] = useSearchParams();
   const abaDaUrl = searchParams.get('aba');
-  const veioPorLink = TABS.some(t => t.id === abaDaUrl);
-  const [activeTab, setActiveTab] = useState(veioPorLink ? abaDaUrl! : 'resumo');
+  const [activeTab, setActiveTab] = useState(TABS.some(t => t.id === abaDaUrl) ? abaDaUrl! : 'resumo');
   const [loading, setLoading] = useState(true);
   const [modalPDF, setModalPDF] = useState(false);
   const [contratos, setContratos] = useState<any[]>([]);
@@ -122,10 +119,7 @@ const ProntuarioPage: React.FC = () => {
       {/* Conteúdo da aba (navegação vive no header) */}
       <div className="min-h-[560px]">
         {activeTab === 'resumo' && <AbaResumo cliente={cliente} onUpdate={loadData} />}
-        {activeTab === 'atendimento' && <AbaAtendimento clienteId={cliente.id!} />}
-        {activeTab === 'protecao' && (
-          <StepperProtecao clienteId={cliente.id!} nomeCliente={cliente.nome} abrirNoResumo={veioPorLink && abaDaUrl === 'protecao'} />
-        )}
+        {activeTab === 'protecao' && <StepperProtecao clienteId={cliente.id!} nomeCliente={cliente.nome} />}
         {activeTab === 'investimentos' && <AbaInvestimentos clienteId={cliente.id!} />}
         {activeTab === 'dividas' && <AbaDividas clienteId={cliente.id!} rendaMensalCliente={cliente.renda_mensal || 0} />}
         {activeTab === 'reunioes' && <AbaReunioes clienteId={cliente.id!} reunioes={reunioes} onRefresh={loadData} />}

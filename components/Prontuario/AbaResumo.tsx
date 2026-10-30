@@ -3,12 +3,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Cliente, atualizarCliente } from '../../services/clienteService';
 import { obterContratosPorCliente, atualizarContrato, deletarContrato } from '../../services/contratoService';
 import { reuniaoService, Reuniao } from '../../services/reuniaoService';
-import { configService } from '../../services/configuracoesService';
 import { financeiroService, Parcela } from '../../services/financeiroService';
-import { investimentoService } from '../../services/investimentoService';
-import { dividasService } from '../../services/dividasService';
+import { patrimonioService } from '../../services/patrimonioService';
 import { protecaoService } from '../../services/protecaoService';
-import { acompanhamentoService } from '../../services/acompanhamentoService';
 import { inadimplenciaService, EpisodioInadimplencia } from '../../services/inadimplenciaService';
 import { formatarMoeda, formatarData } from '../../utils/formatadores';
 import { calcularTermometro } from '../../utils/termometroUtils';
@@ -19,7 +16,8 @@ import Badge from '../UI/Badge';
 import Button from '../UI/Button';
 import Confirmacao from '../Confirmacao';
 import ContratoFormDrawer from '../Contratos/ContratoFormDrawer';
-import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, Wallet, CreditCard, HeartPulse, ListChecks, AlertCircle, Ban, PauseCircle } from 'lucide-react';
+import QuadranteFamilia from './QuadranteFamilia';
+import { Activity, Plus, FileText, ChevronRight, Clock, CheckCircle2, AlertTriangle, Edit3, Trash2, Calendar, Wallet, Landmark, CreditCard, HeartPulse, AlertCircle, Ban, PauseCircle } from 'lucide-react';
 import { toast } from '../../utils/toast';
 
 interface AbaResumoProps {
@@ -31,12 +29,10 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const { nav } = useProntuarioNav();
   const [contratos, setContratos] = useState<any[]>([]);
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
-  const [roteirosPadrao, setRoteirosPadrao] = useState<any[]>([]);
   // Dados cross-domain para a central de controle
-  const [patrimonioInvestido, setPatrimonioInvestido] = useState(0);
+  const [patrimonioTotal, setPatrimonioTotal] = useState(0);
   const [saldoDevedor, setSaldoDevedor] = useState(0);
   const [protecaoScore, setProtecaoScore] = useState(0);
-  const [checklist, setChecklist] = useState({ total: 0, concluidos: 0 });
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -65,27 +61,18 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cData, rData, roteiros, ativos, creditos, consorcios, score, itensChecklist, episData] = await Promise.all([
+      const [cData, rData, balanco, score, episData] = await Promise.all([
         obterContratosPorCliente(cliente.id!),
         reuniaoService.getPorCliente(cliente.id!),
-        configService.getAcompanhamentos(),
-        investimentoService.getAtivos(cliente.id!),
-        dividasService.getCreditos(cliente.id!),
-        dividasService.getConsorcios(cliente.id!),
+        patrimonioService.getBalanco(cliente.id!),
         protecaoService.getScoreCliente(cliente.id!),
-        acompanhamentoService.getItensCliente(cliente.id!),
         inadimplenciaService.getEpisodios(cliente.id!)
       ]);
       setEpisodios(episData || []);
 
-      // Patrimônio investido (soma dos ativos) e saldo devedor (créditos + consórcios)
-      setPatrimonioInvestido((ativos || []).reduce((acc: number, a: any) => acc + (a.valor_atual || 0), 0));
-      const totalCredito = (creditos || []).reduce((acc, c: any) => acc + (Number(c.outstanding_balance) || 0), 0);
-      const totalConsorcio = (consorcios || []).reduce((acc, c: any) => acc + Math.max(0, (Number(c.credit_letter_value) || 0) - (Number(c.total_paid_to_date) || 0)), 0);
-      setSaldoDevedor(totalCredito + totalConsorcio);
+      setPatrimonioTotal(balanco.totalAtivo);
+      setSaldoDevedor(balanco.totalPassivo);
       setProtecaoScore(score);
-      const itens = itensChecklist || [];
-      setChecklist({ total: itens.length, concluidos: itens.filter((i: any) => i.concluido).length });
 
       const contratosComFinanceiro = await Promise.all((cData || []).map(async (c) => {
         try {
@@ -101,7 +88,6 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
 
       setContratos(contratosComFinanceiro);
       setReunioes(rData || []);
-      setRoteirosPadrao(roteiros || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -210,18 +196,6 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
     finally { setBaixando(false); }
   };
 
-  const handleMetodologiaChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const roteiroId = e.target.value;
-    const roteiro = roteirosPadrao.find(r => r.id === roteiroId);
-    try {
-      await atualizarCliente(cliente.id!, {
-        protocolo_id: roteiroId || null,
-        status_atendimento: roteiro?.nome || ''
-      });
-      onUpdate();
-    } catch (err) { toast.error("Erro ao vincular metodologia."); }
-  };
-
   const totalLiquidoEsperadoContrato = useMemo(() => {
     const fator = (contratoSelecionado?.repasse_percentual || 100) / 100;
     return parcelasContrato
@@ -238,11 +212,10 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   const termometro = calcularTermometro(ultimaReuniao, proximaReuniao);
 
   // ─── Central de controle: derivados ──────────────────────────────────────
-  const patrimonioLiquido = patrimonioInvestido - saldoDevedor;
+  const patrimonioLiquido = patrimonioTotal - saldoDevedor;
   const temPlanoAtivo = contratos.some((c: any) => c.tipo === 'planejamento' && c.status === 'ativo');
   const proximaAcao = categorizarAgendaCliente(reunioes);
-  const checklistPct = checklist.total > 0 ? Math.round((checklist.concluidos / checklist.total) * 100) : 0;
-  const endividamentoRatio = patrimonioInvestido > 0 ? saldoDevedor / patrimonioInvestido : 0;
+  const endividamentoRatio = patrimonioTotal > 0 ? saldoDevedor / patrimonioTotal : 0;
 
   // ─── Inadimplência (por contrato, agregado no cliente) ──────────────────
   const contratosPausados = contratos.filter((c: any) => c.pausado_em);
@@ -264,7 +237,6 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   if (endividamentoRatio > 0.5) pontosAtencao.push({ label: `Endividamento alto (${Math.round(endividamentoRatio * 100)}% do patrimônio)`, tab: 'dividas', sev: 'danger' });
   if (proximaAcao.categoria === 'late') pontosAtencao.push({ label: `Reunião em atraso${proximaAcao.qtdAtrasadas > 1 ? ` (${proximaAcao.qtdAtrasadas})` : ''}`, tab: 'reunioes', sev: 'danger' });
   else if (proximaAcao.categoria === 'pending') pontosAtencao.push({ label: 'Sem reunião agendada', tab: 'reunioes', sev: 'warning' });
-  if (checklist.total > 0 && checklistPct < 100) pontosAtencao.push({ label: `Checklist em andamento (${checklistPct}%)`, tab: 'atendimento', sev: 'warning' });
 
   const labelStyle = "text-[12px] font-semibold text-[color:var(--text-muted)] block mb-1.5";
   const inputStyle = "w-full h-[36px] px-3 bg-surface border border-subtle rounded-lg font-medium text-main outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 transition-all text-[13px]";
@@ -306,7 +278,7 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* ── Faixa de KPIs (central de controle) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Relacionamento */}
         <div className={kpiCard}>
           <div className="flex items-center justify-between">
@@ -319,17 +291,22 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
           </div>
         </div>
 
-        {/* Protocolo */}
+        {/* Patrimônio */}
         <div className={kpiCard}>
-          <span className={kpiLabel}>Protocolo</span>
-          <select
-            value={cliente.protocolo_id || ''}
-            onChange={handleMetodologiaChange}
-            className="w-full h-8 px-2 bg-surface-2 border border-subtle rounded-lg font-semibold text-primary text-[12px] outline-none cursor-pointer hover:border-primary transition-colors"
-          >
-            <option value="">Vincular...</option>
-            {roteirosPadrao.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
-          </select>
+          <div className="flex items-center justify-between">
+            <span className={kpiLabel}>Patrimônio</span>
+            <Landmark size={14} className="text-[color:var(--primary)]" />
+          </div>
+          <p className={kpiValue}>{formatarMoeda(patrimonioTotal)}</p>
+        </div>
+
+        {/* Endividamento */}
+        <div className={kpiCard}>
+          <div className="flex items-center justify-between">
+            <span className={kpiLabel}>Endividamento</span>
+            <CreditCard size={14} className="text-[color:var(--danger)]" />
+          </div>
+          <p className={kpiValue} style={saldoDevedor > 0 ? { color: 'var(--danger)' } : undefined}>{formatarMoeda(saldoDevedor > 0 ? -saldoDevedor : 0)}</p>
         </div>
 
         {/* Patrimônio Líquido */}
@@ -341,15 +318,6 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
           <p className={kpiValue} style={patrimonioLiquido < 0 ? { color: 'var(--danger)' } : undefined}>{formatarMoeda(patrimonioLiquido)}</p>
         </div>
 
-        {/* Endividamento */}
-        <div className={kpiCard}>
-          <div className="flex items-center justify-between">
-            <span className={kpiLabel}>Endividamento</span>
-            <CreditCard size={14} className="text-[color:var(--danger)]" />
-          </div>
-          <p className={kpiValue}>{formatarMoeda(saldoDevedor)}</p>
-        </div>
-
         {/* Proteção */}
         <div className={kpiCard}>
           <div className="flex items-center justify-between">
@@ -357,16 +325,6 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
             <HeartPulse size={14} style={{ color: corProtecao }} />
           </div>
           <p className={kpiValue} style={{ color: corProtecao }}>{Math.round(protecaoScore)}%</p>
-        </div>
-
-        {/* Checklist */}
-        <div className={kpiCard}>
-          <div className="flex items-center justify-between">
-            <span className={kpiLabel}>Checklist</span>
-            <ListChecks size={14} className="text-[color:var(--primary)]" />
-          </div>
-          <p className={kpiValue}>{checklist.total > 0 ? `${checklistPct}%` : '—'}</p>
-          {checklist.total > 0 && <p className="text-[10px] text-faint -mt-1">{checklist.concluidos}/{checklist.total} concluídos</p>}
         </div>
       </div>
 
@@ -403,8 +361,9 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
         )}
       </div>
 
-      {/* ── Acordos (tabela) ── */}
-      <section className="bg-surface rounded-xl border border-subtle overflow-hidden">
+      {/* ── Acordos + Família ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3 items-start">
+      <section className="bg-surface rounded-xl border border-subtle overflow-hidden min-w-0">
         <div className="px-4 py-3 border-b border-subtle flex justify-between items-center">
           <div className="flex items-center gap-2">
             <FileText size={15} className="text-[color:var(--primary)]" />
@@ -474,6 +433,8 @@ const AbaResumo: React.FC<AbaResumoProps> = ({ cliente, onUpdate }) => {
           </div>
         )}
       </section>
+      <QuadranteFamilia cliente={cliente} onUpdate={onUpdate} />
+      </div>
 
       {/* ── Anotações Gerais ── */}
       <div className="bg-surface rounded-xl border border-subtle p-4">
