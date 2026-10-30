@@ -1,14 +1,20 @@
 import React from 'react';
-import { Settings } from 'lucide-react';
+import { Edit2, Settings, Trash2 } from 'lucide-react';
 import Modal from '../Modal';
 import { PlanoSaude, SeguroExtra, SeguroVida } from '../../services/protecaoService';
 import { LinhaProtecao, MembroProtecao, SEGUROS_DE_BENS, TIPO_SEGURO_PROFISSIONAL, apoliceVigente } from '../../utils/protecaoTabela';
 import { formatarData, formatarMoeda } from '../../utils/formatadores';
 
+export interface ApoliceParaExcluir { tipo: 'plano' | 'vida' | 'extra'; id: string; descricao: string }
+
 interface Props {
   linha: LinhaProtecao | null;
   onClose: () => void;
-  onGerenciar: (linha: LinhaProtecao) => void;
+  onConfigurarReserva: () => void;
+  onEditarPlano: (plano: PlanoSaude) => void;
+  onEditarSeguro: (seguro: SeguroVida) => void;
+  onEditarExtra: (seguro: SeguroExtra) => void;
+  onExcluir: (apolice: ApoliceParaExcluir) => void;
   /** Visão aberta: chave do membro, ou null para a família. */
   membro: string | null;
   membros: MembroProtecao[];
@@ -48,8 +54,17 @@ const Tabela: React.FC<{ colunas: Coluna[]; linhas: React.ReactNode[][]; vazio: 
   )
 );
 
+const COLUNA_ACAO: Coluna = { titulo: 'Ação', direita: true };
+
+const AcoesApolice: React.FC<{ onEditar: () => void; onExcluir: () => void }> = ({ onEditar, onExcluir }) => (
+  <span className="inline-flex gap-1">
+    <button type="button" title="Editar" onClick={onEditar} className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Edit2 size={13} /></button>
+    <button type="button" title="Excluir" onClick={onExcluir} className="p-1.5 text-faint hover:text-[color:var(--danger)] hover:bg-surface-2 rounded-lg transition-colors"><Trash2 size={13} /></button>
+  </span>
+);
+
 /** Lista o que está contratado em uma linha da tabela de proteção. */
-const ModalCoberturas: React.FC<Props> = ({ linha, onClose, onGerenciar, membro, membros, hoje, planos, seguros, extras, ativos }) => {
+const ModalCoberturas: React.FC<Props> = ({ linha, onClose, onConfigurarReserva, onEditarPlano, onEditarSeguro, onEditarExtra, onExcluir, membro, membros, hoje, planos, seguros, extras, ativos }) => {
   if (!linha) return null;
 
   const nomeMembro = (chave?: string | null) => membros.find(m => m.chave === chave)?.nome || chave || '—';
@@ -79,8 +94,11 @@ const ModalCoberturas: React.FC<Props> = ({ linha, onClose, onGerenciar, membro,
     if (linha.detalhe === 'plano') {
       return (
         <Tabela
-          colunas={[{ titulo: 'Membro' }, { titulo: 'Operadora' }, { titulo: 'Cobertura' }, { titulo: 'Vencimento' }, { titulo: 'Mensalidade', direita: true }]}
-          linhas={doMembro(planos).map(p => [nomeMembro(p.membro), p.operadora || '—', p.cobertura || '—', vencimento(p), formatarMoeda(p.mensalidade || 0)])}
+          colunas={[{ titulo: 'Membro' }, { titulo: 'Operadora' }, { titulo: 'Cobertura' }, { titulo: 'Vencimento' }, { titulo: 'Mensalidade', direita: true }, COLUNA_ACAO]}
+          linhas={doMembro(planos).map(p => [
+            nomeMembro(p.membro), p.operadora || '—', p.cobertura || '—', vencimento(p), formatarMoeda(p.mensalidade || 0),
+            <AcoesApolice onEditar={() => onEditarPlano(p)} onExcluir={() => onExcluir({ tipo: 'plano', id: p.id!, descricao: p.operadora || 'Plano de saúde' })} />,
+          ])}
           vazio="Nenhum plano de saúde contratado."
         />
       );
@@ -92,8 +110,11 @@ const ModalCoberturas: React.FC<Props> = ({ linha, onClose, onGerenciar, membro,
         : (s.cobertura_morte || 0) + (s.cobertura_funeral || 0);
       return (
         <Tabela
-          colunas={[{ titulo: 'Membro' }, { titulo: 'Seguradora' }, { titulo: 'Vencimento' }, { titulo: 'Cobertura', direita: true }, { titulo: 'Mensalidade', direita: true }]}
-          linhas={doMembro(seguros).map(s => [nomeMembro(s.membro), s.seguradora || '—', vencimento(s), formatarMoeda(soma(s)), formatarMoeda(s.mensalidade || 0)])}
+          colunas={[{ titulo: 'Membro' }, { titulo: 'Seguradora' }, { titulo: 'Vencimento' }, { titulo: 'Cobertura', direita: true }, { titulo: 'Mensalidade', direita: true }, COLUNA_ACAO]}
+          linhas={doMembro(seguros).map(s => [
+            nomeMembro(s.membro), s.seguradora || '—', vencimento(s), formatarMoeda(soma(s)), formatarMoeda(s.mensalidade || 0),
+            <AcoesApolice onEditar={() => onEditarSeguro(s)} onExcluir={() => onExcluir({ tipo: 'vida', id: s.id!, descricao: s.seguradora || 'Seguro de vida' })} />,
+          ])}
           vazio="Nenhuma apólice de seguro de vida contratada."
         />
       );
@@ -105,10 +126,11 @@ const ModalCoberturas: React.FC<Props> = ({ linha, onClose, onGerenciar, membro,
     const apolices = linha.detalhe === 'profissional' ? doMembro(extras) : extras;
     return (
       <Tabela
-        colunas={[{ titulo: 'Descrição' }, { titulo: 'Vencimento' }, { titulo: 'Cobertura', direita: true }, { titulo: 'Mensalidade', direita: true }]}
+        colunas={[{ titulo: 'Descrição' }, { titulo: 'Vencimento' }, { titulo: 'Cobertura', direita: true }, { titulo: 'Mensalidade', direita: true }, COLUNA_ACAO]}
         linhas={apolices.filter(e => e.tipo_seguro === tipo).map(e => [
           e.descricao || e.tipo_seguro || '—', vencimento(e),
           e.valor_cobertura ? formatarMoeda(e.valor_cobertura) : 'Não informado', formatarMoeda(e.mensalidade || 0),
+          <AcoesApolice onEditar={() => onEditarExtra(e)} onExcluir={() => onExcluir({ tipo: 'extra', id: e.id!, descricao: e.descricao || e.tipo_seguro || 'Seguro' })} />,
         ])}
         vazio="Nenhuma apólice contratada."
       />
@@ -122,15 +144,15 @@ const ModalCoberturas: React.FC<Props> = ({ linha, onClose, onGerenciar, membro,
       title={linha.protecao}
       subtitle={linha.pilar}
       size="xl"
-      headerActions={(
+      headerActions={linha.detalhe === 'reserva' ? (
         <button
           type="button"
-          onClick={() => onGerenciar(linha)}
+          onClick={onConfigurarReserva}
           className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors"
         >
-          <Settings size={13} /> {linha.detalhe === 'reserva' ? 'Configurar' : 'Gerenciar'}
+          <Settings size={13} /> Configurar
         </button>
-      )}
+      ) : undefined}
     >
       {conteudo()}
     </Modal>
