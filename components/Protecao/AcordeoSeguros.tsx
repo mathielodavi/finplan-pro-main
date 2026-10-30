@@ -45,9 +45,11 @@ interface Props {
     /** Necessidade combinada de Educação e Dependentes + Sucessão Patrimonial (mesmo capital de sucessão cobre as duas). */
     sucessaoIdeal: number;
     defaultAberto?: boolean;
+    /** Abre direto o formulário de nova apólice. */
+    abrirNovo?: boolean;
 }
 
-const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, sucessaoIdeal, defaultAberto }) => {
+const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, sucessaoIdeal, defaultAberto, abrirNovo }) => {
     const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [seguros, setSeguros] = useState<SeguroVida[]>([]);
     const [loading, setLoading] = useState(false);
@@ -117,6 +119,8 @@ const AcordeoSeguros: React.FC<Props> = ({ dados, dependentes, parametros, suces
         setForm(seguro ? { ...seguro } : { ...SEGURO_VAZIO, cliente_id: dados.cliente_id, membro: membros[0] });
         setModal(true);
     };
+
+    useEffect(() => { if (abrirNovo) openModal(); }, []);
 
     const salvar = async () => {
         if (!form.membro) return;

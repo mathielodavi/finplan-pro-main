@@ -25,6 +25,20 @@ export interface ScoreProtecaoInput {
   taxaRealMensal: number;
 }
 
+/** Reserva ideal: valor do cadastro, ou calculada pelos gastos quando o modo é automático. */
+export function calcularReservaIdeal(dados: any, reservaRecomendada: number): number {
+  if (dados?.reserva_modo !== 'automatico') return reservaRecomendada || 0;
+  let gastos = dados.despesas_obrigatorias || 0;
+  if (dados.reserva_incluir_nao_obrigatorias) gastos += dados.despesas_nao_obrigatorias || 0;
+  if (dados.reserva_incluir_financiamentos) gastos += dados.financiamentos || 0;
+  if (dados.reserva_incluir_dividas) gastos += dados.dividas_mensais || 0;
+  const fatorCliente = getFatorRegime(dados.regime_contratacao_cliente);
+  const fator = dados.casado_cliente
+    ? (fatorCliente + getFatorRegime(dados.regime_contratacao_conjuge)) / 2
+    : fatorCliente;
+  return gastos * fator;
+}
+
 const pesoStatus = (status: 'protegido' | 'parcial' | 'desprotegido') =>
   status === 'protegido' ? 100 : status === 'parcial' ? 50 : 0;
 
@@ -45,18 +59,7 @@ export function calcularScoreProtecaoCliente(input: ScoreProtecaoInput): number 
       return acc + (link ? (a.valor_atual || 0) * (link.percentual / 100) : 0);
     }, 0);
 
-  let reservaIdeal = reservaRecomendada || 0;
-  if (dados?.reserva_modo === 'automatico') {
-    let gastos = dados.despesas_obrigatorias || 0;
-    if (dados.reserva_incluir_nao_obrigatorias) gastos += dados.despesas_nao_obrigatorias || 0;
-    if (dados.reserva_incluir_financiamentos) gastos += dados.financiamentos || 0;
-    if (dados.reserva_incluir_dividas) gastos += dados.dividas_mensais || 0;
-    const fatorCliente = getFatorRegime(dados.regime_contratacao_cliente);
-    const fator = dados.casado_cliente
-      ? (fatorCliente + getFatorRegime(dados.regime_contratacao_conjuge)) / 2
-      : fatorCliente;
-    reservaIdeal = gastos * fator;
-  }
+  const reservaIdeal = calcularReservaIdeal(dados, reservaRecomendada);
   const pctReserva = reservaIdeal > 0 ? (saldoReserva / reservaIdeal) * 100 : 0;
   const statusReserva = saldoReserva <= 0 ? 'desprotegido' : pctReserva >= 100 ? 'protegido' : pctReserva >= 25 ? 'parcial' : 'desprotegido';
 

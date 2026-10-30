@@ -6,14 +6,16 @@ import ResumoInvestimentos from '../Investimentos/ResumoInvestimentos';
 import CarteiraInvestimentos from '../Investimentos/CarteiraInvestimentos';
 import RebalanceamentoInvestimentos from '../Investimentos/RebalanceamentoInvestimentos';
 import { useProntuarioNav } from '../../context/ProntuarioNavContext';
-import { PieChart, Briefcase, RefreshCw } from 'lucide-react';
+import BalancoPatrimonial from '../Patrimonio/BalancoPatrimonial';
+import { PieChart, Briefcase, RefreshCw, Scale } from 'lucide-react';
 
 interface AbaInvestimentosProps {
   clienteId: string;
 }
 
 const menu = [
-  { id: 'resumo', label: 'Resumo Geral', icon: <PieChart size={14} /> },
+  { id: 'resumo', label: 'Resumo', icon: <Scale size={14} /> },
+  { id: 'ips', label: 'IPS', icon: <PieChart size={14} /> },
   { id: 'carteira', label: 'Carteira Ativa', icon: <Briefcase size={14} /> },
   { id: 'rebalanceamento', label: 'Aporte Mensal', icon: <RefreshCw size={14} /> },
 ];
@@ -59,9 +61,10 @@ const AbaInvestimentos: React.FC<AbaInvestimentosProps> = ({ clienteId }) => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="min-h-[500px] animate-slide-up">
-        {activeSub === 'resumo' && <ResumoInvestimentos clienteId={clienteId} ativos={ativos} cliente={cliente} onRefresh={loadData} onNavigateAportes={() => setActiveSub('rebalanceamento')} />}
+        {activeSub === 'resumo' && <BalancoPatrimonial clienteId={clienteId} ativos={ativos} onIrCarteira={() => setActiveSub('carteira')} />}
+        {activeSub === 'ips' && <ResumoInvestimentos clienteId={clienteId} ativos={ativos} cliente={cliente} onRefresh={loadData} onNavigateAportes={() => setActiveSub('rebalanceamento')} />}
         {activeSub === 'carteira' && <CarteiraInvestimentos clienteId={clienteId} cliente={cliente} ativos={ativos} onRefresh={loadData} />}
-        {activeSub === 'rebalanceamento' && <RebalanceamentoInvestimentos clienteId={clienteId} ativos={ativos} onFinish={() => { setActiveSub('resumo'); loadData(); }} />}
+        {activeSub === 'rebalanceamento' && <RebalanceamentoInvestimentos clienteId={clienteId} ativos={ativos} onFinish={() => { setActiveSub('ips'); loadData(); }} />}
       </div>
     </div>
   );

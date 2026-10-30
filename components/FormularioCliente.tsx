@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Cliente, criarCliente, atualizarCliente, obterOrigens, criarOrigem, obterTagsPorOrigem, criarTagOrigem, Origem, OrigemTag } from '../services/clienteService';
-import { configService } from '../services/configuracoesService';
-import { mascaraTelefone } from '../utils/calculosFinanceiros';
+import { mascaraCPF, mascaraTelefone } from '../utils/calculosFinanceiros';
+import { UFS } from '../utils/formatadores';
 import Button from './UI/Button';
 import CampoMoeda from './UI/CampoMoeda';
 import { Plus, X, Check } from 'lucide-react';
@@ -11,18 +11,6 @@ interface FormularioClienteProps {
   onSuccess: (cliente?: Cliente) => void;
   onCancel: () => void;
 }
-
-const UFS = [
-  { sigla: 'AC', nome: 'Acre' }, { sigla: 'AL', nome: 'Alagoas' }, { sigla: 'AP', nome: 'Amapá' },
-  { sigla: 'AM', nome: 'Amazonas' }, { sigla: 'BA', nome: 'Bahia' }, { sigla: 'CE', nome: 'Ceará' },
-  { sigla: 'DF', nome: 'Distrito Federal' }, { sigla: 'ES', nome: 'Espírito Santo' }, { sigla: 'GO', nome: 'Goiás' },
-  { sigla: 'MA', nome: 'Maranhão' }, { sigla: 'MT', nome: 'Mato Grosso' }, { sigla: 'MS', nome: 'Mato Grosso do Sul' },
-  { sigla: 'MG', nome: 'Minas Gerais' }, { sigla: 'PA', nome: 'Pará' }, { sigla: 'PB', nome: 'Paraíba' },
-  { sigla: 'PR', nome: 'Paraná' }, { sigla: 'PE', nome: 'Pernambuco' }, { sigla: 'PI', nome: 'Piauí' },
-  { sigla: 'RJ', nome: 'Rio de Janeiro' }, { sigla: 'RN', nome: 'Rio Grande do Norte' }, { sigla: 'RS', nome: 'Rio Grande do Sul' },
-  { sigla: 'RO', nome: 'Rondônia' }, { sigla: 'RR', nome: 'Roraima' }, { sigla: 'SC', nome: 'Santa Catarina' },
-  { sigla: 'SP', nome: 'São Paulo' }, { sigla: 'SE', nome: 'Sergipe' }, { sigla: 'TO', nome: 'Tocantins' },
-];
 
 const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, onSuccess, onCancel }) => {
   const [nome, setNome] = useState('');
@@ -36,13 +24,13 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
   const [email, setEmail] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
 
-  // Novos estados para Origens e Protocolos
+  const [cpf, setCpf] = useState('');
+  const [profissao, setProfissao] = useState('');
+
   const [origens, setOrigens] = useState<Origem[]>([]);
-  const [protocolos, setProtocolos] = useState<any[]>([]);
   const [tagsDisponiveis, setTagsDisponiveis] = useState<OrigemTag[]>([]);
 
   const [origemId, setOrigemId] = useState('');
-  const [protocoloId, setProtocoloId] = useState('');
   const [tagsSelecionadas, setTagsSelecionadas] = useState<string[]>([]);
 
   // Estados para criação inline
@@ -57,12 +45,7 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
   useEffect(() => {
     const carregarDadosBase = async () => {
       try {
-        const [listaOrigens, listaProtocolos] = await Promise.all([
-          obterOrigens(),
-          configService.getAcompanhamentos()
-        ]);
-        setOrigens(listaOrigens);
-        setProtocolos(listaProtocolos);
+        setOrigens(await obterOrigens());
       } catch (err) {
         console.error("Erro ao carregar dados do formulário:", err);
       }
@@ -77,12 +60,13 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
       setAporte(clienteInicial.aporte_mensal.toString());
       setStatus(clienteInicial.status || 'Ativo');
       setOrigemId(clienteInicial.origem_id || '');
-      setProtocoloId(clienteInicial.protocolo_id || '');
       setTagsSelecionadas(clienteInicial.etiquetas_tags || []);
       setEstado(clienteInicial.estado || '');
       setTelefone(clienteInicial.telefone || '');
       setEmail(clienteInicial.email || '');
       setDataNascimento(clienteInicial.data_nascimento || '');
+      setCpf(clienteInicial.cpf || '');
+      setProfissao(clienteInicial.profissao || '');
       setDividasIniciais((clienteInicial.dividas_iniciais || 0).toString());
       setReservaInicial((clienteInicial.reserva_emergencia_inicial || 0).toString());
     }
@@ -145,17 +129,16 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
         aporte_mensal: parseFloat(aporte),
         status,
         origem_id: origemId || null,
-        protocolo_id: protocoloId || null,
         etiquetas_tags: tagsSelecionadas,
         pais: 'Brasil',
         estado: estado || undefined,
         telefone: telefone || undefined,
         email: email || undefined,
         data_nascimento: dataNascimento || null,
+        cpf: cpf || null,
+        profissao: profissao || null,
         dividas_iniciais: parseFloat(dividasIniciais) || 0,
         reserva_emergencia_inicial: parseFloat(reservaInicial) || 0,
-        // Mantém suporte retrógrado se necessário para lógica de exibição
-        etapa_atual: protocolos.find(p => p.id === protocoloId)?.nome || 'Prospecção' as any
       };
       if (clienteInicial?.id) {
         await atualizarCliente(clienteInicial.id, payload);
@@ -238,13 +221,34 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
               className={inputStyle}
             />
           </div>
+          <div>
+            <label className={labelStyle}>CPF</label>
+            <input
+              type="text"
+              value={cpf}
+              onChange={(e) => setCpf(mascaraCPF(e.target.value))}
+              maxLength={14}
+              className={inputStyle}
+              placeholder="000.000.000-00"
+            />
+          </div>
+        </div>
+        <div>
+          <label className={labelStyle}>Profissão</label>
+          <input
+            type="text"
+            value={profissao}
+            onChange={(e) => setProfissao(e.target.value)}
+            className={inputStyle}
+            placeholder="Ex: Médico, Engenheiro..."
+          />
         </div>
       </section>
 
       {/* ── Comercial ── */}
       <section className="space-y-4">
         <h3 className={sectionTitle}>Comercial</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div>
           <div className="space-y-2">
             <label className={labelStyle}>Origem</label>
             <div className="flex gap-2">
@@ -276,13 +280,6 @@ const FormularioCliente: React.FC<FormularioClienteProps> = ({ clienteInicial, o
                 </div>
               )}
             </div>
-          </div>
-          <div>
-            <label className={labelStyle}>Protocolo de Atendimento</label>
-            <select value={protocoloId} onChange={(e) => setProtocoloId(e.target.value)} className={inputStyle}>
-              <option value="">Nenhum protocolo</option>
-              {protocolos.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
-            </select>
           </div>
         </div>
 

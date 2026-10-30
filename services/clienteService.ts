@@ -21,13 +21,14 @@ export interface Cliente {
   origem?: string | null;
   renda_mensal?: number;
   origem_id?: string | null;
-  protocolo_id?: string | null;
   etiquetas_tags?: string[];
   pais?: string;
   estado?: string;
   telefone?: string;
   email?: string;
   data_nascimento?: string | null;
+  cpf?: string | null;
+  profissao?: string | null;
   // Situação inicial (snapshot de onboarding) — informativo, não alimenta cálculos vivos
   dividas_iniciais?: number;
   reserva_emergencia_inicial?: number;

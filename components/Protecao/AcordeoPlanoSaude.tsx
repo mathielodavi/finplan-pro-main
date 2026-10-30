@@ -47,9 +47,11 @@ interface Props {
     dados: ClienteSeguro;
     dependentes: DependenteSeguro[];
     defaultAberto?: boolean;
+    /** Abre direto o formulário de novo plano. */
+    abrirNovo?: boolean;
 }
 
-const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto }) => {
+const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto, abrirNovo }) => {
     const [aberto, setAberto] = useState(defaultAberto ?? false);
     const [planos, setPlanos] = useState<PlanoSaude[]>([]);
     const [loading, setLoading] = useState(false);
@@ -96,6 +98,8 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
         setModal(true);
     };
 
+    useEffect(() => { if (abrirNovo) openNovoModal(); }, []);
+
     const salvar = async () => {
         if (!form.membro || !form.operadora) {
             setErroSalvar('Preencha ao menos o membro e a operadora antes de salvar.');
@@ -104,7 +108,7 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
         setSalvando(true);
         setErroSalvar(null);
         try {
-            const plano = { ...form, cliente_id: dados.cliente_id } as PlanoSaude;
+            const plano = { ...form, cliente_id: dados.cliente_id, fim_vigencia: form.fim_vigencia || null } as PlanoSaude;
             const saved = await protecaoService.upsertPlanoSaude(plano);
             setPlanos(prev => form.id ? prev.map(p => p.id === form.id ? saved : p) : [...prev, saved]);
             setModal(false);
@@ -225,6 +229,10 @@ const AcordeoPlanoSaude: React.FC<Props> = ({ dados, dependentes, defaultAberto 
                                     value={(form.mensalidade || 0) > 0 ? (form.mensalidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}
                                     onChange={e => { const n = e.target.value.replace(/\D/g, ''); setForm(f => ({ ...f, mensalidade: n ? parseInt(n) / 100 : 0 })); }}
                                     className={inp} placeholder="0,00" />
+                            </div>
+                            <div>
+                                <label className={lbl}>Vencimento</label>
+                                <input type="date" value={form.fim_vigencia || ''} onChange={e => setForm(f => ({ ...f, fim_vigencia: e.target.value }))} className={inp} />
                             </div>
                             <div className="md:col-span-2">
                                 <SeletorContratoProtecao clienteId={dados.cliente_id} value={form.contrato_id} onChange={v => setForm(f => ({ ...f, contrato_id: v }))} labelClass={lbl} inputClass={inp} />

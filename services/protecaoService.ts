@@ -153,6 +153,7 @@ export interface PlanoSaude {
     quarto_privativo?: boolean;
     obstetricia?: boolean;
     mensalidade?: number;
+    fim_vigencia?: string | null;
 }
 
 // ─── Seguro de Vida ───────────────────────────────────────────────────────────
@@ -188,6 +189,8 @@ export interface SeguroExtra {
     inicio_vigencia?: string;
     fim_vigencia?: string;
     mensalidade?: number;
+    valor_cobertura?: number | null;
+    membro?: string | null; // titular da proteção profissional
 }
 
 // ─── Cliente Seguro ───────────────────────────────────────────────────────────
@@ -238,42 +241,39 @@ export const protecaoService = {
 
     // ─── Dependentes ──────────────────────────────────────────────────────────
 
+    /** Familiares, exceto o cônjuge, no formato usado pelos cálculos do levantamento. */
     async getDependentes(clienteId: string): Promise<DependenteSeguro[]> {
         const { data, error } = await supabase
-            .from('dependentes_seguros')
-            .select('*')
+            .from('clientes_familiares')
+            .select('id, cliente_id, ordem, nome, data_nascimento, parentesco, cobertura_anos, auxilio_mensal, total_calculado')
             .eq('cliente_id', clienteId)
+            .neq('parentesco', 'Cônjuge')
             .order('ordem', { ascending: true });
 
         if (error) throw error;
-        return data || [];
+        return (data || []).map((f: any) => ({
+            id: f.id,
+            cliente_id: f.cliente_id,
+            ordem: f.ordem,
+            nome_dependente: f.nome,
+            data_nascimento_dep: f.data_nascimento,
+            parentesco: f.parentesco,
+            cobertura_anos: f.cobertura_anos ?? undefined,
+            auxilio_mensal: f.auxilio_mensal ?? undefined,
+            total_calculado: f.total_calculado ?? undefined,
+        }));
     },
 
-    /**
-     * Substitui a lista de dependentes do cliente. Grava os novos ANTES de apagar os antigos
-     * (nunca o inverso): se a gravação falhar no meio do caminho, os dependentes já cadastrados
-     * continuam intactos no banco — antes, um delete-then-insert podia apagar todos os
-     * dependentes e falhar no insert seguinte (erro transitório de rede, por exemplo), zerando o
-     * cadastro no banco enquanto a tela ainda mostrava os dados digitados (só no state local).
-     */
-    async salvarDependentes(clienteId: string, dependentes: Omit<DependenteSeguro, 'id' | 'cliente_id'>[]): Promise<DependenteSeguro[]> {
-        const { data: atuais, error: errAtuais } = await supabase.from('dependentes_seguros').select('id').eq('cliente_id', clienteId);
-        if (errAtuais) throw errAtuais;
-        const idsAntigos = (atuais || []).map((a: any) => a.id);
-
-        let salvos: DependenteSeguro[] = [];
-        if (dependentes.length > 0) {
-            const rows = dependentes.map((d, i) => ({ ...d, cliente_id: clienteId, ordem: i }));
-            const { data, error } = await supabase.from('dependentes_seguros').insert(rows).select();
+    /** Grava a cobertura educacional. Nome e parentesco são editados no quadrante Família. */
+    async salvarDependentes(dependentes: DependenteSeguro[]): Promise<void> {
+        for (const d of dependentes) {
+            const { error } = await supabase.from('clientes_familiares').update({
+                cobertura_anos: d.cobertura_anos ?? null,
+                auxilio_mensal: d.auxilio_mensal ?? null,
+                total_calculado: d.total_calculado ?? null,
+            }).eq('id', d.id);
             if (error) throw error;
-            salvos = data || [];
         }
-
-        if (idsAntigos.length > 0) {
-            const { error: errDel } = await supabase.from('dependentes_seguros').delete().in('id', idsAntigos);
-            if (errDel) throw errDel;
-        }
-        return salvos;
     },
 
     // ─── Parâmetros ───────────────────────────────────────────────────────────
@@ -461,7 +461,7 @@ export const protecaoService = {
             { data: parametrosRaw },
         ] = await Promise.all([
             supabase.from('clientes_seguros').select('*').in('cliente_id', clienteIds),
-            supabase.from('dependentes_seguros').select('cliente_id, nome_dependente').in('cliente_id', clienteIds),
+            supabase.from('clientes_familiares').select('cliente_id, nome_dependente:nome').neq('parentesco', 'Cônjuge').in('cliente_id', clienteIds),
             supabase.from('planos_saude').select('cliente_id, membro').in('cliente_id', clienteIds),
             // Todas as coberturas usadas pelo pilar Vida: sem elas a soma dá 0 e o score trava em 83,3.
             supabase.from('seguros_vida').select('cliente_id, membro, cobertura_morte, cobertura_doencas_graves, cobertura_invalidez, cobertura_cirurgia, dit').in('cliente_id', clienteIds),
@@ -528,7 +528,7 @@ export const protecaoService = {
         const ids = clientes.map(c => c.id);
         const [{ data: vida }, { data: saude }, { data: extras }] = await Promise.all([
             supabase.from('seguros_vida').select('id, cliente_id, seguradora, membro, fim_vigencia, contrato_id').in('cliente_id', ids),
-            supabase.from('planos_saude').select('id, cliente_id, operadora, membro, contrato_id').in('cliente_id', ids),
+            supabase.from('planos_saude').select('id, cliente_id, operadora, membro, fim_vigencia, contrato_id').in('cliente_id', ids),
             supabase.from('seguros_extras').select('id, cliente_id, tipo_seguro, descricao, fim_vigencia, contrato_id').in('cliente_id', ids),
         ]);
 
@@ -541,7 +541,7 @@ export const protecaoService = {
 
         (vida || []).filter(vigente).forEach((a: any) =>
             adicionar(a.cliente_id, { id: a.id, tipo: 'Vida', rotulo: a.seguradora || 'Seguro de vida', contratoId: a.contrato_id }));
-        (saude || []).forEach((a: any) =>
+        (saude || []).filter(vigente).forEach((a: any) =>
             adicionar(a.cliente_id, { id: a.id, tipo: 'Saúde', rotulo: a.operadora || 'Plano de saúde', contratoId: a.contrato_id }));
         (extras || []).filter(vigente).forEach((a: any) =>
             adicionar(a.cliente_id, { id: a.id, tipo: a.tipo_seguro || 'Seguro', rotulo: a.descricao || a.tipo_seguro || 'Seguro', contratoId: a.contrato_id }));

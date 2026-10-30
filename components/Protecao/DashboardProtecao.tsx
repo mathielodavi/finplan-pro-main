@@ -1,11 +1,17 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-    Shield, Pencil, MessageCircle, Download, Settings, Activity
+    Shield, Pencil, MessageCircle, Download, Activity
 } from 'lucide-react';
 import SidePanel from '../UI/SidePanel';
-import { ClienteSeguro, DependenteSeguro, ParametrosCalculo, protecaoService } from '../../services/protecaoService';
+import { ClienteSeguro, DependenteSeguro, ParametrosCalculo, PlanoSaude, SeguroExtra, SeguroVida, protecaoService } from '../../services/protecaoService';
 import { calcularCoberturaVida, calcularSucessao } from '../../utils/calculosFinanceiros';
+import { calcularReservaIdeal } from '../../utils/protecaoUtils';
+import { EntradaProtecao, LinhaProtecao, MembroProtecao, linhasFamilia, linhasMembro } from '../../utils/protecaoTabela';
+import { patrimonioService, BemPatrimonial } from '../../services/patrimonioService';
+import { toLocalDateString } from '../../utils/formatadores';
+import TabelaProtecao, { NovaCobertura } from './TabelaProtecao';
+import ModalCoberturas from './ModalCoberturas';
 import AcordeoReservaEmergencia from './AcordeoReservaEmergencia';
 import AcordeoPlanoSaude from './AcordeoPlanoSaude';
 import AcordeoSeguros from './AcordeoSeguros';
@@ -25,95 +31,85 @@ interface Props {
     parametros: ParametrosCalculo;
     nomeCliente?: string;
     onEditar: () => void;
+    /** Titular, cônjuge e familiares. */
+    membros: MembroProtecao[];
+    /** Visão aberta no submenu: chave do membro, ou null para a família. */
+    membroAtivo: string | null;
+    /** Reflete no levantamento o que foi alterado nos drawers (ex.: reserva). */
+    onAtualizar: (campos: Partial<ClienteSeguro>) => void;
 }
 
-const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar }) => {
+type Drawer = 'seguros' | 'reserva' | 'plano' | 'patrimonial' | 'profissional';
+interface DrawerAberto { tipo: Drawer; novo?: boolean; tipoSeguro?: string }
+
+const DRAWER_DA_LINHA: Record<LinhaProtecao['detalhe'], Drawer> = {
+    reserva: 'reserva', plano: 'plano', vida: 'seguros',
+    imobiliario: 'patrimonial', veicular: 'patrimonial', empresarial: 'profissional', profissional: 'profissional',
+};
+
+const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar, membros, membroAtivo, onAtualizar }) => {
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
-    const [drawer, setDrawer] = useState<null | 'seguros' | 'reserva' | 'plano' | 'patrimonial' | 'profissional'>(null);
+    const [drawer, setDrawer] = useState<DrawerAberto | null>(null);
+    const [linhaAberta, setLinhaAberta] = useState<LinhaProtecao | null>(null);
     const [score, setScore] = useState(0);
-    const [saldoReserva, setSaldoReserva] = useState(0);
-    const [segurosLista, setSegurosLista] = useState<any[]>([]);
-    const [previdencia, setPrevidencia] = useState({ pgbl: 0, vgbl: 0 });
-    const [reservaIdeal, setReservaIdeal] = useState(0);
-    const [planosCount, setPlanosCount] = useState(0);
-    const [patrimonialCount, setPatrimonialCount] = useState(0);
-    const [profissionalCount, setProfissionalCount] = useState(0);
+    const [ativos, setAtivos] = useState<any[]>([]);
+    const [seguros, setSeguros] = useState<SeguroVida[]>([]);
+    const [planos, setPlanos] = useState<PlanoSaude[]>([]);
+    const [extras, setExtras] = useState<SeguroExtra[]>([]);
+    const [bens, setBens] = useState<BemPatrimonial[]>([]);
+    const [reservaRecomendada, setReservaRecomendada] = useState(0);
     const [planejadorEmail, setPlanejadorEmail] = useState('');
     const [planejadorNome, setPlanejadorNome] = useState('');
     const [gerandoPdf, setGerandoPdf] = useState(false);
     const relatorioRef = useRef<HTMLDivElement>(null);
 
-    // Carrega saldo de reserva dos ativos da carteira
+    const carregar = useCallback(async () => {
+        const clienteId = dados.cliente_id;
+        const [{ data: ativosData }, { data: cli }, segurosData, planosData, extrasData, bensData, scoreCliente] = await Promise.all([
+            supabase.from('ativos').select('nome, valor_atual, distribuicao_objetivos, origem, tipo_previdencia').eq('cliente_id', clienteId),
+            supabase.from('clientes').select('reserva_recomendada').eq('id', clienteId).maybeSingle(),
+            protecaoService.getSegurosVida(clienteId),
+            protecaoService.getPlanosSaude(clienteId),
+            protecaoService.getSegurosExtras(clienteId),
+            patrimonioService.getBens(clienteId),
+            protecaoService.getScoreCliente(clienteId).catch(() => 0),
+        ]);
+        setAtivos(ativosData || []);
+        setReservaRecomendada(cli?.reserva_recomendada || 0);
+        setSeguros(segurosData || []);
+        setPlanos(planosData || []);
+        setExtras(extrasData || []);
+        setBens(bensData);
+        setScore(scoreCliente);
+    }, [dados.cliente_id]);
+
+    useEffect(() => { carregar().catch(err => console.error('Erro ao carregar proteção:', err)); }, [carregar]);
+
     useEffect(() => {
-        const loadReserva = async () => {
-            const { data } = await supabase
-                .from('ativos')
-                .select('valor_atual, distribuicao_objetivos')
-                .eq('cliente_id', dados.cliente_id);
-
-            const saldo = (data || []).reduce((acc, a) => {
-                const link = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'reserva');
-                if (!link) return acc;
-                return acc + a.valor_atual * (link.percentual / 100);
-            }, 0);
-            setSaldoReserva(saldo);
-        };
-
-        const loadPlanejador = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
+        supabase.auth.getUser().then(({ data: { user } }) => {
             if (user?.user_metadata?.email_comercial) setPlanejadorEmail(user.user_metadata.email_comercial);
             else if (user?.email) setPlanejadorEmail(user.email);
             if (user?.user_metadata?.full_name) setPlanejadorNome(user.user_metadata.full_name);
-        };
+        });
+    }, []);
 
-        const loadSeguros = async () => {
-            const seguros = await protecaoService.getSegurosVida(dados.cliente_id);
-            setSegurosLista(seguros || []);
-        };
+    // Ativos de Previdência Privada cadastrados na Carteira — fonte única de
+    // verdade para a Sucessão (substitui os campos manuais pgbl_*/vgbl_*).
+    const previdencia = useMemo(() => {
+        const soma = (tipo: string) => ativos
+            .filter(a => a.origem === 'previdencia_privada' && a.tipo_previdencia === tipo)
+            .reduce((acc, a) => acc + (a.valor_atual || 0), 0);
+        return { pgbl: soma('PGBL'), vgbl: soma('VGBL') };
+    }, [ativos]);
 
-        // Ativos de Previdência Privada cadastrados na Carteira — fonte única de
-        // verdade para a Sucessão (substitui os campos manuais pgbl_*/vgbl_*).
-        const loadPrevidencia = async () => {
-            const { data } = await supabase
-                .from('ativos')
-                .select('valor_atual, tipo_previdencia')
-                .eq('cliente_id', dados.cliente_id)
-                .eq('origem', 'previdencia_privada');
-            const pgbl = (data || []).filter(a => a.tipo_previdencia === 'PGBL').reduce((acc, a) => acc + (a.valor_atual || 0), 0);
-            const vgbl = (data || []).filter(a => a.tipo_previdencia === 'VGBL').reduce((acc, a) => acc + (a.valor_atual || 0), 0);
-            setPrevidencia({ pgbl, vgbl });
-        };
-
-        const TIPOS_PATRIMONIAL = ['Residencial', 'Automotivo'];
-        const TIPOS_PROFISSIONAL = ['Empresarial', 'Responsabilidade Civil'];
-
-        const loadPilares = async () => {
-            const [{ data: cli }, planos, extras] = await Promise.all([
-                supabase.from('clientes').select('reserva_recomendada').eq('id', dados.cliente_id).maybeSingle(),
-                protecaoService.getPlanosSaude(dados.cliente_id),
-                protecaoService.getSegurosExtras(dados.cliente_id),
-            ]);
-            setReservaIdeal(cli?.reserva_recomendada || 0);
-            setPlanosCount((planos || []).length);
-            setPatrimonialCount((extras || []).filter(e => TIPOS_PATRIMONIAL.includes(e.tipo_seguro || '')).length);
-            setProfissionalCount((extras || []).filter(e => TIPOS_PROFISSIONAL.includes(e.tipo_seguro || '')).length);
-        };
-
-        const loadScore = async () => {
-            try { setScore(await protecaoService.getScoreCliente(dados.cliente_id)); } catch { /* noop */ }
-        };
-
-        loadReserva();
-        loadPlanejador();
-        loadSeguros();
-        loadPrevidencia();
-        loadPilares();
-        loadScore();
-    }, [dados.cliente_id]);
-
+    const saldoReserva = useMemo(() => ativos.reduce((acc, a) => {
+        const link = (a.distribuicao_objetivos || []).find((o: any) => o.tipo === 'reserva');
+        return link ? acc + a.valor_atual * (link.percentual / 100) : acc;
+    }, 0), [ativos]);
 
     const handleUpdate = (campos: Partial<ClienteSeguro>) => {
         setDados(prev => ({ ...prev, ...campos }));
+        onAtualizar(campos);
     };
 
     // ─── Cálculos ────────────────────────────────────────────────────────────────
@@ -151,31 +147,38 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
     const totalEducacao = dependentes.reduce((acc, d) => acc + (d.total_calculado || 0), 0);
     const totalGeral = totalEducacao + coberturaVida.coberturaFamiliar + sucessao.coberturaSucessao;
 
-    // Contratado por grupo de coberturas (Seguro de Vida) — Sucessão (Morte + Funeral)
-    // conta para Educação/Dependentes e Sucessão Patrimonial; Padrão de Vida (Doenças
-    // Graves + Invalidez + Cirurgia + DIT) conta só para o pilar de Padrão de Vida.
-    const contratadoSucessao = segurosLista.reduce((acc, s) => acc + (s.cobertura_morte || 0) + (s.cobertura_funeral || 0), 0);
-    const contratadoPadraoVida = segurosLista.reduce((acc, s) => acc +
-        (s.cobertura_doencas_graves || 0) + (s.cobertura_invalidez || 0) + (s.cobertura_cirurgia || 0) + (s.dit || 0), 0);
-    const coberturaContratada = contratadoSucessao + contratadoPadraoVida;
-    const lacunaTotal = Math.max(0, totalGeral - coberturaContratada);
     const sucessaoIdeal = totalEducacao + sucessao.coberturaSucessao;
 
-    const pilares = [
-        { label: 'Educação e dependentes', valor: totalEducacao, contratado: contratadoSucessao },
-        { label: 'Padrão de vida', valor: coberturaVida.coberturaFamiliar, contratado: contratadoPadraoVida },
-        { label: 'Sucessão patrimonial', valor: sucessao.coberturaSucessao, contratado: contratadoSucessao },
-    ];
+    const hoje = toLocalDateString(new Date());
+    const entrada: EntradaProtecao = {
+        hoje, membros, saldoReserva, planos, seguros, extras, bens,
+        reservaIdeal: calcularReservaIdeal(dados, reservaRecomendada),
+        necessidade: {
+            educacao: totalEducacao,
+            padraoVidaCliente: coberturaVida.coberturaCliente,
+            padraoVidaConjuge: coberturaVida.coberturaConjuge,
+            sucessao: sucessao.coberturaSucessao,
+        },
+    };
+    const linhas = membroAtivo ? linhasMembro(entrada, membroAtivo) : linhasFamilia(entrada);
+    const tituloTabela = membroAtivo
+        ? `Proteção de ${membros.find(m => m.chave === membroAtivo)?.nome || 'familiar'}`
+        : 'Proteção global da família';
 
-    // Panorama dos demais pilares (leitura) — mesma regra do acordeão de reserva.
-    const pctReserva = reservaIdeal > 0 ? (saldoReserva / reservaIdeal) * 100 : 0;
-    const statusReserva: 'protegido' | 'parcial' | 'desprotegido' =
-        saldoReserva <= 0 ? 'desprotegido' : pctReserva >= 100 ? 'protegido' : pctReserva >= 25 ? 'parcial' : 'desprotegido';
-    const statusMap = {
-        protegido: { label: 'Protegido', cor: 'var(--primary)', bg: 'rgba(16,185,129,0.12)' },
-        parcial: { label: 'Parcial', cor: 'var(--warning)', bg: 'rgba(251,191,36,0.12)' },
-        desprotegido: { label: 'Desprotegido', cor: 'var(--danger)', bg: 'rgba(248,113,113,0.12)' },
-    }[statusReserva];
+    const adicionarCobertura = (tipo: NovaCobertura) => {
+        if (tipo === 'plano') setDrawer({ tipo: 'plano', novo: true });
+        else if (tipo === 'vida') setDrawer({ tipo: 'seguros', novo: true });
+        else if (tipo === 'imobiliario') setDrawer({ tipo: 'patrimonial', tipoSeguro: 'Residencial' });
+        else if (tipo === 'veicular') setDrawer({ tipo: 'patrimonial', tipoSeguro: 'Automotivo' });
+        else if (tipo === 'empresarial') setDrawer({ tipo: 'profissional', tipoSeguro: 'Empresarial' });
+        else setDrawer({ tipo: 'profissional', tipoSeguro: 'Responsabilidade Civil' });
+    };
+
+    // Os drawers gravam por conta própria: recarrega ao fechar para a tabela refletir as mudanças.
+    const fecharDrawer = () => {
+        setDrawer(null);
+        carregar().catch(console.error);
+    };
 
     const corScore = score >= 70 ? 'var(--primary)' : score >= 40 ? 'var(--warning)' : 'var(--danger)';
 
@@ -227,7 +230,7 @@ Planejador: ${planejadorEmail || '—'}`;
                         </div>
                         <div>
                             <p className="text-[14px] font-semibold text-main leading-none">Painel de Proteção</p>
-                            <p className="text-[12px] text-faint mt-1">Avaliação do tripé de proteção financeira</p>
+                            <p className="text-[12px] text-faint mt-1">Recomendado × contratado da família e de cada familiar</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -266,110 +269,45 @@ Planejador: ${planejadorEmail || '—'}`;
                 </div>
             </div>
 
-            {/* ── Reserva de Emergência + Plano de Saúde (pilares de base, lado a lado) ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="bg-surface rounded-xl border border-subtle p-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-[13px] font-semibold text-main">Reserva de emergência</h3>
-                        <button onClick={() => setDrawer('reserva')} title="Configurar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Settings size={15} /></button>
-                    </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ color: statusMap.cor, backgroundColor: statusMap.bg }}>{statusMap.label}</span>
-                    <p className="text-[13px] font-semibold text-main mt-2">{fmtMoeda(saldoReserva)} <span className="text-faint font-normal">/ {fmtMoeda(reservaIdeal)}</span></p>
-                </div>
+            <TabelaProtecao
+                titulo={tituloTabela}
+                linhas={linhas}
+                onAdicionar={adicionarCobertura}
+                onVisualizar={setLinhaAberta}
+            />
 
-                <div className="bg-surface rounded-xl border border-subtle p-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-[13px] font-semibold text-main">Plano de saúde</h3>
-                        <button onClick={() => setDrawer('plano')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
-                    </div>
-                    <p className="text-[13px] font-semibold text-main mt-2">{planosCount > 0 ? `${planosCount} contratado(s)` : 'Nenhum'}</p>
-                </div>
-            </div>
-
-            {/* ── Seguro de Vida (necessidade × contratado × lacuna) ── */}
-            <div className="bg-surface rounded-xl border border-subtle p-4 space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-baseline gap-2">
-                        <h3 className="text-[13px] font-semibold text-main">Seguro de vida</h3>
-                        <span className="text-[11px] text-faint">necessidade × contratado</span>
-                    </div>
-                    <button onClick={() => setDrawer('seguros')} className="shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-lg border border-subtle text-muted font-semibold text-[12px] hover:bg-surface-2 transition-colors">
-                        <Pencil size={12} /> Gerenciar apólices
-                    </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
-                        <p className="text-[11px] text-faint">Necessidade</p>
-                        <p className="text-[20px] font-bold text-main leading-none mt-1">{fmtMoeda(totalGeral)}</p>
-                    </div>
-                    <div className="bg-surface-2 rounded-lg border border-subtle p-3">
-                        <p className="text-[11px] text-faint">Cobertura atual</p>
-                        <p className="text-[20px] font-bold text-[color:var(--primary)] leading-none mt-1">{fmtMoeda(coberturaContratada)}</p>
-                    </div>
-                    <div className="rounded-lg border p-3" style={{ backgroundColor: 'rgba(248,113,113,0.10)', borderColor: 'rgba(248,113,113,0.25)' }}>
-                        <p className="text-[11px] text-[color:var(--danger)]">Lacuna a cobrir</p>
-                        <p className="text-[20px] font-bold text-[color:var(--danger)] leading-none mt-1">{fmtMoeda(lacunaTotal)}</p>
-                    </div>
-                </div>
-
-                <div className="border border-subtle rounded-lg overflow-hidden">
-                    <div className="flex justify-between items-center px-3 py-2 bg-surface-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-faint">Pilar da necessidade</span>
-                        <div className="flex items-center gap-4">
-                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint w-24 text-right">Recomendado</span>
-                            <span className="text-[11px] font-semibold uppercase tracking-wider text-faint w-24 text-right">Contratado</span>
-                        </div>
-                    </div>
-                    {pilares.map((p, i) => (
-                        <div key={i} className="flex justify-between items-center px-3 py-2.5 text-[13px] border-t border-subtle">
-                            <span className="text-muted">{p.label}</span>
-                            <div className="flex items-center gap-4">
-                                <span className="font-semibold text-main w-24 text-right">{fmtMoeda(p.valor)}</span>
-                                <span className="font-semibold text-[color:var(--primary)] w-24 text-right">{fmtMoeda(p.contratado)}</span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* ── Proteção Patrimonial / Profissional ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="bg-surface rounded-xl border border-subtle p-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-[13px] font-semibold text-main">Proteção patrimonial</h3>
-                        <button onClick={() => setDrawer('patrimonial')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
-                    </div>
-                    <p className="text-[13px] font-semibold text-main">{patrimonialCount > 0 ? `${patrimonialCount} apólice(s)` : 'Nenhuma'}</p>
-                </div>
-                <div className="bg-surface rounded-xl border border-subtle p-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-[13px] font-semibold text-main">Proteção profissional/empresarial</h3>
-                        <button onClick={() => setDrawer('profissional')} title="Gerenciar" className="p-1.5 text-faint hover:text-[color:var(--primary)] hover:bg-surface-2 rounded-lg transition-colors"><Pencil size={13} /></button>
-                    </div>
-                    <p className="text-[13px] font-semibold text-main">{profissionalCount > 0 ? `${profissionalCount} apólice(s)` : 'Nenhuma'}</p>
-                </div>
-            </div>
+            <ModalCoberturas
+                linha={linhaAberta}
+                onClose={() => setLinhaAberta(null)}
+                onGerenciar={l => { setLinhaAberta(null); setDrawer({ tipo: DRAWER_DA_LINHA[l.detalhe] }); }}
+                membro={membroAtivo}
+                membros={membros}
+                hoje={hoje}
+                planos={planos}
+                seguros={seguros}
+                extras={extras}
+                ativos={ativos}
+            />
 
             {/* ── Drawers de edição por pilar ── */}
-            <SidePanel open={drawer === 'seguros'} onClose={() => setDrawer(null)} title="Seguro de vida" subtitle="Necessidade e apólices contratadas" widthClass="max-w-2xl">
-                <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} sucessaoIdeal={sucessaoIdeal} defaultAberto />
+            <SidePanel open={drawer?.tipo === 'seguros'} onClose={fecharDrawer} title="Seguro de vida" subtitle="Necessidade e apólices contratadas" widthClass="max-w-2xl">
+                <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} sucessaoIdeal={sucessaoIdeal} defaultAberto abrirNovo={drawer?.novo} />
             </SidePanel>
 
-            <SidePanel open={drawer === 'reserva'} onClose={() => setDrawer(null)} title="Reserva de emergência" widthClass="max-w-2xl">
+            <SidePanel open={drawer?.tipo === 'reserva'} onClose={fecharDrawer} title="Reserva de emergência" widthClass="max-w-2xl">
                 <AcordeoReservaEmergencia dados={dados} parametros={parametros} onUpdate={handleUpdate} saldoReserva={saldoReserva} defaultAberto />
             </SidePanel>
 
-            <SidePanel open={drawer === 'plano'} onClose={() => setDrawer(null)} title="Plano de saúde" widthClass="max-w-2xl">
-                <AcordeoPlanoSaude dados={dados} dependentes={dependentes} defaultAberto />
+            <SidePanel open={drawer?.tipo === 'plano'} onClose={fecharDrawer} title="Plano de saúde" widthClass="max-w-2xl">
+                <AcordeoPlanoSaude dados={dados} dependentes={dependentes} defaultAberto abrirNovo={drawer?.novo} />
             </SidePanel>
 
-            <SidePanel open={drawer === 'patrimonial'} onClose={() => setDrawer(null)} title="Proteção patrimonial" widthClass="max-w-2xl">
-                <AcordeoProtecaoPatrimonial dados={dados} defaultAberto />
+            <SidePanel open={drawer?.tipo === 'patrimonial'} onClose={fecharDrawer} title="Proteção patrimonial" subtitle="Seguros imobiliário e veicular" widthClass="max-w-2xl">
+                <AcordeoProtecaoPatrimonial dados={dados} defaultAberto tipoNovo={drawer?.tipoSeguro} />
             </SidePanel>
 
-            <SidePanel open={drawer === 'profissional'} onClose={() => setDrawer(null)} title="Proteção profissional/empresarial" widthClass="max-w-2xl">
-                <AcordeoProtecaoProfissional dados={dados} defaultAberto />
+            <SidePanel open={drawer?.tipo === 'profissional'} onClose={fecharDrawer} title="Proteção profissional/empresarial" widthClass="max-w-2xl">
+                <AcordeoProtecaoProfissional dados={dados} defaultAberto tipoNovo={drawer?.tipoSeguro} membros={membros} />
             </SidePanel>
 
             {/* Documento do relatório — renderizado fora da tela, só para captura do PDF (ver gerarPDF).
@@ -383,7 +321,7 @@ Planejador: ${planejadorEmail || '—'}`;
                     nomeCliente={nomeCliente}
                     planejadorNome={planejadorNome}
                     planejadorEmail={planejadorEmail}
-                    segurosData={segurosLista}
+                    segurosData={seguros}
                     coberturaVida={coberturaVida}
                     sucessao={sucessao}
                     previdencia={previdencia}
