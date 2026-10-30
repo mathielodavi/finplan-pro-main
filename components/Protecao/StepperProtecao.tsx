@@ -256,23 +256,25 @@ const StepperProtecao: React.FC<StepperProtecaoProps> = ({ clienteId, nomeClient
             )}
 
             {/* ── Status de salvamento ────────────────────────────────────────────── */}
-            <div className="flex items-center gap-2 h-4">
-                {savingCombined && (
-                    <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
-                        <Clock size={11} className="animate-spin" />
-                        Salvando...
-                    </span>
-                )}
-                {!savingCombined && savedAtLabelCombined && !saveErrorCombined && (
-                    <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
-                        <Save size={11} />
-                        {savedAtLabelCombined}
-                    </span>
-                )}
-                {saveErrorCombined && (
-                    <span className="text-[10px] font-semibold text-[color:var(--danger)] uppercase tracking-widest">{saveErrorCombined}</span>
-                )}
-            </div>
+            {editando && (
+                <div className="flex items-center gap-2 h-4">
+                    {savingCombined && (
+                        <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
+                            <Clock size={11} className="animate-spin" />
+                            Salvando...
+                        </span>
+                    )}
+                    {!savingCombined && savedAtLabelCombined && !saveErrorCombined && (
+                        <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[color:var(--primary)] uppercase tracking-widest">
+                            <Save size={11} />
+                            {savedAtLabelCombined}
+                        </span>
+                    )}
+                    {saveErrorCombined && (
+                        <span className="text-[10px] font-semibold text-[color:var(--danger)] uppercase tracking-widest">{saveErrorCombined}</span>
+                    )}
+                </div>
+            )}
 
             {/* ── Conteúdo da Etapa ──────────────────────────────────────────────── */}
             {!editando ? (

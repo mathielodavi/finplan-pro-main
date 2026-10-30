@@ -45,8 +45,7 @@ const pesoStatus = (status: 'protegido' | 'parcial' | 'desprotegido') =>
 /**
  * Calcula a pontuação de proteção (0-100) de UM cliente: média dos 3 pilares objetivos
  * (Reserva de Emergência, Plano de Saúde, Seguros de Vida — "Extras" não entra, pois não
- * tem critério objetivo). Replica fielmente a lógica de status dos acordeões da aba Proteção
- * (AcordeoReservaEmergencia, AcordeoPlanoSaude, AcordeoSeguros).
+ * tem critério objetivo).
  */
 export function calcularScoreProtecaoCliente(input: ScoreProtecaoInput): number {
   const { clienteId, dadosClienteSeguro: dados, reservaRecomendada, dependentes, planosSaude, segurosVida, ativos } = input;

@@ -7,16 +7,16 @@ import SidePanel from '../UI/SidePanel';
 import { ClienteSeguro, DependenteSeguro, ParametrosCalculo, PlanoSaude, SeguroExtra, SeguroVida, protecaoService } from '../../services/protecaoService';
 import { calcularCoberturaVida, calcularSucessao } from '../../utils/calculosFinanceiros';
 import { calcularReservaIdeal } from '../../utils/protecaoUtils';
-import { EntradaProtecao, LinhaProtecao, MembroProtecao, linhasFamilia, linhasMembro } from '../../utils/protecaoTabela';
+import { EntradaProtecao, LinhaProtecao, MembroProtecao, TIPO_SEGURO_PROFISSIONAL, linhasFamilia, linhasMembro } from '../../utils/protecaoTabela';
 import { patrimonioService, BemPatrimonial } from '../../services/patrimonioService';
 import { toLocalDateString } from '../../utils/formatadores';
 import TabelaProtecao, { NovaCobertura } from './TabelaProtecao';
-import ModalCoberturas from './ModalCoberturas';
+import ModalCoberturas, { ApoliceParaExcluir } from './ModalCoberturas';
 import AcordeoReservaEmergencia from './AcordeoReservaEmergencia';
-import AcordeoPlanoSaude from './AcordeoPlanoSaude';
-import AcordeoSeguros from './AcordeoSeguros';
-import AcordeoProtecaoPatrimonial from './AcordeoProtecaoPatrimonial';
-import AcordeoProtecaoProfissional from './AcordeoProtecaoProfissional';
+import FormPlanoSaude from './FormPlanoSaude';
+import FormSeguroVida from './FormSeguroVida';
+import FormSeguroExtra from './FormSeguroExtra';
+import Confirmacao from '../Confirmacao';
 import RelatorioProtecaoDoc from './RelatorioProtecaoDoc';
 import { supabase } from '../../services/supabaseClient';
 import { baixarPaginasComoPDF } from '../../utils/pdfFromElement';
@@ -35,21 +35,34 @@ interface Props {
     membros: MembroProtecao[];
     /** Visão aberta no submenu: chave do membro, ou null para a família. */
     membroAtivo: string | null;
-    /** Reflete no levantamento o que foi alterado nos drawers (ex.: reserva). */
+    /** Reflete no levantamento o que foi alterado na configuração da reserva. */
     onAtualizar: (campos: Partial<ClienteSeguro>) => void;
 }
 
-type Drawer = 'seguros' | 'reserva' | 'plano' | 'patrimonial' | 'profissional';
-interface DrawerAberto { tipo: Drawer; novo?: boolean; tipoSeguro?: string }
+type Editor =
+    | { tipo: 'plano'; apolice: Partial<PlanoSaude> }
+    | { tipo: 'vida'; apolice: Partial<SeguroVida> }
+    | { tipo: 'extra'; apolice: Partial<SeguroExtra> };
 
-const DRAWER_DA_LINHA: Record<LinhaProtecao['detalhe'], Drawer> = {
-    reserva: 'reserva', plano: 'plano', vida: 'seguros',
-    imobiliario: 'patrimonial', veicular: 'patrimonial', empresarial: 'profissional', profissional: 'profissional',
+const TIPO_SEGURO_DA_COBERTURA: Partial<Record<NovaCobertura, string>> = {
+    imobiliario: 'Residencial',
+    veicular: 'Automotivo',
+    empresarial: 'Empresarial',
+    profissional: TIPO_SEGURO_PROFISSIONAL,
+};
+
+const EXCLUIR_APOLICE: Record<ApoliceParaExcluir['tipo'], (id: string) => Promise<void>> = {
+    plano: id => protecaoService.deletePlanoSaude(id),
+    vida: id => protecaoService.deleteSeguroVida(id),
+    extra: id => protecaoService.deleteSeguroExtra(id),
 };
 
 const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes, parametros, nomeCliente, onEditar, membros, membroAtivo, onAtualizar }) => {
     const [dados, setDados] = useState<ClienteSeguro>(dadosIniciais);
-    const [drawer, setDrawer] = useState<DrawerAberto | null>(null);
+    const [configurandoReserva, setConfigurandoReserva] = useState(false);
+    const [editor, setEditor] = useState<Editor | null>(null);
+    const [paraExcluir, setParaExcluir] = useState<ApoliceParaExcluir | null>(null);
+    const [excluindo, setExcluindo] = useState(false);
     const [linhaAberta, setLinhaAberta] = useState<LinhaProtecao | null>(null);
     const [score, setScore] = useState(0);
     const [ativos, setAtivos] = useState<any[]>([]);
@@ -147,8 +160,6 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
     const totalEducacao = dependentes.reduce((acc, d) => acc + (d.total_calculado || 0), 0);
     const totalGeral = totalEducacao + coberturaVida.coberturaFamiliar + sucessao.coberturaSucessao;
 
-    const sucessaoIdeal = totalEducacao + sucessao.coberturaSucessao;
-
     const hoje = toLocalDateString(new Date());
     const entrada: EntradaProtecao = {
         hoje, membros, saldoReserva, planos, seguros, extras, bens,
@@ -166,18 +177,34 @@ const DashboardProtecao: React.FC<Props> = ({ dados: dadosIniciais, dependentes,
         : 'Proteção global da família';
 
     const adicionarCobertura = (tipo: NovaCobertura) => {
-        if (tipo === 'plano') setDrawer({ tipo: 'plano', novo: true });
-        else if (tipo === 'vida') setDrawer({ tipo: 'seguros', novo: true });
-        else if (tipo === 'imobiliario') setDrawer({ tipo: 'patrimonial', tipoSeguro: 'Residencial' });
-        else if (tipo === 'veicular') setDrawer({ tipo: 'patrimonial', tipoSeguro: 'Automotivo' });
-        else if (tipo === 'empresarial') setDrawer({ tipo: 'profissional', tipoSeguro: 'Empresarial' });
-        else setDrawer({ tipo: 'profissional', tipoSeguro: 'Responsabilidade Civil' });
+        const membro = membroAtivo || 'cliente';
+        if (tipo === 'plano') setEditor({ tipo: 'plano', apolice: { membro } });
+        else if (tipo === 'vida') setEditor({ tipo: 'vida', apolice: { membro } });
+        else setEditor({ tipo: 'extra', apolice: { tipo_seguro: TIPO_SEGURO_DA_COBERTURA[tipo], membro: tipo === 'profissional' ? membroAtivo : null } });
     };
 
-    // Os drawers gravam por conta própria: recarrega ao fechar para a tabela refletir as mudanças.
-    const fecharDrawer = () => {
-        setDrawer(null);
+    const fecharReserva = () => {
+        setConfigurandoReserva(false);
         carregar().catch(console.error);
+    };
+
+    const aposSalvar = () => {
+        setEditor(null);
+        carregar().catch(console.error);
+    };
+
+    const excluirApolice = async () => {
+        if (!paraExcluir) return;
+        setExcluindo(true);
+        try {
+            await EXCLUIR_APOLICE[paraExcluir.tipo](paraExcluir.id);
+            setParaExcluir(null);
+            await carregar();
+        } catch (err: any) {
+            toast.error('Erro ao excluir: ' + (err?.message || 'tente novamente.'));
+        } finally {
+            setExcluindo(false);
+        }
     };
 
     const corScore = score >= 70 ? 'var(--primary)' : score >= 40 ? 'var(--warning)' : 'var(--danger)';
@@ -276,10 +303,15 @@ Planejador: ${planejadorEmail || '—'}`;
                 onVisualizar={setLinhaAberta}
             />
 
+            {/* A lista some enquanto um formulário está aberto e volta atualizada ao fechar. */}
             <ModalCoberturas
-                linha={linhaAberta}
+                linha={editor ? null : linhaAberta}
                 onClose={() => setLinhaAberta(null)}
-                onGerenciar={l => { setLinhaAberta(null); setDrawer({ tipo: DRAWER_DA_LINHA[l.detalhe] }); }}
+                onConfigurarReserva={() => { setLinhaAberta(null); setConfigurandoReserva(true); }}
+                onEditarPlano={apolice => setEditor({ tipo: 'plano', apolice })}
+                onEditarSeguro={apolice => setEditor({ tipo: 'vida', apolice })}
+                onEditarExtra={apolice => setEditor({ tipo: 'extra', apolice })}
+                onExcluir={setParaExcluir}
                 membro={membroAtivo}
                 membros={membros}
                 hoje={hoje}
@@ -289,25 +321,27 @@ Planejador: ${planejadorEmail || '—'}`;
                 ativos={ativos}
             />
 
-            {/* ── Drawers de edição por pilar ── */}
-            <SidePanel open={drawer?.tipo === 'seguros'} onClose={fecharDrawer} title="Seguro de vida" subtitle="Necessidade e apólices contratadas" widthClass="max-w-2xl">
-                <AcordeoSeguros dados={dados} dependentes={dependentes} parametros={parametros} sucessaoIdeal={sucessaoIdeal} defaultAberto abrirNovo={drawer?.novo} />
-            </SidePanel>
+            {editor?.tipo === 'plano' && (
+                <FormPlanoSaude clienteId={dados.cliente_id} membros={membros} plano={editor.apolice} onCancelar={() => setEditor(null)} onSalvo={aposSalvar} />
+            )}
+            {editor?.tipo === 'vida' && (
+                <FormSeguroVida clienteId={dados.cliente_id} membros={membros} seguro={editor.apolice} onCancelar={() => setEditor(null)} onSalvo={aposSalvar} />
+            )}
+            {editor?.tipo === 'extra' && (
+                <FormSeguroExtra clienteId={dados.cliente_id} membros={membros} seguro={editor.apolice} onCancelar={() => setEditor(null)} onSalvo={aposSalvar} />
+            )}
 
-            <SidePanel open={drawer?.tipo === 'reserva'} onClose={fecharDrawer} title="Reserva de emergência" widthClass="max-w-2xl">
+            <Confirmacao
+                isOpen={!!paraExcluir}
+                onClose={() => setParaExcluir(null)}
+                onConfirm={excluirApolice}
+                loading={excluindo}
+                title="Excluir apólice"
+                message={`Deseja excluir "${paraExcluir?.descricao}"?`}
+            />
+
+            <SidePanel open={configurandoReserva} onClose={fecharReserva} title="Reserva de emergência" widthClass="max-w-2xl">
                 <AcordeoReservaEmergencia dados={dados} parametros={parametros} onUpdate={handleUpdate} saldoReserva={saldoReserva} defaultAberto />
-            </SidePanel>
-
-            <SidePanel open={drawer?.tipo === 'plano'} onClose={fecharDrawer} title="Plano de saúde" widthClass="max-w-2xl">
-                <AcordeoPlanoSaude dados={dados} dependentes={dependentes} defaultAberto abrirNovo={drawer?.novo} />
-            </SidePanel>
-
-            <SidePanel open={drawer?.tipo === 'patrimonial'} onClose={fecharDrawer} title="Proteção patrimonial" subtitle="Seguros imobiliário e veicular" widthClass="max-w-2xl">
-                <AcordeoProtecaoPatrimonial dados={dados} defaultAberto tipoNovo={drawer?.tipoSeguro} />
-            </SidePanel>
-
-            <SidePanel open={drawer?.tipo === 'profissional'} onClose={fecharDrawer} title="Proteção profissional/empresarial" widthClass="max-w-2xl">
-                <AcordeoProtecaoProfissional dados={dados} defaultAberto tipoNovo={drawer?.tipoSeguro} membros={membros} />
             </SidePanel>
 
             {/* Documento do relatório — renderizado fora da tela, só para captura do PDF (ver gerarPDF).
